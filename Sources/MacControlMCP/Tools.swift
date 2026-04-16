@@ -31,23 +31,29 @@ final class ToolRegistry {
     let windows: WindowController
     let menus: MenuController
     let clipboard: ClipboardController
+    let browser: BrowserController
+    let screen: ScreenController
 
     init(
         accessibility: AccessibilityController,
         elementCache: ElementCache = ElementCache(),
         windows: WindowController = WindowController(),
         menus: MenuController = MenuController(),
-        clipboard: ClipboardController = ClipboardController()
+        clipboard: ClipboardController = ClipboardController(),
+        browser: BrowserController = BrowserController(),
+        screen: ScreenController = ScreenController()
     ) {
         self.accessibility = accessibility
         self.elementCache = elementCache
         self.windows = windows
         self.menus = menus
         self.clipboard = clipboard
+        self.browser = browser
+        self.screen = screen
     }
 
     var toolDefinitions: [MCPToolDefinition] {
-        Self.definitions + Self.definitionsV2
+        Self.definitions + Self.definitionsV2 + Self.definitionsV2Phase2
     }
 
     func callTool(name: String, arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -94,6 +100,18 @@ final class ToolRegistry {
             return await callClipboardWrite(arguments)
         case "permissions_status":
             return await callPermissionsStatus()
+        case "browser_list_tabs":
+            return await callBrowserListTabs(arguments)
+        case "browser_get_active_tab":
+            return await callBrowserActiveTab(arguments)
+        case "browser_navigate":
+            return await callBrowserNavigate(arguments)
+        case "browser_eval_js":
+            return await callBrowserEvalJS(arguments)
+        case "capture_screen":
+            return await callCaptureScreen(arguments)
+        case "ocr_screen":
+            return await callOCRScreen(arguments)
         default:
             return errorResult("Unknown tool '\(name)'.")
         }

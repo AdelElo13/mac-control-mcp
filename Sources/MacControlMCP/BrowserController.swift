@@ -1,0 +1,201 @@
+import Foundation
+
+/// Safari and Chrome automation via AppleScript.
+///
+/// We invoke `osascript` as a subprocess to avoid the main-thread
+/// restrictions of NSAppleScript and keep the actor cleanly isolated.
+/// Both Safari and Chrome require the user to enable "Allow JavaScript
+/// from Apple Events" in their respective Develop/Developer menu the
+/// first time any JS-eval tool is used.
+actor BrowserController {
+    enum Browser: String, Sendable {
+        case safari = "Safari"
+        case chrome = "Google Chrome"
+
+        static func detect(_ raw: String?) -> Browser {
+            switch raw?.lowercased() {
+            case "chrome", "google chrome": return .chrome
+            default: return .safari
+            }
+        }
+    }
+
+    struct TabInfo: Codable, Sendable {
+        let browser: String
+        let windowIndex: Int
+        let tabIndex: Int
+        let title: String
+        let url: String
+        let active: Bool
+    }
+
+    struct EvalResult: Codable, Sendable {
+        let success: Bool
+        let value: String?
+        let error: String?
+    }
+
+    // MARK: - Tabs
+
+    func listTabs(browser: Browser) -> [TabInfo] {
+        let script: String
+        switch browser {
+        case .safari:
+            script = """
+            tell application "Safari"
+                set output to ""
+                set activeTabIndex to 0
+                try
+                    set activeTabIndex to index of current tab of front window
+                end try
+                repeat with w from 1 to (count of windows)
+                    repeat with t from 1 to (count of tabs of window w)
+                        set theTab to tab t of window w
+                        set output to output & (w as string) & "\\t" & (t as string) & "\\t" & (name of theTab) & "\\t" & (URL of theTab) & "\\t" & ((w = 1 and t = activeTabIndex) as string) & "\\n"
+                    end repeat
+                end repeat
+                return output
+            end tell
+            """
+        case .chrome:
+            script = """
+            tell application "Google Chrome"
+                set output to ""
+                set activeIndex to 0
+                try
+                    set activeIndex to active tab index of front window
+                end try
+                repeat with w from 1 to (count of windows)
+                    repeat with t from 1 to (count of tabs of window w)
+                        set theTab to tab t of window w
+                        set output to output & (w as string) & tab & (t as string) & tab & (title of theTab) & tab & (URL of theTab) & tab & ((w = 1 and t = activeIndex) as string) & linefeed
+                    end repeat
+                end repeat
+                return output
+            end tell
+            """
+        }
+
+        guard let raw = runOsascript(script: script) else { return [] }
+        return parseTabs(browser: browser.rawValue, raw: raw)
+    }
+
+    func activeTab(browser: Browser) -> TabInfo? {
+        let tabs = listTabs(browser: browser)
+        return tabs.first { $0.active }
+    }
+
+    func navigate(browser: Browser, url: String, windowIndex: Int = 1, tabIndex: Int? = nil) -> Bool {
+        let tabRef: String
+        switch browser {
+        case .safari:
+            tabRef = tabIndex.map { "tab \($0) of window \(windowIndex)" } ?? "current tab of window \(windowIndex)"
+        case .chrome:
+            tabRef = tabIndex.map { "tab \($0) of window \(windowIndex)" } ?? "active tab of window \(windowIndex)"
+        }
+
+        let script = """
+        tell application "\(browser.rawValue)"
+            set URL of \(tabRef) to "\(escape(url))"
+            return "ok"
+        end tell
+        """
+        return runOsascript(script: script) != nil
+    }
+
+    /// Evaluate JavaScript in a tab. The result is whatever the JS expression
+    /// evaluates to, stringified. Requires "Allow JavaScript from Apple Events"
+    /// to be enabled in the browser's Develop menu.
+    func evalJS(browser: Browser, code: String, windowIndex: Int = 1, tabIndex: Int? = nil) -> EvalResult {
+        let command: String
+        switch browser {
+        case .safari:
+            let tabRef = tabIndex.map { "tab \($0) of window \(windowIndex)" } ?? "current tab of window \(windowIndex)"
+            command = """
+            tell application "Safari"
+                try
+                    set result to (do JavaScript "\(escape(code))" in \(tabRef))
+                    return "OK\\t" & (result as string)
+                on error errMsg
+                    return "ERR\\t" & errMsg
+                end try
+            end tell
+            """
+        case .chrome:
+            let tabRef = tabIndex.map { "tab \($0) of window \(windowIndex)" } ?? "active tab of window \(windowIndex)"
+            command = """
+            tell application "Google Chrome"
+                try
+                    set result to (execute \(tabRef) javascript "\(escape(code))")
+                    return "OK\\t" & (result as string)
+                on error errMsg
+                    return "ERR\\t" & errMsg
+                end try
+            end tell
+            """
+        }
+
+        guard let raw = runOsascript(script: command) else {
+            return EvalResult(success: false, value: nil, error: "osascript invocation failed")
+        }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("OK\t") {
+            let value = String(trimmed.dropFirst(3))
+            return EvalResult(success: true, value: value, error: nil)
+        }
+        if trimmed.hasPrefix("ERR\t") {
+            return EvalResult(success: false, value: nil, error: String(trimmed.dropFirst(4)))
+        }
+        return EvalResult(success: false, value: nil, error: "Unexpected response: \(trimmed)")
+    }
+
+    // MARK: - Helpers
+
+    private func runOsascript(script: String) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+
+        guard process.terminationStatus == 0 else { return nil }
+        let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8)
+    }
+
+    private func escape(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\")
+         .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
+    private func parseTabs(browser: String, raw: String) -> [TabInfo] {
+        var out: [TabInfo] = []
+        for line in raw.split(separator: "\n") {
+            let parts = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
+            guard parts.count >= 5,
+                  let w = Int(parts[0]),
+                  let t = Int(parts[1]) else { continue }
+            out.append(
+                TabInfo(
+                    browser: browser,
+                    windowIndex: w,
+                    tabIndex: t,
+                    title: parts[2],
+                    url: parts[3],
+                    active: parts[4].lowercased() == "true"
+                )
+            )
+        }
+        return out
+    }
+}
