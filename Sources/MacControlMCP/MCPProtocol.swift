@@ -164,29 +164,40 @@ enum StdioMessageFramer {
     private static let crlfHeaderTerminator = Data("\r\n\r\n".utf8)
     private static let lfHeaderTerminator = Data("\n\n".utf8)
 
-    static func popMessage(from buffer: inout Data) -> Data? {
-        guard let headerBoundary = buffer.range(of: crlfHeaderTerminator) ?? buffer.range(of: lfHeaderTerminator) else {
-            return nil
+    struct HeaderParseError: Error, CustomStringConvertible {
+        let description: String
+    }
+
+    enum ParseResult {
+        case message(Data)
+        case needMoreData
+        case malformed(String)
+    }
+
+    static func popMessage(from buffer: inout Data) -> ParseResult {
+        guard let headerBoundary = headerBoundary(in: buffer) else {
+            return .needMoreData
         }
 
-        let headerData = buffer.subdata(in: buffer.startIndex..<headerBoundary.lowerBound)
+        let headerData = buffer.subdata(in: buffer.startIndex..<headerBoundary.headerEnd)
         guard let headerText = String(data: headerData, encoding: .utf8) else {
-            buffer.removeSubrange(buffer.startIndex..<headerBoundary.upperBound)
-            return nil
+            buffer.removeSubrange(buffer.startIndex..<headerBoundary.bodyStart)
+            return .malformed("Message headers must be UTF-8.")
         }
 
-        guard let contentLength = parseContentLength(headerText), contentLength >= 0 else {
-            buffer.removeSubrange(buffer.startIndex..<headerBoundary.upperBound)
-            return nil
+        switch parseContentLength(headerText) {
+        case .failure(let error):
+            buffer.removeSubrange(buffer.startIndex..<headerBoundary.bodyStart)
+            return .malformed(error.description)
+        case .success(let contentLength):
+            let bodyStart = headerBoundary.bodyStart
+            let bodyEnd = bodyStart + contentLength
+            guard buffer.count >= bodyEnd else { return .needMoreData }
+
+            let body = buffer.subdata(in: bodyStart..<bodyEnd)
+            buffer.removeSubrange(buffer.startIndex..<bodyEnd)
+            return .message(body)
         }
-
-        let bodyStart = headerBoundary.upperBound
-        let bodyEnd = bodyStart + contentLength
-        guard buffer.count >= bodyEnd else { return nil }
-
-        let body = buffer.subdata(in: bodyStart..<bodyEnd)
-        buffer.removeSubrange(buffer.startIndex..<bodyEnd)
-        return body
     }
 
     static func frame<T: Encodable>(_ message: T, encoder: JSONEncoder) throws -> Data {
@@ -196,21 +207,64 @@ enum StdioMessageFramer {
         return output
     }
 
-    private static func parseContentLength(_ headerText: String) -> Int? {
-        for rawLine in headerText.split(separator: "\n", omittingEmptySubsequences: false) {
+    private struct HeaderBoundary {
+        let headerEnd: Int
+        let bodyStart: Int
+    }
+
+    private static func headerBoundary(in buffer: Data) -> HeaderBoundary? {
+        let crlfRange = buffer.range(of: crlfHeaderTerminator)
+        let lfRange = buffer.range(of: lfHeaderTerminator)
+
+        if let crlfRange, let lfRange {
+            if crlfRange.lowerBound <= lfRange.lowerBound {
+                return HeaderBoundary(headerEnd: crlfRange.lowerBound, bodyStart: crlfRange.upperBound)
+            }
+            return HeaderBoundary(headerEnd: lfRange.lowerBound, bodyStart: lfRange.upperBound)
+        }
+
+        if let crlfRange {
+            return HeaderBoundary(headerEnd: crlfRange.lowerBound, bodyStart: crlfRange.upperBound)
+        }
+
+        if let lfRange {
+            return HeaderBoundary(headerEnd: lfRange.lowerBound, bodyStart: lfRange.upperBound)
+        }
+
+        return nil
+    }
+
+    private static func parseContentLength(_ headerText: String) -> Result<Int, HeaderParseError> {
+        var contentLength: Int?
+
+        for rawLine in headerText.components(separatedBy: .newlines) {
             let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !line.isEmpty else { continue }
 
             let parts = line.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
-            guard parts.count == 2 else { continue }
+            guard parts.count == 2 else {
+                return .failure(HeaderParseError(description: "Malformed header line: '\(line)'."))
+            }
 
             let key = parts[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             guard key == "content-length" else { continue }
 
             let value = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
-            return Int(value)
+            guard let length = Int(value), length >= 0 else {
+                return .failure(HeaderParseError(description: "Invalid Content-Length header value: '\(value)'."))
+            }
+
+            guard contentLength == nil else {
+                return .failure(HeaderParseError(description: "Duplicate Content-Length headers are not allowed."))
+            }
+
+            contentLength = length
         }
 
-        return nil
+        guard let contentLength else {
+            return .failure(HeaderParseError(description: "Missing Content-Length header."))
+        }
+
+        return .success(contentLength)
     }
 }

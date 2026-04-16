@@ -111,37 +111,36 @@ final class ToolRegistry {
     }
 
     private func callClick(_ arguments: [String: JSONValue]) async -> ToolCallResult {
-        guard let pid = parsePID(arguments["pid"]) else {
-            return invalidArgument("click requires a positive integer pid.")
-        }
+        let pid = parsePID(arguments["pid"])
 
         if let x = arguments["x"]?.doubleValue, let y = arguments["y"]?.doubleValue {
             let success = await accessibility.click(at: CGPoint(x: CGFloat(x), y: CGFloat(y)))
+            var payload: [String: JSONValue] = [
+                "x": .number(x),
+                "y": .number(y)
+            ]
+            if let pid {
+                payload["pid"] = .number(Double(pid))
+            }
             if success {
                 return successResult(
                     "Clicked at (\(x), \(y)).",
-                    [
-                        "ok": .bool(true),
-                        "pid": .number(Double(pid)),
-                        "x": .number(x),
-                        "y": .number(y)
-                    ]
+                    payload.merging(["ok": .bool(true)]) { _, new in new }
                 )
             }
 
             return errorResult(
                 "Failed to click at (\(x), \(y)).",
-                [
-                    "ok": .bool(false),
-                    "pid": .number(Double(pid)),
-                    "x": .number(x),
-                    "y": .number(y)
-                ]
+                payload.merging(["ok": .bool(false)]) { _, new in new }
             )
         }
 
         guard arguments["x"] == nil, arguments["y"] == nil else {
             return invalidArgument("click requires both x and y when using coordinates.")
+        }
+
+        guard let pid else {
+            return invalidArgument("click requires a positive integer pid when clicking by role/title.")
         }
 
         let role = arguments["role"]?.stringValue
@@ -471,8 +470,7 @@ final class ToolRegistry {
                     "y": .object([
                         "type": .string("number")
                     ])
-                ],
-                required: ["pid"]
+                ]
             )
         ),
         MCPToolDefinition(

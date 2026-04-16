@@ -19,19 +19,41 @@ final class MCPServer {
 
     func run() async {
         while true {
-            while let message = StdioMessageFramer.popMessage(from: &readBuffer) {
-                await handleRawMessage(message)
+            let handledBufferedMessage = await drainReadBuffer()
+            if handledBufferedMessage {
+                continue
             }
 
             let chunk = input.readData(ofLength: 4096)
             if chunk.isEmpty {
-                while let message = StdioMessageFramer.popMessage(from: &readBuffer) {
-                    await handleRawMessage(message)
+                _ = await drainReadBuffer()
+                if !readBuffer.isEmpty {
+                    write(response: parseErrorResponse("Unexpected EOF while reading MCP frame."))
+                    log("EOF reached with \(readBuffer.count) unparsed bytes in stdin buffer.")
+                    readBuffer.removeAll(keepingCapacity: false)
                 }
                 return
             }
 
             readBuffer.append(chunk)
+        }
+    }
+
+    private func drainReadBuffer() async -> Bool {
+        var handled = false
+
+        while true {
+            switch StdioMessageFramer.popMessage(from: &readBuffer) {
+            case .message(let message):
+                handled = true
+                await handleRawMessage(message)
+            case .malformed(let reason):
+                handled = true
+                log("Discarded malformed MCP frame header: \(reason)")
+                write(response: parseErrorResponse("Malformed MCP frame header: \(reason)"))
+            case .needMoreData:
+                return handled
+            }
         }
     }
 
@@ -41,12 +63,8 @@ final class MCPServer {
             guard let response = await dispatch(request: request) else { return }
             write(response: response)
         } catch {
-            let response = JSONRPCResponse.failure(
-                id: nil,
-                code: JSONRPCErrorCode.parseError.rawValue,
-                message: "Failed to parse JSON-RPC request."
-            )
-            write(response: response)
+            write(response: parseErrorResponse("Failed to parse JSON-RPC request."))
+            log("Request decode failure: \(error.localizedDescription)")
         }
     }
 
@@ -135,11 +153,19 @@ final class MCPServer {
         guard let data = "\(message)\n".data(using: .utf8) else { return }
         try? errorOutput.write(contentsOf: data)
     }
+
+    private func parseErrorResponse(_ message: String) -> JSONRPCResponse {
+        JSONRPCResponse.failure(
+            id: nil,
+            code: JSONRPCErrorCode.parseError.rawValue,
+            message: message
+        )
+    }
 }
 
-// Entry point
 Task {
     await server.run()
+    exit(EXIT_SUCCESS)
 }
 
 RunLoop.main.run()

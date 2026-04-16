@@ -294,7 +294,10 @@ actor AccessibilityController {
         }
 
         if let children = rawChildren as? NSArray {
-            return children.compactMap { $0 as! AXUIElement }
+            return children.compactMap { child in
+                guard CFGetTypeID(child as CFTypeRef) == AXUIElementGetTypeID() else { return nil }
+                return unsafeDowncast(child as AnyObject, to: AXUIElement.self)
+            }
         }
 
         return []
@@ -327,7 +330,8 @@ actor AccessibilityController {
 
     private func pointAttribute(of element: AXUIElement, attribute: CFString) -> CGPoint? {
         guard let raw = attributeValue(of: element, attribute: attribute) else { return nil }
-        let value = raw as! AXValue
+        guard CFGetTypeID(raw) == AXValueGetTypeID() else { return nil }
+        let value = unsafeDowncast(raw, to: AXValue.self)
         guard AXValueGetType(value) == .cgPoint else { return nil }
         var point = CGPoint.zero
         guard AXValueGetValue(value, .cgPoint, &point) else { return nil }
@@ -336,7 +340,8 @@ actor AccessibilityController {
 
     private func sizeAttribute(of element: AXUIElement, attribute: CFString) -> CGSize? {
         guard let raw = attributeValue(of: element, attribute: attribute) else { return nil }
-        let value = raw as! AXValue
+        guard CFGetTypeID(raw) == AXValueGetTypeID() else { return nil }
+        let value = unsafeDowncast(raw, to: AXValue.self)
         guard AXValueGetType(value) == .cgSize else { return nil }
         var size = CGSize.zero
         guard AXValueGetValue(value, .cgSize, &size) else { return nil }
@@ -347,8 +352,9 @@ actor AccessibilityController {
         let systemWide = AXUIElementCreateSystemWide()
         var value: CFTypeRef?
         let status = AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &value)
-        guard status == .success else { return nil }
-        return value as! AXUIElement
+        guard status == .success, let value else { return nil }
+        guard CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return unsafeDowncast(value, to: AXUIElement.self)
     }
 
     private func setFocusedElementValue(_ text: String) -> Bool {
