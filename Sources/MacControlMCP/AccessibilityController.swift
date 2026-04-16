@@ -191,6 +191,37 @@ actor AccessibilityController {
         return String(describing: rawValue)
     }
 
+    /// Press and hold a key without releasing. Pair with `keyUp` to release.
+    /// Useful for building custom modifier-held sequences.
+    func keyDown(keyCode: CGKeyCode, modifiers: [CGEventFlags] = []) -> Bool {
+        guard let source = CGEventSource(stateID: .hidSystemState),
+              let event = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true)
+        else { return false }
+        event.flags = modifiers.reduce(into: CGEventFlags()) { $0.formUnion($1) }
+        event.post(tap: .cghidEventTap)
+        return true
+    }
+
+    /// Release a previously held key.
+    func keyUp(keyCode: CGKeyCode, modifiers: [CGEventFlags] = []) -> Bool {
+        guard let source = CGEventSource(stateID: .hidSystemState),
+              let event = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
+        else { return false }
+        event.flags = modifiers.reduce(into: CGEventFlags()) { $0.formUnion($1) }
+        event.post(tap: .cghidEventTap)
+        return true
+    }
+
+    /// Post a sequence of keys in order. Each step is an independent
+    /// down+up pair with its own modifier set, separated by `delay` seconds.
+    func pressKeySequence(_ steps: [(CGKeyCode, [CGEventFlags])], delay: TimeInterval = 0.03) -> Bool {
+        for (code, modifiers) in steps {
+            guard pressKey(keyCode: code, modifiers: modifiers) else { return false }
+            Thread.sleep(forTimeInterval: delay)
+        }
+        return true
+    }
+
     func pressKey(keyCode: CGKeyCode, modifiers: [CGEventFlags] = []) -> Bool {
         guard
             let source = CGEventSource(stateID: .hidSystemState),

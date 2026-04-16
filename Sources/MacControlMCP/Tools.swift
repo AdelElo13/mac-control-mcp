@@ -37,6 +37,8 @@ final class ToolRegistry {
     let appLifecycle: AppLifecycleController
     let displays: DisplayController
     let fileDialog: FileDialogController
+    let system: SystemController
+    let spotlight: SpotlightController
 
     init(
         accessibility: AccessibilityController,
@@ -49,7 +51,9 @@ final class ToolRegistry {
         mouse: MouseController = MouseController(),
         appLifecycle: AppLifecycleController = AppLifecycleController(),
         displays: DisplayController = DisplayController(),
-        fileDialog: FileDialogController = FileDialogController()
+        fileDialog: FileDialogController = FileDialogController(),
+        system: SystemController = SystemController(),
+        spotlight: SpotlightController = SpotlightController()
     ) {
         self.accessibility = accessibility
         self.elementCache = elementCache
@@ -62,10 +66,13 @@ final class ToolRegistry {
         self.appLifecycle = appLifecycle
         self.displays = displays
         self.fileDialog = fileDialog
+        self.system = system
+        self.spotlight = spotlight
     }
 
     var toolDefinitions: [MCPToolDefinition] {
-        Self.definitions + Self.definitionsV2 + Self.definitionsV2Phase2 + Self.definitionsV2Phase3 + Self.definitionsV2Phase4
+        Self.definitions + Self.definitionsV2 + Self.definitionsV2Phase2 +
+            Self.definitionsV2Phase3 + Self.definitionsV2Phase4 + Self.definitionsV2Phase5
     }
 
     func callTool(name: String, arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -154,6 +161,53 @@ final class ToolRegistry {
             return await callFileDialogSelectItem(arguments)
         case "file_dialog_confirm":
             return await callFileDialogConfirm(arguments)
+        case "browser_new_tab":
+            return await callBrowserNewTab(arguments)
+        case "browser_close_tab":
+            return await callBrowserCloseTab(arguments)
+        case "capture_window":
+            return await callCaptureWindow(arguments)
+        case "capture_display":
+            return await callCaptureDisplay(arguments)
+        case "list_menu_paths":
+            return await callListMenuPaths(arguments)
+        case "spotlight_search":
+            return await callSpotlightSearch(arguments)
+        case "spotlight_open_result":
+            return await callSpotlightOpenResult(arguments)
+        case "set_volume":
+            return await callSetVolume(arguments)
+        case "set_dark_mode":
+            return await callSetDarkMode(arguments)
+        case "key_down":
+            return await callKeyDown(arguments)
+        case "key_up":
+            return await callKeyUp(arguments)
+        case "press_key_sequence":
+            return await callPressKeySequence(arguments)
+        case "wait_for_window":
+            return await callWaitForWindow(arguments)
+        case "wait_for_app":
+            return await callWaitForApp(arguments)
+        case "wait_for_file_dialog":
+            return await callWaitForFileDialog(arguments)
+        case "move_window_to_display":
+            return await callMoveWindowToDisplay(arguments)
+        case "request_permissions":
+            return await callRequestPermissions()
+        case "scroll_to_element":
+            return await callScrollToElement(arguments)
+        case "force_quit_app":
+            // Alias: force_quit_app → quit_app with force=true
+            var forced = arguments
+            forced["force"] = .bool(true)
+            return await callQuitApp(forced)
+        case "file_dialog_cancel":
+            // Alias: file_dialog_cancel → file_dialog_confirm with cancel=true
+            return await callFileDialogConfirm(["cancel": .bool(true)])
+        case "clipboard_clear":
+            await clipboard.clear()
+            return successResult("Clipboard cleared.", ["ok": .bool(true)])
         default:
             return errorResult("Unknown tool '\(name)'.")
         }
@@ -634,7 +688,7 @@ final class ToolRegistry {
     ]
 }
 
-private enum KeyCodeMap {
+enum KeyCodeMap {
     static let values: [String: CGKeyCode] = [
         "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8, "v": 9, "b": 11,
         "q": 12, "w": 13, "e": 14, "r": 15, "y": 16, "t": 17,

@@ -75,6 +75,51 @@ actor MenuController {
         }
     }
 
+    /// Enumerate every menu path in an app's menubar up to `maxDepth`.
+    /// Returns paths as string arrays like ["File", "New", "Window"].
+    func listPaths(pid: pid_t, maxDepth: Int = 4) -> [[String]] {
+        let appElement = AXUIElementCreateApplication(pid)
+        var menuBarRef: CFTypeRef?
+        guard
+            AXUIElementCopyAttributeValue(appElement, kAXMenuBarAttribute as CFString, &menuBarRef) == .success,
+            let raw = menuBarRef,
+            CFGetTypeID(raw) == AXUIElementGetTypeID()
+        else { return [] }
+
+        let bar = unsafeDowncast(raw, to: AXUIElement.self)
+        var paths: [[String]] = []
+        walk(element: bar, prefix: [], depth: 0, maxDepth: maxDepth, paths: &paths)
+        return paths
+    }
+
+    private func walk(element: AXUIElement, prefix: [String], depth: Int, maxDepth: Int, paths: inout [[String]]) {
+        guard depth <= maxDepth else { return }
+        var childrenRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenRef)
+        guard let array = childrenRef as? [AXUIElement] else { return }
+
+        for child in array {
+            var titleRef: CFTypeRef?
+            AXUIElementCopyAttributeValue(child, kAXTitleAttribute as CFString, &titleRef)
+            let title = (titleRef as? String) ?? ""
+
+            var roleRef: CFTypeRef?
+            AXUIElementCopyAttributeValue(child, kAXRoleAttribute as CFString, &roleRef)
+            let role = (roleRef as? String) ?? ""
+
+            // Recurse into AXMenu containers without adding them to the path
+            if role == "AXMenu" {
+                walk(element: child, prefix: prefix, depth: depth + 1, maxDepth: maxDepth, paths: &paths)
+                continue
+            }
+
+            // AXMenuItem / AXMenuBarItem: add title to path
+            let nextPrefix = title.isEmpty ? prefix : prefix + [title]
+            if !title.isEmpty { paths.append(nextPrefix) }
+            walk(element: child, prefix: nextPrefix, depth: depth + 1, maxDepth: maxDepth, paths: &paths)
+        }
+    }
+
     private func findChild(of parent: AXUIElement, titled title: String) -> AXUIElement? {
         var childrenRef: CFTypeRef?
         guard

@@ -70,6 +70,50 @@ actor ScreenController {
         return CaptureResult(path: path, width: image.width, height: image.height)
     }
 
+    /// Capture a specific display by its CGDirectDisplayID.
+    func captureDisplayByID(_ displayID: CGDirectDisplayID, outputPath: String? = nil) throws -> CaptureResult {
+        guard let image = CGDisplayCreateImage(displayID) else {
+            throw ScreenError.captureFailed
+        }
+        let path = outputPath ?? Self.defaultTempPath()
+        try writePNG(image: image, to: path)
+        return CaptureResult(path: path, width: image.width, height: image.height)
+    }
+
+    /// Capture a specific on-screen window. `windowID` comes from
+    /// CGWindowListCopyWindowInfo; for app windows we look it up by the
+    /// window's owner PID + title via CGWindowListCopyWindowInfo.
+    func captureWindow(ownerPID: pid_t, titleContains: String? = nil, outputPath: String? = nil) throws -> CaptureResult {
+        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        guard let info = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
+            throw ScreenError.captureFailed
+        }
+
+        let match = info.first { dict in
+            guard (dict[kCGWindowOwnerPID as String] as? pid_t) == ownerPID else { return false }
+            guard let title = titleContains, !title.isEmpty else { return true }
+            let candidate = (dict[kCGWindowName as String] as? String) ?? ""
+            return candidate.localizedCaseInsensitiveContains(title)
+        }
+
+        guard let match, let windowID = match[kCGWindowNumber as String] as? CGWindowID else {
+            throw ScreenError.captureFailed
+        }
+
+        guard let image = CGWindowListCreateImage(
+            .null,
+            .optionIncludingWindow,
+            windowID,
+            [.bestResolution, .boundsIgnoreFraming]
+        ) else {
+            throw ScreenError.captureFailed
+        }
+
+        let path = outputPath ?? Self.defaultTempPath()
+        try writePNG(image: image, to: path)
+        return CaptureResult(path: path, width: image.width, height: image.height)
+    }
+
     /// Run OCR on the given image file. Uses the Vision framework's
     /// accurate recognition level and the system default language list.
     func ocr(imagePath: String, languages: [String] = []) throws -> OCRResult {

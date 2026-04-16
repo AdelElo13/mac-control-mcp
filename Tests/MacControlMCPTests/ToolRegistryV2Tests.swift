@@ -2,7 +2,7 @@ import Testing
 import ApplicationServices
 @testable import MacControlMCP
 
-@Suite("ToolRegistry v0.2.0 tools")
+@Suite("ToolRegistry v0.2.0 tools", .serialized)
 struct ToolRegistryV2Tests {
     @Test("tool definitions include all v2 tools")
     func v2DefinitionsPresent() {

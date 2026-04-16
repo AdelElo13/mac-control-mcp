@@ -14,10 +14,9 @@ struct Phase4ToolsTests {
         #expect(expected.isSubset(of: names))
     }
 
-    @Test("total tool count is 42 — all MUST tier complete")
-    func totalToolCount() {
-        let registry = ToolRegistry(accessibility: AccessibilityController())
-        #expect(registry.toolDefinitions.count == 42)
+    @Test("phase 4 includes 6 must-completion tools")
+    func phase4Count() {
+        #expect(ToolRegistry.definitionsV2Phase4.count == 6)
     }
 
     @Test("move_window requires all four args")

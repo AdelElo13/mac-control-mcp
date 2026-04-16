@@ -149,6 +149,50 @@ actor BrowserController {
         return EvalResult(success: false, value: nil, error: "Unexpected response: \(trimmed)")
     }
 
+    /// Open a new tab in the frontmost window, optionally navigating to url.
+    func newTab(browser: Browser, url: String?) -> Bool {
+        let script: String
+        switch browser {
+        case .safari:
+            let nav = url.map { "\n    set URL of current tab of front window to \"\(escape($0))\"" } ?? ""
+            script = """
+            tell application "Safari"
+                activate
+                tell front window to set current tab to (make new tab)\(nav)
+                return "ok"
+            end tell
+            """
+        case .chrome:
+            let nav = url.map { "\n    set URL of active tab of front window to \"\(escape($0))\"" } ?? ""
+            script = """
+            tell application "Google Chrome"
+                activate
+                tell front window to make new tab\(nav)
+                return "ok"
+            end tell
+            """
+        }
+        return runOsascript(script: script) != nil
+    }
+
+    /// Close a tab by window/tab index, or the current tab when indices are nil.
+    func closeTab(browser: Browser, windowIndex: Int = 1, tabIndex: Int? = nil) -> Bool {
+        let tabRef: String
+        switch browser {
+        case .safari:
+            tabRef = tabIndex.map { "tab \($0) of window \(windowIndex)" } ?? "current tab of window \(windowIndex)"
+        case .chrome:
+            tabRef = tabIndex.map { "tab \($0) of window \(windowIndex)" } ?? "active tab of window \(windowIndex)"
+        }
+        let script = """
+        tell application "\(browser.rawValue)"
+            close \(tabRef)
+            return "ok"
+        end tell
+        """
+        return runOsascript(script: script) != nil
+    }
+
     // MARK: - Helpers
 
     private func runOsascript(script: String) -> String? {

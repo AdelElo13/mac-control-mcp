@@ -2,7 +2,7 @@ import Testing
 import Foundation
 @testable import MacControlMCP
 
-@Suite("Phase 2 tools — browser + screen")
+@Suite("Phase 2 tools — browser + screen", .serialized)
 struct Phase2ToolsTests {
     @Test("all phase 2 tools are registered")
     func phase2Definitions() {
