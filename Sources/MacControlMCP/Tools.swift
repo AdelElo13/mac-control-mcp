@@ -33,6 +33,9 @@ final class ToolRegistry {
     let clipboard: ClipboardController
     let browser: BrowserController
     let screen: ScreenController
+    let mouse: MouseController
+    let appLifecycle: AppLifecycleController
+    let displays: DisplayController
 
     init(
         accessibility: AccessibilityController,
@@ -41,7 +44,10 @@ final class ToolRegistry {
         menus: MenuController = MenuController(),
         clipboard: ClipboardController = ClipboardController(),
         browser: BrowserController = BrowserController(),
-        screen: ScreenController = ScreenController()
+        screen: ScreenController = ScreenController(),
+        mouse: MouseController = MouseController(),
+        appLifecycle: AppLifecycleController = AppLifecycleController(),
+        displays: DisplayController = DisplayController()
     ) {
         self.accessibility = accessibility
         self.elementCache = elementCache
@@ -50,10 +56,13 @@ final class ToolRegistry {
         self.clipboard = clipboard
         self.browser = browser
         self.screen = screen
+        self.mouse = mouse
+        self.appLifecycle = appLifecycle
+        self.displays = displays
     }
 
     var toolDefinitions: [MCPToolDefinition] {
-        Self.definitions + Self.definitionsV2 + Self.definitionsV2Phase2
+        Self.definitions + Self.definitionsV2 + Self.definitionsV2Phase2 + Self.definitionsV2Phase3
     }
 
     func callTool(name: String, arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -112,6 +121,24 @@ final class ToolRegistry {
             return await callCaptureScreen(arguments)
         case "ocr_screen":
             return await callOCRScreen(arguments)
+        case "mouse_event":
+            return await callMouseEvent(arguments)
+        case "drag_and_drop":
+            return await callDragAndDrop(arguments)
+        case "scroll":
+            return await callScroll(arguments)
+        case "launch_app":
+            return await callLaunchApp(arguments)
+        case "activate_app":
+            return await callActivateApp(arguments)
+        case "quit_app":
+            return await callQuitApp(arguments)
+        case "wait_for_element":
+            return await callWaitForElement(arguments)
+        case "list_displays":
+            return await callListDisplays()
+        case "convert_coordinates":
+            return await callConvertCoordinates(arguments)
         default:
             return errorResult("Unknown tool '\(name)'.")
         }
