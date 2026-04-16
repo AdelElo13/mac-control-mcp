@@ -15,10 +15,9 @@ struct Phase3ToolsTests {
         #expect(expected.isSubset(of: names))
     }
 
-    @Test("total tool count is 36 (8+13+6+9)")
-    func totalToolCount() {
-        let registry = ToolRegistry(accessibility: AccessibilityController())
-        #expect(registry.toolDefinitions.count == 36)
+    @Test("phase 3 includes 9 input/lifecycle/display tools")
+    func phase3Count() {
+        #expect(ToolRegistry.definitionsV2Phase3.count == 9)
     }
 
     @Test("mouse_event requires action, x, y")

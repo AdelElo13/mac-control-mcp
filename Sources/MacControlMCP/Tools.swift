@@ -36,6 +36,7 @@ final class ToolRegistry {
     let mouse: MouseController
     let appLifecycle: AppLifecycleController
     let displays: DisplayController
+    let fileDialog: FileDialogController
 
     init(
         accessibility: AccessibilityController,
@@ -47,7 +48,8 @@ final class ToolRegistry {
         screen: ScreenController = ScreenController(),
         mouse: MouseController = MouseController(),
         appLifecycle: AppLifecycleController = AppLifecycleController(),
-        displays: DisplayController = DisplayController()
+        displays: DisplayController = DisplayController(),
+        fileDialog: FileDialogController = FileDialogController()
     ) {
         self.accessibility = accessibility
         self.elementCache = elementCache
@@ -59,10 +61,11 @@ final class ToolRegistry {
         self.mouse = mouse
         self.appLifecycle = appLifecycle
         self.displays = displays
+        self.fileDialog = fileDialog
     }
 
     var toolDefinitions: [MCPToolDefinition] {
-        Self.definitions + Self.definitionsV2 + Self.definitionsV2Phase2 + Self.definitionsV2Phase3
+        Self.definitions + Self.definitionsV2 + Self.definitionsV2Phase2 + Self.definitionsV2Phase3 + Self.definitionsV2Phase4
     }
 
     func callTool(name: String, arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -139,6 +142,18 @@ final class ToolRegistry {
             return await callListDisplays()
         case "convert_coordinates":
             return await callConvertCoordinates(arguments)
+        case "move_window":
+            return await callMoveWindow(arguments)
+        case "resize_window":
+            return await callResizeWindow(arguments)
+        case "set_window_state":
+            return await callSetWindowState(arguments)
+        case "file_dialog_set_path":
+            return await callFileDialogSetPath(arguments)
+        case "file_dialog_select_item":
+            return await callFileDialogSelectItem(arguments)
+        case "file_dialog_confirm":
+            return await callFileDialogConfirm(arguments)
         default:
             return errorResult("Unknown tool '\(name)'.")
         }

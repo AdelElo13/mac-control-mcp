@@ -92,6 +92,45 @@ actor WindowController {
         return true
     }
 
+    /// Move the window to an absolute position in global coordinates.
+    func moveWindow(pid: pid_t, index: Int, to point: CGPoint) -> Bool {
+        guard let window = window(pid: pid, index: index) else { return false }
+        var p = point
+        guard let value = AXValueCreate(.cgPoint, &p) else { return false }
+        let status = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value)
+        return status == .success
+    }
+
+    /// Resize a window to the given width/height.
+    func resizeWindow(pid: pid_t, index: Int, to size: CGSize) -> Bool {
+        guard let window = window(pid: pid, index: index) else { return false }
+        var s = size
+        guard let value = AXValueCreate(.cgSize, &s) else { return false }
+        let status = AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, value)
+        return status == .success
+    }
+
+    /// Apply a high-level state transition: minimize, unminimize, fullscreen,
+    /// exit_fullscreen, main (bring to main).
+    func setState(pid: pid_t, index: Int, state: String) -> Bool {
+        guard let window = window(pid: pid, index: index) else { return false }
+        switch state.lowercased() {
+        case "minimize", "minimized":
+            return AXUIElementSetAttributeValue(window, kAXMinimizedAttribute as CFString, kCFBooleanTrue) == .success
+        case "unminimize", "restore":
+            return AXUIElementSetAttributeValue(window, kAXMinimizedAttribute as CFString, kCFBooleanFalse) == .success
+        case "fullscreen":
+            return AXUIElementSetAttributeValue(window, "AXFullScreen" as CFString, kCFBooleanTrue) == .success
+        case "exit_fullscreen", "windowed":
+            return AXUIElementSetAttributeValue(window, "AXFullScreen" as CFString, kCFBooleanFalse) == .success
+        case "main", "raise":
+            _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+            return AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue) == .success
+        default:
+            return false
+        }
+    }
+
     /// Return the window `(pid, index)` pointer or nil if out of bounds.
     func window(pid: pid_t, index: Int) -> AXUIElement? {
         let appElement = AXUIElementCreateApplication(pid)
