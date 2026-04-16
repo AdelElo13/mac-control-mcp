@@ -1,0 +1,81 @@
+client:
+  name: basic
+  file-system: device-agnostic
+tools: {}
+targets:
+  "MacControlMCP-arm64-apple-macosx26.0-debug.module": ["<MacControlMCP-arm64-apple-macosx26.0-debug.module>"]
+  "PackageStructure": ["<PackageStructure>"]
+  "mac-control-mcp-arm64-apple-macosx26.0-debug.exe": ["<mac-control-mcp-arm64-apple-macosx26.0-debug.exe>"]
+  "main": ["<MacControlMCP-arm64-apple-macosx26.0-debug.module>","<mac-control-mcp-arm64-apple-macosx26.0-debug.exe>"]
+  "test": ["<MacControlMCP-arm64-apple-macosx26.0-debug.module>","<mac-control-mcp-arm64-apple-macosx26.0-debug.exe>"]
+default: "main"
+nodes:
+  "/Users/a/projects/mac-control-mcp/Sources/MacControlMCP/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+  "/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/mac-control-mcp":
+    is-mutated: true
+commands:
+  "/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/MacControlMCP.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/a/projects/mac-control-mcp/Sources/MacControlMCP/AccessibilityController.swift","/Users/a/projects/mac-control-mcp/Sources/MacControlMCP/MCPProtocol.swift","/Users/a/projects/mac-control-mcp/Sources/MacControlMCP/Tools.swift","/Users/a/projects/mac-control-mcp/Sources/MacControlMCP/main.swift"]
+    outputs: ["/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/MacControlMCP.build/sources"]
+    description: "Write auxiliary file /Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/MacControlMCP.build/sources"
+
+  "/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/mac-control-mcp-entitlement.plist":
+    tool: write-auxiliary-file
+    inputs: ["<entitlement-plist>","<com.apple.security.get-task-allow>"]
+    outputs: ["/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/mac-control-mcp-entitlement.plist"]
+    description: "Write auxiliary file /Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/mac-control-mcp-entitlement.plist"
+
+  "/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/mac-control-mcp.product/Objects.LinkFileList":
+    tool: write-auxiliary-file
+    inputs: ["<link-file-list>","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/MacControlMCP.build/AccessibilityController.swift.o","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/MacControlMCP.build/MCPProtocol.swift.o","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/MacControlMCP.build/Tools.swift.o","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/MacControlMCP.build/main.swift.o"]
+    outputs: ["/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/mac-control-mcp.product/Objects.LinkFileList"]
+    description: "Write auxiliary file /Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/mac-control-mcp.product/Objects.LinkFileList"
+
+  "/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt":
+    tool: write-auxiliary-file
+    inputs: ["<swift-get-version>","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"]
+    outputs: ["/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"]
+    always-out-of-date: "true"
+    description: "Write auxiliary file /Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+
+  "<MacControlMCP-arm64-apple-macosx26.0-debug.module>":
+    tool: phony
+    inputs: ["/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/MacControlMCP.build/AccessibilityController.swift.o","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/MacControlMCP.build/MCPProtocol.swift.o","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/MacControlMCP.build/Tools.swift.o","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/MacControlMCP.build/main.swift.o","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/Modules/MacControlMCP.swiftmodule"]
+    outputs: ["<MacControlMCP-arm64-apple-macosx26.0-debug.module>"]
+
+  "<mac-control-mcp-arm64-apple-macosx26.0-debug.exe>":
+    tool: phony
+    inputs: ["<mac-control-mcp-arm64-apple-macosx26.0-debug.exe-CodeSigning>"]
+    outputs: ["<mac-control-mcp-arm64-apple-macosx26.0-debug.exe>"]
+
+  "C.MacControlMCP-arm64-apple-macosx26.0-debug.module":
+    tool: shell
+    inputs: ["/Users/a/projects/mac-control-mcp/Sources/MacControlMCP/AccessibilityController.swift","/Users/a/projects/mac-control-mcp/Sources/MacControlMCP/MCPProtocol.swift","/Users/a/projects/mac-control-mcp/Sources/MacControlMCP/Tools.swift","/Users/a/projects/mac-control-mcp/Sources/MacControlMCP/main.swift","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/MacControlMCP.build/sources"]
+    outputs: ["/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/MacControlMCP.build/AccessibilityController.swift.o","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/MacControlMCP.build/MCPProtocol.swift.o","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/MacControlMCP.build/Tools.swift.o","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/MacControlMCP.build/main.swift.o","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/Modules/MacControlMCP.swiftmodule"]
+    description: "Compiling Swift Module 'MacControlMCP' (4 sources)"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-module-name","MacControlMCP","-emit-dependencies","-emit-module","-emit-module-path","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/Modules/MacControlMCP.swiftmodule","-output-file-map","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/MacControlMCP.build/output-file-map.json","-incremental","-c","@/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/MacControlMCP.build/sources","-I","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/Modules","-target","arm64-apple-macosx14.0","-incremental","-enable-batch-mode","-serialize-diagnostics","-index-store-path","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/index/store","-Onone","-enable-testing","-j10","-DSWIFT_PACKAGE","-DDEBUG","-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE","-module-cache-path","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/ModuleCache","-parseable-output","-Xfrontend","-entry-point-function-name","-Xfrontend","MacControlMCP_main","-swift-version","6","-plugin-path","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g","-Xcc","-isysroot","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk","-Xcc","-F","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-Xcc","-F","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-Xcc","-fPIC","-Xcc","-g","-package-name","mac_control_mcp"]
+
+  "C.mac-control-mcp-arm64-apple-macosx26.0-debug.exe":
+    tool: shell
+    inputs: ["/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/MacControlMCP.build/AccessibilityController.swift.o","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/MacControlMCP.build/MCPProtocol.swift.o","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/MacControlMCP.build/Tools.swift.o","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/MacControlMCP.build/main.swift.o","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/mac-control-mcp.product/Objects.LinkFileList"]
+    outputs: ["/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/mac-control-mcp"]
+    description: "Linking ./.build/arm64-apple-macosx/debug/mac-control-mcp"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-L","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug","-o","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/mac-control-mcp","-module-name","mac_control_mcp","-Xlinker","-no_warn_duplicate_libraries","-emit-executable","-Xlinker","-alias","-Xlinker","_MacControlMCP_main","-Xlinker","_main","-Xlinker","-rpath","-Xlinker","@loader_path","@/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/mac-control-mcp.product/Objects.LinkFileList","-Xlinker","-rpath","-Xlinker","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-6.2/macosx","-target","arm64-apple-macosx14.0","-Xlinker","-add_ast_path","-Xlinker","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/Modules/MacControlMCP.swiftmodule","-plugin-path","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g"]
+
+  "C.mac-control-mcp-arm64-apple-macosx26.0-debug.exe-entitlements":
+    tool: shell
+    inputs: ["/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/mac-control-mcp","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/mac-control-mcp-entitlement.plist"]
+    outputs: ["<mac-control-mcp-arm64-apple-macosx26.0-debug.exe-CodeSigning>"]
+    description: "Applying debug entitlements to ./.build/arm64-apple-macosx/debug/mac-control-mcp"
+    args: ["codesign","--force","--sign","-","--entitlements","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/mac-control-mcp-entitlement.plist","/Users/a/projects/mac-control-mcp/.build/arm64-apple-macosx/debug/mac-control-mcp"]
+
+  "PackageStructure":
+    tool: package-structure-tool
+    inputs: ["/Users/a/projects/mac-control-mcp/Sources/MacControlMCP/","/Users/a/projects/mac-control-mcp/Package.swift","/Users/a/projects/mac-control-mcp/Package.resolved"]
+    outputs: ["<PackageStructure>"]
+    description: "Planning build"
+    allow-missing-inputs: true
+
