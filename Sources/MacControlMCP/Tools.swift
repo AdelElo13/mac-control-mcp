@@ -27,13 +27,27 @@ struct ToolCallResult: Sendable {
 
 final class ToolRegistry {
     let accessibility: AccessibilityController
+    let elementCache: ElementCache
+    let windows: WindowController
+    let menus: MenuController
+    let clipboard: ClipboardController
 
-    init(accessibility: AccessibilityController) {
+    init(
+        accessibility: AccessibilityController,
+        elementCache: ElementCache = ElementCache(),
+        windows: WindowController = WindowController(),
+        menus: MenuController = MenuController(),
+        clipboard: ClipboardController = ClipboardController()
+    ) {
         self.accessibility = accessibility
+        self.elementCache = elementCache
+        self.windows = windows
+        self.menus = menus
+        self.clipboard = clipboard
     }
 
     var toolDefinitions: [MCPToolDefinition] {
-        Self.definitions
+        Self.definitions + Self.definitionsV2
     }
 
     func callTool(name: String, arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -54,6 +68,32 @@ final class ToolRegistry {
             return await callFocusedApp()
         case "list_apps":
             return await callListApps()
+        case "get_ui_tree":
+            return await callGetUITree(arguments)
+        case "find_elements":
+            return await callFindElements(arguments)
+        case "query_elements":
+            return await callQueryElements(arguments)
+        case "get_element_attributes":
+            return await callGetElementAttributes(arguments)
+        case "set_element_attribute":
+            return await callSetElementAttribute(arguments)
+        case "perform_element_action":
+            return await callPerformElementAction(arguments)
+        case "list_windows":
+            return await callListWindows(arguments)
+        case "focus_window":
+            return await callFocusWindow(arguments)
+        case "click_menu_path":
+            return await callClickMenuPath(arguments)
+        case "list_menu_titles":
+            return await callListMenuTitles(arguments)
+        case "clipboard_read":
+            return await callClipboardRead()
+        case "clipboard_write":
+            return await callClipboardWrite(arguments)
+        case "permissions_status":
+            return await callPermissionsStatus()
         default:
             return errorResult("Unknown tool '\(name)'.")
         }
@@ -328,7 +368,7 @@ final class ToolRegistry {
         )
     }
 
-    private func parsePID(_ value: JSONValue?) -> pid_t? {
+    func parsePID(_ value: JSONValue?) -> pid_t? {
         guard let integer = value?.intValue, integer > 0, integer <= Int(Int32.max) else {
             return nil
         }
@@ -384,19 +424,19 @@ final class ToolRegistry {
         }
     }
 
-    private func invalidArgument(_ message: String) -> ToolCallResult {
+    func invalidArgument(_ message: String) -> ToolCallResult {
         errorResult(message, ["ok": .bool(false), "error": .string(message)])
     }
 
-    private func errorResult(_ message: String, _ payload: [String: JSONValue] = [:]) -> ToolCallResult {
+    func errorResult(_ message: String, _ payload: [String: JSONValue] = [:]) -> ToolCallResult {
         ToolCallResult(text: message, structuredContent: .object(payload), isError: true)
     }
 
-    private func successResult(_ message: String, _ payload: [String: JSONValue]) -> ToolCallResult {
+    func successResult(_ message: String, _ payload: [String: JSONValue]) -> ToolCallResult {
         ToolCallResult(text: message, structuredContent: .object(payload), isError: false)
     }
 
-    private static func schema(properties: [String: JSONValue], required: [String] = []) -> JSONValue {
+    static func schema(properties: [String: JSONValue], required: [String] = []) -> JSONValue {
         var schema: [String: JSONValue] = [
             "type": .string("object"),
             "properties": .object(properties),

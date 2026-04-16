@@ -15,6 +15,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "MacControlMCP"
+        ),
+        .testTarget(
+            name: "MacControlMCPTests",
+            dependencies: ["MacControlMCP"]
         )
     ]
 )

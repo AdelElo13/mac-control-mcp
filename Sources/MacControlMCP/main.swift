@@ -91,7 +91,7 @@ final class MCPServer {
                 ]),
                 "serverInfo": .object([
                     "name": .string("mac-control-mcp"),
-                    "version": .string("0.1.0")
+                    "version": .string("0.2.0")
                 ]),
                 "accessibilityPermission": .bool(permission)
             ])

@@ -37,6 +37,25 @@ actor AccessibilityController {
         let isActive: Bool
     }
 
+    /// A node in a UI tree walk. `children` is only populated when the walk
+    /// reached that depth; leaves have an empty array.
+    struct TreeNode: Sendable {
+        let element: AXUIElement
+        let role: String?
+        let title: String?
+        let value: String?
+        let position: Point?
+        let size: Size?
+        let depth: Int
+        let childIndices: [Int]   // indices into the flat array returned by treeWalk
+    }
+
+    /// Result of querying attributes. Missing attrs are omitted.
+    struct AttributeValues: Codable, Sendable {
+        let values: [String: String]
+        let unavailable: [String]
+    }
+
     private let actionableRoles: Set<String> = [
         "AXButton",
         "AXCheckBox",
@@ -226,6 +245,247 @@ actor AccessibilityController {
 
     func getElementInfo(element: AXUIElement) -> ElementInfo {
         buildElementInfo(element: element, depth: nil, cachedRole: nil)
+    }
+
+    // MARK: - v0.2.0 deep UI
+
+    /// Walks the AX tree for an app and returns every node (including
+    /// non-actionable containers) up to `maxDepth`. Each node's `childIndices`
+    /// points into the returned array so the tree can be reconstructed.
+    func treeWalk(pid: pid_t, maxDepth: Int) -> [TreeNode] {
+        let root = AXUIElementCreateApplication(pid)
+        var visited = Set<UInt>()
+        var nodes: [TreeNode] = []
+
+        func recurse(element: AXUIElement, depth: Int) -> Int {
+            let key = UInt(bitPattern: Unmanaged.passUnretained(element).toOpaque())
+            guard visited.insert(key).inserted else { return -1 }
+
+            let placeholderIndex = nodes.count
+            nodes.append(
+                TreeNode(
+                    element: element,
+                    role: stringAttribute(of: element, attribute: kAXRoleAttribute as CFString),
+                    title: title(for: element),
+                    value: stringAttribute(of: element, attribute: kAXValueAttribute as CFString),
+                    position: pointAttribute(of: element, attribute: kAXPositionAttribute as CFString)
+                        .map { Point(x: Double($0.x), y: Double($0.y)) },
+                    size: sizeAttribute(of: element, attribute: kAXSizeAttribute as CFString)
+                        .map { Size(width: Double($0.width), height: Double($0.height)) },
+                    depth: depth,
+                    childIndices: []
+                )
+            )
+
+            guard depth < max(1, maxDepth) else { return placeholderIndex }
+
+            var childIndices: [Int] = []
+            for child in childElements(of: element) {
+                let idx = recurse(element: child, depth: depth + 1)
+                if idx >= 0 { childIndices.append(idx) }
+            }
+
+            let node = nodes[placeholderIndex]
+            nodes[placeholderIndex] = TreeNode(
+                element: node.element,
+                role: node.role,
+                title: node.title,
+                value: node.value,
+                position: node.position,
+                size: node.size,
+                depth: node.depth,
+                childIndices: childIndices
+            )
+            return placeholderIndex
+        }
+
+        _ = recurse(element: root, depth: 0)
+        return nodes
+    }
+
+    /// Returns all elements matching the given filters. Unlike `findElement`
+    /// which returns only the first match.
+    func findElements(
+        pid: pid_t,
+        role: String?,
+        title: String?,
+        value: String?,
+        maxDepth: Int = 32,
+        limit: Int = 100
+    ) -> [(AXUIElement, ElementInfo)] {
+        let root = AXUIElementCreateApplication(pid)
+        var visited = Set<UInt>()
+        var matches: [(AXUIElement, ElementInfo)] = []
+
+        _ = walk(element: root, depth: 0, maxDepth: maxDepth, visited: &visited) { element, depth, currentRole in
+            guard matches.count < limit else { return true }
+
+            if self.matchesFilter(element: element, currentRole: currentRole, role: role, title: title, value: value) {
+                matches.append((element, self.buildElementInfo(element: element, depth: depth, cachedRole: currentRole)))
+            }
+
+            return false
+        }
+
+        return matches
+    }
+
+    /// Regex-aware search. Matches on role/title/value with case-insensitive
+    /// regex semantics. Invalid regex falls back to literal substring.
+    func queryElements(
+        pid: pid_t,
+        rolePattern: String?,
+        titlePattern: String?,
+        valuePattern: String?,
+        maxDepth: Int = 32,
+        limit: Int = 200
+    ) -> [(AXUIElement, ElementInfo)] {
+        let roleRegex = rolePattern.flatMap { try? NSRegularExpression(pattern: $0, options: .caseInsensitive) }
+        let titleRegex = titlePattern.flatMap { try? NSRegularExpression(pattern: $0, options: .caseInsensitive) }
+        let valueRegex = valuePattern.flatMap { try? NSRegularExpression(pattern: $0, options: .caseInsensitive) }
+
+        let root = AXUIElementCreateApplication(pid)
+        var visited = Set<UInt>()
+        var matches: [(AXUIElement, ElementInfo)] = []
+
+        _ = walk(element: root, depth: 0, maxDepth: maxDepth, visited: &visited) { element, depth, currentRole in
+            guard matches.count < limit else { return true }
+
+            let roleOk = Self.matches(regex: roleRegex, literal: rolePattern, candidate: currentRole)
+            let titleCandidate = self.title(for: element) ?? ""
+            let titleOk = Self.matches(regex: titleRegex, literal: titlePattern, candidate: titleCandidate)
+            let valueCandidate = self.stringAttribute(of: element, attribute: kAXValueAttribute as CFString) ?? ""
+            let valueOk = Self.matches(regex: valueRegex, literal: valuePattern, candidate: valueCandidate)
+
+            if roleOk && titleOk && valueOk {
+                matches.append((element, self.buildElementInfo(element: element, depth: depth, cachedRole: currentRole)))
+            }
+
+            return false
+        }
+
+        return matches
+    }
+
+    /// List every AX attribute name exposed by this element.
+    func attributeNames(element: AXUIElement) -> [String] {
+        var names: CFArray?
+        let status = AXUIElementCopyAttributeNames(element, &names)
+        guard status == .success, let names = names as? [String] else { return [] }
+        return names
+    }
+
+    /// List every AX action name supported by this element (e.g. AXPress).
+    func actionNames(element: AXUIElement) -> [String] {
+        var names: CFArray?
+        let status = AXUIElementCopyActionNames(element, &names)
+        guard status == .success, let names = names as? [String] else { return [] }
+        return names
+    }
+
+    /// Read multiple attributes at once. Returns their string representations
+    /// plus a list of attributes that weren't available on this element.
+    func getAttributes(element: AXUIElement, names: [String]) -> AttributeValues {
+        var values: [String: String] = [:]
+        var unavailable: [String] = []
+
+        for name in names {
+            guard let raw = attributeValue(of: element, attribute: name as CFString) else {
+                unavailable.append(name)
+                continue
+            }
+            values[name] = Self.describe(raw)
+        }
+
+        return AttributeValues(values: values, unavailable: unavailable)
+    }
+
+    /// Set an attribute value. Accepts String, Bool, or Number values.
+    /// Returns the AXError rawValue; 0 (.success) means it worked.
+    func setAttribute(element: AXUIElement, name: String, value: JSONValue) -> Int32 {
+        let cfValue: CFTypeRef
+        switch value {
+        case .string(let s):
+            cfValue = s as CFString
+        case .bool(let b):
+            cfValue = NSNumber(value: b)
+        case .number(let n):
+            cfValue = NSNumber(value: n)
+        case .null:
+            return AXError.illegalArgument.rawValue
+        case .array, .object:
+            return AXError.illegalArgument.rawValue
+        }
+        let status = AXUIElementSetAttributeValue(element, name as CFString, cfValue)
+        return status.rawValue
+    }
+
+    /// Perform an arbitrary AX action on an element (AXPress, AXShowMenu,
+    /// AXIncrement, AXDecrement, AXCancel, etc). Returns 0 on success.
+    func performAction(element: AXUIElement, action: String) -> Int32 {
+        let status = AXUIElementPerformAction(element, action as CFString)
+        return status.rawValue
+    }
+
+    // MARK: - helpers for v0.2.0
+
+    private func matchesFilter(
+        element: AXUIElement,
+        currentRole: String,
+        role: String?,
+        title: String?,
+        value: String?
+    ) -> Bool {
+        if let role, !role.isEmpty, currentRole.range(of: role, options: [.caseInsensitive]) == nil {
+            return false
+        }
+        if let title, !title.isEmpty {
+            let candidate = self.title(for: element) ?? ""
+            if candidate.range(of: title, options: [.caseInsensitive]) == nil { return false }
+        }
+        if let value, !value.isEmpty {
+            let candidate = stringAttribute(of: element, attribute: kAXValueAttribute as CFString) ?? ""
+            if candidate.range(of: value, options: [.caseInsensitive]) == nil { return false }
+        }
+        return true
+    }
+
+    private static func matches(regex: NSRegularExpression?, literal: String?, candidate: String) -> Bool {
+        if let regex {
+            let range = NSRange(candidate.startIndex..., in: candidate)
+            return regex.firstMatch(in: candidate, range: range) != nil
+        }
+        guard let literal, !literal.isEmpty else { return true }
+        return candidate.range(of: literal, options: [.caseInsensitive]) != nil
+    }
+
+    private static func describe(_ value: AnyObject) -> String {
+        if let s = value as? String { return s }
+        if let n = value as? NSNumber { return n.stringValue }
+        if let arr = value as? [AnyObject] { return "[\(arr.count) items]" }
+        if CFGetTypeID(value) == AXUIElementGetTypeID() { return "<AXUIElement>" }
+        if CFGetTypeID(value) == AXValueGetTypeID() {
+            let axValue = unsafeDowncast(value, to: AXValue.self)
+            switch AXValueGetType(axValue) {
+            case .cgPoint:
+                var p = CGPoint.zero
+                if AXValueGetValue(axValue, .cgPoint, &p) { return "point(\(p.x),\(p.y))" }
+            case .cgSize:
+                var s = CGSize.zero
+                if AXValueGetValue(axValue, .cgSize, &s) { return "size(\(s.width),\(s.height))" }
+            case .cgRect:
+                var r = CGRect.zero
+                if AXValueGetValue(axValue, .cgRect, &r) {
+                    return "rect(\(r.origin.x),\(r.origin.y),\(r.size.width),\(r.size.height))"
+                }
+            case .cfRange:
+                var rng = CFRange(location: 0, length: 0)
+                if AXValueGetValue(axValue, .cfRange, &rng) { return "range(\(rng.location),\(rng.length))" }
+            default:
+                break
+            }
+        }
+        return String(describing: value)
     }
 
     private func buildElementInfo(element: AXUIElement, depth: Int?, cachedRole: String?) -> ElementInfo {
