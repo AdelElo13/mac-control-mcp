@@ -48,4 +48,30 @@ enum PasteboardSnapshot {
             pasteboard.writeObjects(rebuilt)
         }
     }
+
+    /// Capture → run async body → restore, with the restore guaranteed to
+    /// complete synchronously before the caller sees the body's return
+    /// value. Both success and thrown-error paths restore.
+    ///
+    /// Previously callers used `defer { Task { @MainActor in restore(...) } }`,
+    /// which is fire-and-forget — Codex review v2 flagged that a caller could
+    /// observe a cleared clipboard if the next pasteboard operation beat the
+    /// detached Task to the main actor. Using this helper eliminates that race.
+    ///
+    /// `nonisolated` + `@Sendable` on the closure lets actor callers use it
+    /// without tripping strict-concurrency sending-value errors; the capture/
+    /// restore calls internally hop to MainActor via `MainActor.run`.
+    nonisolated static func withSnapshot<T: Sendable>(
+        _ body: @Sendable () async throws -> T
+    ) async rethrows -> T {
+        let snapshot = await MainActor.run { capture() }
+        do {
+            let result = try await body()
+            await MainActor.run { restore(snapshot) }
+            return result
+        } catch {
+            await MainActor.run { restore(snapshot) }
+            throw error
+        }
+    }
 }

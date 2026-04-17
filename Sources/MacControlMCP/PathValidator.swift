@@ -14,6 +14,7 @@ enum PathValidator {
         case outsideAllowedRoots(String)
         case unresolvable(String)
         case missingParent(String)
+        case targetIsSymlink(String)
 
         var description: String {
             switch self {
@@ -23,6 +24,8 @@ enum PathValidator {
                 return "output_path '\(p)' cannot be resolved."
             case .missingParent(let p):
                 return "parent directory for '\(p)' does not exist."
+            case .targetIsSymlink(let p):
+                return "output_path '\(p)' already exists as a symlink; refusing to overwrite (could redirect the write outside allowed roots)."
             }
         }
     }
@@ -65,6 +68,24 @@ enum PathValidator {
         // Rebuild the final path against the resolved parent to ensure no
         // shenanigans in the filename itself.
         let filename = url.lastPathComponent
-        return resolvedParent.appendingPathComponent(filename).path
+        let finalPath = resolvedParent.appendingPathComponent(filename).path
+
+        // If the target already exists as a symbolic link, refuse to
+        // overwrite it. Codex v2 flagged that a pre-existing symlink under
+        // an allowed parent could redirect the write outside allowed roots
+        // (e.g. a symlink at ~/Desktop/harmless.png → /etc/hosts). We do
+        // not want the caller to be able to chain a directory-traversal
+        // attack by planting a symlink and then invoking capture_screen.
+        var isSymlink = false
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: finalPath),
+           let type = attrs[.type] as? FileAttributeType,
+           type == .typeSymbolicLink {
+            isSymlink = true
+        }
+        guard !isSymlink else {
+            throw ValidationError.targetIsSymlink(path)
+        }
+
+        return finalPath
     }
 }

@@ -63,15 +63,18 @@ struct Phase5ToolsTests {
         #expect(r.isError == true)
     }
 
-    @Test("clipboard_clear returns ok=true")
-    func clipboardClearReturnsOK() async {
-        // NOTE: we don't verify the pasteboard state here because
-        // NSPasteboard is process-global and test suites run in parallel —
-        // the ToolRegistryV2Tests clipboard round-trip gives us the
-        // round-trip coverage; here we only assert the tool wiring.
+    @Test("clipboard_clear is registered (tool wiring only)")
+    func clipboardClearRegistered() {
+        // NOTE: we intentionally do NOT invoke clipboard_clear here —
+        // NSPasteboard is a process-global and Swift Testing runs test
+        // suites in parallel, so calling clipboard_clear would race with
+        // ToolRegistryV2Tests.clipboardRoundTrip and sporadically wipe
+        // that test's marker between write and read. Round-trip coverage
+        // lives in ToolRegistryV2Tests; here we only assert the name is
+        // registered.
         let registry = ToolRegistry(accessibility: AccessibilityController())
-        let result = await registry.callTool(name: "clipboard_clear", arguments: [:])
-        #expect(result.isError == false)
+        let names = Set(registry.toolDefinitions.map { $0.name })
+        #expect(names.contains("clipboard_clear"))
     }
 
     @Test("move_window_to_display validates display_index")

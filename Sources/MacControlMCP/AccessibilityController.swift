@@ -227,7 +227,11 @@ actor AccessibilityController {
         return true
     }
 
-    func pressKey(keyCode: CGKeyCode, modifiers: [CGEventFlags] = []) -> Bool {
+    // `nonisolated` so @Sendable closures (notably the pasteTextViaClipboard
+    // body passed to PasteboardSnapshot.withSnapshot) can post keystrokes
+    // without crossing actor boundaries. CGEvent posting is stateless
+    // relative to this actor.
+    nonisolated func pressKey(keyCode: CGKeyCode, modifiers: [CGEventFlags] = []) -> Bool {
         guard
             let source = CGEventSource(stateID: .hidSystemState),
             let keyDown = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
@@ -625,8 +629,12 @@ actor AccessibilityController {
     }
 
     private func pointAttribute(of element: AXUIElement, attribute: CFString) -> CGPoint? {
-        guard let raw = attributeValue(of: element, attribute: attribute) else { return nil }
-        guard CFGetTypeID(raw) == AXValueGetTypeID() else { return nil }
+        // Every conversion step is guarded — Optional return signals
+        // "no valid geometry" cleanly. AXValueGetValue returns false if
+        // the stored type doesn't match the requested kind, in which case
+        // the pointee is undefined (NOT zero), so we must honour the bool.
+        guard let raw = attributeValue(of: element, attribute: attribute),
+              CFGetTypeID(raw) == AXValueGetTypeID() else { return nil }
         let value = unsafeDowncast(raw, to: AXValue.self)
         guard AXValueGetType(value) == .cgPoint else { return nil }
         var point = CGPoint.zero
@@ -635,8 +643,8 @@ actor AccessibilityController {
     }
 
     private func sizeAttribute(of element: AXUIElement, attribute: CFString) -> CGSize? {
-        guard let raw = attributeValue(of: element, attribute: attribute) else { return nil }
-        guard CFGetTypeID(raw) == AXValueGetTypeID() else { return nil }
+        guard let raw = attributeValue(of: element, attribute: attribute),
+              CFGetTypeID(raw) == AXValueGetTypeID() else { return nil }
         let value = unsafeDowncast(raw, to: AXValue.self)
         guard AXValueGetType(value) == .cgSize else { return nil }
         var size = CGSize.zero
@@ -680,21 +688,18 @@ actor AccessibilityController {
     }
 
     private func pasteTextViaClipboard(_ text: String) async -> Bool {
-        // Capture full pasteboard state (all items + types) so restoration
-        // is lossless and always happens, even if the paste fails.
-        let snapshot = await MainActor.run { PasteboardSnapshot.capture() }
-        defer {
-            Task { @MainActor in PasteboardSnapshot.restore(snapshot) }
+        // withSnapshot guarantees restore runs before we return (was a
+        // detached Task in the previous version, which Codex flagged as a
+        // race against the next pasteboard op).
+        await PasteboardSnapshot.withSnapshot {
+            let setOK = await MainActor.run { () -> Bool in
+                NSPasteboard.general.clearContents()
+                return NSPasteboard.general.setString(text, forType: .string)
+            }
+            guard setOK else { return false }
+            let pasted = pressKey(keyCode: 9, modifiers: [.maskCommand])
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            return pasted
         }
-
-        let setOK = await MainActor.run { () -> Bool in
-            NSPasteboard.general.clearContents()
-            return NSPasteboard.general.setString(text, forType: .string)
-        }
-        guard setOK else { return false }
-
-        let pasted = pressKey(keyCode: 9, modifiers: [.maskCommand])
-        try? await Task.sleep(nanoseconds: 50_000_000)
-        return pasted
     }
 }

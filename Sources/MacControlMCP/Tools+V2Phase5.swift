@@ -535,26 +535,31 @@ extension ToolRegistry {
         let deadline = Date().addingTimeInterval(timeout)
 
         while Date() < deadline {
-            for app in NSWorkspace.shared.runningApplications {
-                if let bundleID, app.bundleIdentifier == bundleID {
-                    return successResult(
-                        "App appeared.",
-                        [
-                            "ok": .bool(true),
-                            "pid": .number(Double(app.processIdentifier)),
-                            "name": app.localizedName.map(JSONValue.string) ?? .null,
-                            "bundle_id": app.bundleIdentifier.map(JSONValue.string) ?? .null
-                        ]
-                    )
+            // NSWorkspace is driven through the main actor — looping through
+            // runningApplications off-main was flagged by Codex v2. We grab
+            // a snapshot (pid/name/bundle id triples) on the main thread and
+            // search it here instead.
+            struct Snapshot: Sendable {
+                let pid: pid_t
+                let name: String?
+                let bundleID: String?
+            }
+            let snapshot = await MainActor.run {
+                NSWorkspace.shared.runningApplications.map {
+                    Snapshot(pid: $0.processIdentifier, name: $0.localizedName, bundleID: $0.bundleIdentifier)
                 }
-                if let name, (app.localizedName ?? "").lowercased() == name {
+            }
+            for app in snapshot {
+                let matchesBundle = bundleID.map { app.bundleID == $0 } ?? false
+                let matchesName = name.map { (app.name ?? "").lowercased() == $0 } ?? false
+                if matchesBundle || matchesName {
                     return successResult(
                         "App appeared.",
                         [
                             "ok": .bool(true),
-                            "pid": .number(Double(app.processIdentifier)),
-                            "name": app.localizedName.map(JSONValue.string) ?? .null,
-                            "bundle_id": app.bundleIdentifier.map(JSONValue.string) ?? .null
+                            "pid": .number(Double(app.pid)),
+                            "name": app.name.map(JSONValue.string) ?? .null,
+                            "bundle_id": app.bundleID.map(JSONValue.string) ?? .null
                         ]
                     )
                 }

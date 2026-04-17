@@ -21,30 +21,25 @@ actor FileDialogController {
         pressShortcut(key: 5 /* g */, flags: [.maskCommand, .maskShift])
         try? await Task.sleep(nanoseconds: 250_000_000)
 
-        // Snapshot the full pasteboard state (all items, all types) so we
-        // can restore it even if something goes wrong mid-flow. Previously
-        // only plain text was captured and an early `return Result(...)`
-        // on setString failure leaked the cleared clipboard.
-        let snapshot = await MainActor.run { PasteboardSnapshot.capture() }
-        defer {
-            Task { @MainActor in PasteboardSnapshot.restore(snapshot) }
-        }
+        // PasteboardSnapshot.withSnapshot captures the entire clipboard
+        // and guarantees restore runs synchronously before we return,
+        // closing the race window Codex review v2 flagged.
+        return await PasteboardSnapshot.withSnapshot {
+            let setOK = await MainActor.run { () -> Bool in
+                NSPasteboard.general.clearContents()
+                return NSPasteboard.general.setString(path, forType: .string)
+            }
+            guard setOK else {
+                return Result(success: false, detail: "Pasteboard refused the path.")
+            }
 
-        let setOK = await MainActor.run { () -> Bool in
-            NSPasteboard.general.clearContents()
-            return NSPasteboard.general.setString(path, forType: .string)
+            pressShortcut(key: 9 /* v */, flags: [.maskCommand])
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            // Confirm the "Go to folder" sheet
+            pressShortcut(key: 36 /* return */, flags: [])
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            return Result(success: true, detail: "Navigated to \(path).")
         }
-        guard setOK else {
-            return Result(success: false, detail: "Pasteboard refused the path.")
-        }
-
-        pressShortcut(key: 9 /* v */, flags: [.maskCommand])
-        try? await Task.sleep(nanoseconds: 200_000_000)
-        // Confirm the "Go to folder" sheet
-        pressShortcut(key: 36 /* return */, flags: [])
-        try? await Task.sleep(nanoseconds: 250_000_000)
-
-        return Result(success: true, detail: "Navigated to \(path).")
     }
 
     /// Confirm the dialog by pressing Return — equivalent to clicking the
@@ -83,7 +78,10 @@ actor FileDialogController {
 
     // MARK: - Helpers
 
-    private func pressShortcut(key: CGKeyCode, flags: CGEventFlags) {
+    // `nonisolated` because CGEvent posting is stateless with respect to
+    // this actor — we don't read/write any of our stored properties here.
+    // This lets the @Sendable closure passed to withSnapshot call us.
+    nonisolated private func pressShortcut(key: CGKeyCode, flags: CGEventFlags) {
         guard let source = CGEventSource(stateID: .hidSystemState),
               let down = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false)

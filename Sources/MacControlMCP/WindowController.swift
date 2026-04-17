@@ -156,18 +156,21 @@ actor WindowController {
         AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleRef)
         let title = titleRef as? String
 
-        // Extract position/size but surface the "unknown" case clearly via
-        // the optional return values so callers can distinguish a legit
-        // zero-origin window from one where the AX tree didn't hand us
-        // valid geometry at all.
+        // Extract position/size; we check every step of the AX chain so
+        // malformed AX responses produce documented zero-output rather than
+        // silent misreporting. AXValueGetValue itself returns a bool that
+        // must be honoured — if the conversion fails, the pointee is
+        // undefined, not zero.
         var point = CGPoint.zero
         var positionRef: CFTypeRef?
         if AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &positionRef) == .success,
            let raw = positionRef,
            CFGetTypeID(raw) == AXValueGetTypeID() {
             let axValue = unsafeDowncast(raw, to: AXValue.self)
-            if AXValueGetType(axValue) == .cgPoint {
-                _ = AXValueGetValue(axValue, .cgPoint, &point)
+            var tmp = CGPoint.zero
+            if AXValueGetType(axValue) == .cgPoint,
+               AXValueGetValue(axValue, .cgPoint, &tmp) {
+                point = tmp
             }
         }
 
@@ -177,8 +180,10 @@ actor WindowController {
            let raw = sizeRef,
            CFGetTypeID(raw) == AXValueGetTypeID() {
             let axValue = unsafeDowncast(raw, to: AXValue.self)
-            if AXValueGetType(axValue) == .cgSize {
-                _ = AXValueGetValue(axValue, .cgSize, &size)
+            var tmp = CGSize.zero
+            if AXValueGetType(axValue) == .cgSize,
+               AXValueGetValue(axValue, .cgSize, &tmp) {
+                size = tmp
             }
         }
 
