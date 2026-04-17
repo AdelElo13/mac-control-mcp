@@ -389,6 +389,12 @@ struct RealAppMatrixTests {
 /// If every real-world test ends up in a skip state, the suite is green
 /// but proved nothing. This guard runs at suite end and fails if NO test
 /// produced a strict .pass Outcome.
+///
+/// Environment assumption (Codex v9 #3): mac-control-mcp is a user-machine
+/// tool, not a headless-CI tool. Tests run on an interactive macOS session
+/// where Finder is always running with at least one visible window. If
+/// this assumption changes (e.g. running in CI with fake AX), this guard
+/// correctly fails loudly instead of silently passing.
 @Suite("Real-world coverage sanity", .serialized)
 struct RealWorldCoverageGuard {
     @Test("at least one real-app assertion must strictly pass")

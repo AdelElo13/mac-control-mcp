@@ -247,19 +247,33 @@ struct ControlZooMatrixTests {
                 "\(label): click label did not change (\(beforeLabel ?? "nil") → \(afterLabel ?? "nil"))")
     }
 
-    // Codex v8 #2 — NSSecureTextField: AXValue is returned as a string of
-    // bullet chars, one per plaintext character. Writing plaintext X shows
-    // up as len(X) bullets — that's the verification.
+    // Codex v8 #2 + v9 #1 — NSSecureTextField verification.
+    //
+    // AXValue returns len(plaintext) bullet chars. A constant-length test
+    // string could false-pass if a prior run left the field with the
+    // same length (no-op write). Fix: write a value of DIFFERENT length
+    // than the current value. We read first, then construct a marker
+    // whose length differs, guaranteeing any no-op would be visible.
     func runSecureFieldWrite(driver: MCPDriver, elementID: String?, label: String) throws {
         guard let elementID else { Issue.record("\(label): missing element id"); return }
-        let plaintext = "mcp_pw_\(UUID().uuidString.prefix(6))"
+        let before = driver.readValue(elementID: elementID) ?? ""
+        // Pick a length that's provably different from the current one.
+        // We use UUID to avoid collisions and ensure length variation
+        // (UUID is 36 chars; truncate to either 10 or 20 depending on
+        // whether the current value is short or long).
+        let targetLen = before.count < 15 ? 20 : 10
+        let plaintext = String(UUID().uuidString.prefix(targetLen)).replacingOccurrences(of: "-", with: "x")
+        #expect(plaintext.count != before.count,
+                "\(label): test setup failure — new value has same length as old")
         driver.setValueString(elementID: elementID, value: plaintext)
         guard let bullets = driver.readValue(elementID: elementID) else {
             Issue.record("\(label) could not read AXValue after write")
             return
         }
         #expect(bullets.count == plaintext.count,
-                "\(label): wrote \(plaintext.count) chars, got \(bullets.count) bullets")
+                "\(label): wrote \(plaintext.count) chars, got \(bullets.count) bullets (before had \(before.count))")
+        #expect(bullets.count != before.count,
+                "\(label): bullet count did not change from initial \(before.count) — possible no-op write")
     }
 
     // Codex v8 #2 — NSPopUpButton: AXValue set is a no-op; the real flow
