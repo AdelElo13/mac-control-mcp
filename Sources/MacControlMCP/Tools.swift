@@ -704,7 +704,16 @@ enum KeyCodeMap {
         "left": 123, "left_arrow": 123, "right": 124, "right_arrow": 124,
         "down": 125, "down_arrow": 125, "up": 126, "up_arrow": 126,
         "f1": 122, "f2": 120, "f3": 99, "f4": 118, "f5": 96, "f6": 97,
-        "f7": 98, "f8": 100, "f9": 101, "f10": 109, "f11": 103, "f12": 111
+        "f7": 98, "f8": 100, "f9": 101, "f10": 109, "f11": 103, "f12": 111,
+        // Physical modifier keys — for key_down/key_up to hold/release
+        // shift/control/etc. Separate from ModifierMap (which maps names
+        // to CGEventFlags for combining with other keys).
+        "shift": 56, "left_shift": 56, "right_shift": 60,
+        "control": 59, "left_control": 59, "right_control": 62, "ctrl": 59,
+        "option": 58, "left_option": 58, "right_option": 61, "alt": 58,
+        "command": 55, "left_command": 55, "right_command": 54, "cmd": 55,
+        "fn": 63, "function": 63,
+        "caps_lock": 57, "caps": 57
     ]
 
     static func keyCode(for key: String) -> CGKeyCode? {
