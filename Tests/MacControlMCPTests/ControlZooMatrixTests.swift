@@ -476,6 +476,12 @@ final class MCPDriver {
         ) ?? .null
     }
 
+    /// Read one MCP response off stdout. The server emits
+    /// newline-delimited JSON (NDJSON) per spec — each frame is the
+    /// JSON body followed by exactly one `\n`. An earlier version of
+    /// this reader expected `Content-Length:` headers (from when the
+    /// server used LSP-style framing) and would spin until the timeout
+    /// hit after the framing switch.
     private func readNextFrame(timeout: TimeInterval) -> JSONValue? {
         let deadline = Date().addingTimeInterval(timeout)
         let fd = outputPipe.fileHandleForReading.fileDescriptor
@@ -485,20 +491,19 @@ final class MCPDriver {
             let n = chunk.withUnsafeMutableBufferPointer { bp in Darwin.read(fd, bp.baseAddress, bp.count) }
             if n > 0 { buffer.append(Data(chunk.prefix(n))) }
 
-            if let range = buffer.range(of: Data("\r\n\r\n".utf8)) {
-                let headerData = buffer.subdata(in: 0..<range.lowerBound)
-                guard let header = String(data: headerData, encoding: .utf8) else { return nil }
-                let lenLine = header.split(separator: "\r\n").first { $0.lowercased().hasPrefix("content-length:") }
-                guard let lenLine,
-                      let len = Int(lenLine.split(separator: ":")[1].trimmingCharacters(in: .whitespaces))
-                else { return nil }
+            // Drop leading blanks between frames.
+            while let first = buffer.first, first == UInt8(ascii: "\n") || first == UInt8(ascii: "\r") {
+                buffer.removeFirst()
+            }
 
-                let bodyStart = range.upperBound
-                if buffer.count >= bodyStart + len {
-                    let body = buffer.subdata(in: bodyStart..<(bodyStart + len))
-                    buffer.removeSubrange(0..<(bodyStart + len))
-                    return try? JSONDecoder().decode(JSONValue.self, from: body)
+            if let newlineIndex = buffer.firstIndex(of: UInt8(ascii: "\n")) {
+                var body = buffer.subdata(in: buffer.startIndex..<newlineIndex)
+                buffer.removeSubrange(buffer.startIndex...newlineIndex)
+                if let last = body.last, last == UInt8(ascii: "\r") {
+                    body = body.dropLast()
                 }
+                if body.isEmpty { continue }
+                return try? JSONDecoder().decode(JSONValue.self, from: body)
             }
             Thread.sleep(forTimeInterval: 0.03)
         }

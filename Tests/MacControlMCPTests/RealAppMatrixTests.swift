@@ -82,6 +82,9 @@ struct RealAppMatrixTests {
 
         func initialize() { _ = sendRPC(#"{"jsonrpc":"2.0","id":0,"method":"initialize","params":{}}"#) }
 
+        /// Read one NDJSON frame off stdout. Server emits
+        /// newline-delimited JSON per MCP spec — each message is a
+        /// single line terminated by `\n`.
         private func readFrame(timeout: TimeInterval) -> JSONValue? {
             let deadline = Date().addingTimeInterval(timeout)
             let fd = stdoutPipe.fileHandleForReading.fileDescriptor
@@ -89,18 +92,17 @@ struct RealAppMatrixTests {
                 var chunk = [UInt8](repeating: 0, count: 65536)
                 let n = chunk.withUnsafeMutableBufferPointer { bp in Darwin.read(fd, bp.baseAddress, bp.count) }
                 if n > 0 { buffer.append(Data(chunk.prefix(n))) }
-                if let range = buffer.range(of: Data("\r\n\r\n".utf8)) {
-                    guard let header = String(data: buffer.subdata(in: 0..<range.lowerBound), encoding: .utf8) else { return nil }
-                    let lenLine = header.split(separator: "\r\n").first { $0.lowercased().hasPrefix("content-length:") }
-                    guard let lenLine,
-                          let len = Int(lenLine.split(separator: ":")[1].trimmingCharacters(in: .whitespaces))
-                    else { return nil }
-                    let bodyStart = range.upperBound
-                    if buffer.count >= bodyStart + len {
-                        let body = buffer.subdata(in: bodyStart..<(bodyStart + len))
-                        buffer.removeSubrange(0..<(bodyStart + len))
-                        return try? JSONDecoder().decode(JSONValue.self, from: body)
+                while let first = buffer.first, first == UInt8(ascii: "\n") || first == UInt8(ascii: "\r") {
+                    buffer.removeFirst()
+                }
+                if let newlineIndex = buffer.firstIndex(of: UInt8(ascii: "\n")) {
+                    var body = buffer.subdata(in: buffer.startIndex..<newlineIndex)
+                    buffer.removeSubrange(buffer.startIndex...newlineIndex)
+                    if let last = body.last, last == UInt8(ascii: "\r") {
+                        body = body.dropLast()
                     }
+                    if body.isEmpty { continue }
+                    return try? JSONDecoder().decode(JSONValue.self, from: body)
                 }
                 Thread.sleep(forTimeInterval: 0.03)
             }

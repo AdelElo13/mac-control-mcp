@@ -103,7 +103,7 @@ struct StdioIntegrationTests {
                 let deadline = Date().addingTimeInterval(perCallTimeout)
                 while Date() < deadline {
                     drainAll()
-                    if countOccurrences(of: "Content-Length:", in: stdoutBuf) > i { break }
+                    if countOccurrences(of: "\n", in: stdoutBuf) > i { break }
                     Thread.sleep(forTimeInterval: 0.02)
                 }
             }
@@ -115,7 +115,7 @@ struct StdioIntegrationTests {
             let deadline = Date().addingTimeInterval(perCallTimeout * Double(requests.count))
             while Date() < deadline {
                 drainAll()
-                if countOccurrences(of: "Content-Length:", in: stdoutBuf) >= requests.count { break }
+                if countOccurrences(of: "\n", in: stdoutBuf) >= requests.count { break }
                 Thread.sleep(forTimeInterval: 0.02)
             }
         }
@@ -137,7 +137,16 @@ struct StdioIntegrationTests {
         let init_ = #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#
         guard let output = Self.driveInteractive(requests: [init_]) else { return }
         let text = String(data: output.stdout, encoding: .utf8) ?? ""
-        #expect(text.contains("Content-Length:"))
+        // Per MCP spec 2025-06-18 transport/stdio, each message is a
+        // single NDJSON line terminated by `\n`. Previously this test
+        // asserted a `Content-Length:` prefix, which matched the
+        // previous (incorrect) LSP-style framing and hid the real bug
+        // — Claude Desktop refused to initialize because it expected
+        // NDJSON. Now we check the actual spec: exactly one newline at
+        // the end of a frame, body parses as JSON-RPC.
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        #expect(!trimmed.contains("\n"), "Framed NDJSON body must not contain embedded newlines.")
+        #expect(text.hasSuffix("\n"), "NDJSON frame must end with `\\n`.")
         #expect(text.contains("\"id\":1"))
         #expect(text.contains("mac-control-mcp"))
     }

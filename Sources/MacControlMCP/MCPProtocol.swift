@@ -160,6 +160,20 @@ struct MCPToolDefinition: Codable, Sendable {
     let inputSchema: JSONValue
 }
 
+/// Stdio message framing per the MCP transport spec:
+/// each JSON-RPC message is emitted as a single line terminated by `\n`
+/// (newline-delimited JSON — NDJSON). Incoming messages follow the same
+/// convention.
+///
+/// A previous version of this framer produced + consumed LSP-style
+/// `Content-Length:` headers, which Claude Desktop (and most MCP
+/// clients) reject outright — `SyntaxError: Unexpected token 'C',
+/// "Content-Length: 93" is not valid JSON` on every initialize call.
+/// See the 0.2.1 release notes for details.
+///
+/// For maximum tolerance we still ACCEPT Content-Length framing on
+/// input (in case an older probe sends it), but we NEVER produce it on
+/// output. Outgoing frames are always `<json>\n`.
 enum StdioMessageFramer {
     private static let crlfHeaderTerminator = Data("\r\n\r\n".utf8)
     private static let lfHeaderTerminator = Data("\n\n".utf8)
@@ -174,7 +188,43 @@ enum StdioMessageFramer {
         case malformed(String)
     }
 
+    /// Pop one complete message off the buffer. Tries NDJSON first
+    /// (`<json>\n`), falls back to `Content-Length:` framing when the
+    /// buffer starts with a header-looking prefix.
     static func popMessage(from buffer: inout Data) -> ParseResult {
+        // Skip any leading whitespace / blank lines between frames.
+        while let first = buffer.first, first == UInt8(ascii: "\n") || first == UInt8(ascii: "\r") {
+            buffer.removeFirst()
+        }
+        guard !buffer.isEmpty else { return .needMoreData }
+
+        // Content-Length branch — only when the buffer clearly opens
+        // with a header line, not a JSON `{`. Accept this path for
+        // backward compatibility with probes written against the old
+        // framing.
+        if buffer.first == UInt8(ascii: "C") || buffer.first == UInt8(ascii: "c") {
+            let prefix = buffer.prefix(16)
+            if let prefixText = String(data: prefix, encoding: .utf8),
+               prefixText.lowercased().hasPrefix("content-length") {
+                return popContentLengthFramed(from: &buffer)
+            }
+        }
+
+        // NDJSON branch: look for the next newline. Body is everything
+        // before it, byte-for-byte.
+        guard let newlineIndex = buffer.firstIndex(of: UInt8(ascii: "\n")) else {
+            return .needMoreData
+        }
+        let body = buffer.subdata(in: buffer.startIndex..<newlineIndex)
+        buffer.removeSubrange(buffer.startIndex...newlineIndex)
+        // Tolerate trailing \r that some clients emit as \r\n line endings.
+        if let lastByte = body.last, lastByte == UInt8(ascii: "\r") {
+            return .message(body.dropLast())
+        }
+        return .message(body)
+    }
+
+    private static func popContentLengthFramed(from buffer: inout Data) -> ParseResult {
         guard let headerBoundary = headerBoundary(in: buffer) else {
             return .needMoreData
         }
@@ -200,11 +250,20 @@ enum StdioMessageFramer {
         }
     }
 
+    /// Encode a message as a single NDJSON line: JSON body followed by
+    /// exactly one `\n`. Per MCP transport spec, the body itself must
+    /// not contain embedded newlines — JSONEncoder produces minified
+    /// output by default, so we just need to make sure no one has flipped
+    /// `.prettyPrinted` on.
     static func frame<T: Encodable>(_ message: T, encoder: JSONEncoder) throws -> Data {
-        let body = try encoder.encode(message)
-        var output = Data("Content-Length: \(body.count)\r\n\r\n".utf8)
-        output.append(body)
-        return output
+        // Defensive: clear pretty-printing if a caller accidentally set it,
+        // because that would embed `\n` inside the body and break framing.
+        if encoder.outputFormatting.contains(.prettyPrinted) {
+            encoder.outputFormatting.remove(.prettyPrinted)
+        }
+        var body = try encoder.encode(message)
+        body.append(UInt8(ascii: "\n"))
+        return body
     }
 
     private struct HeaderBoundary {
