@@ -108,8 +108,8 @@ actor FileDialogController {
 
     private func searchRow(element: AXUIElement, target: String, visited: inout Set<UInt>, depth: Int) -> AXUIElement? {
         guard depth < 20 else { return nil }
-        let key = UInt(bitPattern: Unmanaged.passUnretained(element).toOpaque())
-        guard visited.insert(key).inserted else { return nil }
+        // CFHash, not pointer identity — see AccessibilityController.findElements.
+        guard visited.insert(CFHash(element)).inserted else { return nil }
 
         var roleRef: CFTypeRef?
         AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleRef)

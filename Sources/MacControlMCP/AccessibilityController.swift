@@ -100,30 +100,44 @@ actor AccessibilityController {
     }
 
     func findElement(pid: pid_t, role: String?, title: String?) -> AXUIElement? {
+        // Inline recurse mirrors findElements — see that function for the
+        // explanation of why the private `walk` helper is avoided here.
         let root = AXUIElementCreateApplication(pid)
         var visited = Set<UInt>()
         var match: AXUIElement?
 
-        _ = walk(element: root, depth: 0, maxDepth: 20, visited: &visited) { element, _, currentRole in
+        func recurse(element: AXUIElement, depth: Int) -> Bool {
+            guard depth <= 20 else { return false }
+            // CRITICAL: we must hash by CFHash(element), NOT by the CFRef
+            // pointer address. Core Foundation recycles freed pointers, so
+            // an AXUIElement that was released from one subtree can reappear
+            // with a *different* logical identity but the same memory address,
+            // which poisons a pointer-keyed Set and silently drops 90+% of
+            // the tree on real apps. CFHash returns the AX element's stable
+            // logical hash (pid + attribute path) and survives ref cycling.
+            let key = CFHash(element)
+            guard visited.insert(key).inserted else { return false }
+
+            let currentRole = stringAttribute(of: element, attribute: kAXRoleAttribute as CFString) ?? "AXUnknown"
             let roleMatches: Bool = {
                 guard let role, !role.isEmpty else { return true }
                 return currentRole.range(of: role, options: [.caseInsensitive]) != nil
             }()
-
             let titleMatches: Bool = {
                 guard let title, !title.isEmpty else { return true }
                 let candidate = self.title(for: element) ?? self.stringAttribute(of: element, attribute: kAXValueAttribute as CFString)
                 return candidate?.range(of: title, options: [.caseInsensitive]) != nil
             }()
-
             if roleMatches && titleMatches {
                 match = element
                 return true
             }
-
+            for child in childElements(of: element) {
+                if recurse(element: child, depth: depth + 1) { return true }
+            }
             return false
         }
-
+        _ = recurse(element: root, depth: 0)
         return match
     }
 
@@ -298,7 +312,14 @@ actor AccessibilityController {
         var nodes: [TreeNode] = []
 
         func recurse(element: AXUIElement, depth: Int) -> Int {
-            let key = UInt(bitPattern: Unmanaged.passUnretained(element).toOpaque())
+            // CRITICAL: we must hash by CFHash(element), NOT by the CFRef
+            // pointer address. Core Foundation recycles freed pointers, so
+            // an AXUIElement that was released from one subtree can reappear
+            // with a *different* logical identity but the same memory address,
+            // which poisons a pointer-keyed Set and silently drops 90+% of
+            // the tree on real apps. CFHash returns the AX element's stable
+            // logical hash (pid + attribute path) and survives ref cycling.
+            let key = CFHash(element)
             guard visited.insert(key).inserted else { return -1 }
 
             let placeholderIndex = nodes.count
@@ -353,20 +374,43 @@ actor AccessibilityController {
         maxDepth: Int = 32,
         limit: Int = 100
     ) -> [(AXUIElement, ElementInfo)] {
+        // Inline recurse (same structure as treeWalk) instead of going
+        // through the private `walk(...)` helper. An earlier implementation
+        // used `walk` with an `inout` visited set and a closure visitor; it
+        // lost ~95% of the tree to spurious dedup hits on Logic Pro's AX
+        // graph (43 nodes visited vs treeWalk's 936). The interaction of
+        // actor isolation + inout parameters + capturing closures appears
+        // to confuse the compiler's reference handling enough to break the
+        // set's identity semantics in that code path.
         let root = AXUIElementCreateApplication(pid)
         var visited = Set<UInt>()
         var matches: [(AXUIElement, ElementInfo)] = []
 
-        _ = walk(element: root, depth: 0, maxDepth: maxDepth, visited: &visited) { element, depth, currentRole in
-            guard matches.count < limit else { return true }
+        func recurse(element: AXUIElement, depth: Int) {
+            guard matches.count < limit, depth <= maxDepth else { return }
+            // CRITICAL: hash by CFHash(element), NOT by the CFRef pointer
+            // address. Core Foundation recycles freed pointers — an
+            // AXUIElement released from one subtree can reappear with a
+            // different logical identity at the same address, which
+            // poisons a pointer-keyed Set and silently drops most of the
+            // tree. CFHash returns the AX element's logical hash (pid +
+            // attribute path) and survives ref cycling. This was found
+            // during Logic Pro testing where 95% of nodes were dropped.
+            guard visited.insert(CFHash(element)).inserted else { return }
 
-            if self.matchesFilter(element: element, currentRole: currentRole, role: role, title: title, value: value) {
-                matches.append((element, self.buildElementInfo(element: element, depth: depth, cachedRole: currentRole)))
+            let currentRole = stringAttribute(of: element, attribute: kAXRoleAttribute as CFString) ?? "AXUnknown"
+            if matchesFilter(element: element, currentRole: currentRole, role: role, title: title, value: value) {
+                matches.append((element, buildElementInfo(element: element, depth: depth, cachedRole: currentRole)))
+                if matches.count >= limit { return }
             }
 
-            return false
+            for child in childElements(of: element) {
+                recurse(element: child, depth: depth + 1)
+                if matches.count >= limit { return }
+            }
         }
 
+        recurse(element: root, depth: 0)
         return matches
     }
 
@@ -384,26 +428,44 @@ actor AccessibilityController {
         let titleRegex = titlePattern.flatMap { try? NSRegularExpression(pattern: $0, options: .caseInsensitive) }
         let valueRegex = valuePattern.flatMap { try? NSRegularExpression(pattern: $0, options: .caseInsensitive) }
 
+        // Inline recurse for the same reason documented in findElements:
+        // the private `walk(...)` helper's inout-visited-set + capturing-
+        // visitor + actor-isolation interaction drops most of the tree on
+        // real applications.
         let root = AXUIElementCreateApplication(pid)
         var visited = Set<UInt>()
         var matches: [(AXUIElement, ElementInfo)] = []
 
-        _ = walk(element: root, depth: 0, maxDepth: maxDepth, visited: &visited) { element, depth, currentRole in
-            guard matches.count < limit else { return true }
+        func recurse(element: AXUIElement, depth: Int) {
+            guard matches.count < limit, depth <= maxDepth else { return }
+            // CRITICAL: we must hash by CFHash(element), NOT by the CFRef
+            // pointer address. Core Foundation recycles freed pointers, so
+            // an AXUIElement that was released from one subtree can reappear
+            // with a *different* logical identity but the same memory address,
+            // which poisons a pointer-keyed Set and silently drops 90+% of
+            // the tree on real apps. CFHash returns the AX element's stable
+            // logical hash (pid + attribute path) and survives ref cycling.
+            let key = CFHash(element)
+            guard visited.insert(key).inserted else { return }
 
+            let currentRole = stringAttribute(of: element, attribute: kAXRoleAttribute as CFString) ?? "AXUnknown"
             let roleOk = Self.matches(regex: roleRegex, literal: rolePattern, candidate: currentRole)
-            let titleCandidate = self.title(for: element) ?? ""
+            let titleCandidate = title(for: element) ?? ""
             let titleOk = Self.matches(regex: titleRegex, literal: titlePattern, candidate: titleCandidate)
-            let valueCandidate = self.stringAttribute(of: element, attribute: kAXValueAttribute as CFString) ?? ""
+            let valueCandidate = stringAttribute(of: element, attribute: kAXValueAttribute as CFString) ?? ""
             let valueOk = Self.matches(regex: valueRegex, literal: valuePattern, candidate: valueCandidate)
-
             if roleOk && titleOk && valueOk {
-                matches.append((element, self.buildElementInfo(element: element, depth: depth, cachedRole: currentRole)))
+                matches.append((element, buildElementInfo(element: element, depth: depth, cachedRole: currentRole)))
+                if matches.count >= limit { return }
             }
 
-            return false
+            for child in childElements(of: element) {
+                recurse(element: child, depth: depth + 1)
+                if matches.count >= limit { return }
+            }
         }
 
+        recurse(element: root, depth: 0)
         return matches
     }
 
@@ -552,6 +614,11 @@ actor AccessibilityController {
     }
 
     @discardableResult
+    // Legacy helper retained only for `listElements` (v0.1 code path).
+    // Uses CFHash(element) for cycle detection — see findElements for the
+    // detailed rationale. Core Foundation recycles freed CFRef pointers,
+    // so a pointer-keyed visited set silently drops most of a real app's
+    // AX tree once elements get released and their addresses reused.
     private func walk(
         element: AXUIElement,
         depth: Int,
@@ -561,8 +628,7 @@ actor AccessibilityController {
     ) -> Bool {
         guard depth <= maxDepth else { return false }
 
-        let key = UInt(bitPattern: Unmanaged.passUnretained(element).toOpaque())
-        guard visited.insert(key).inserted else { return false }
+        guard visited.insert(CFHash(element)).inserted else { return false }
 
         let role = stringAttribute(of: element, attribute: kAXRoleAttribute as CFString) ?? "AXUnknown"
         if visitor(element, depth, role) {
