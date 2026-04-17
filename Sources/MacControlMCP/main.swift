@@ -173,8 +173,18 @@ actor MCPServer {
                 while remaining > 0 {
                     let written = Darwin.write(1, ptr, remaining)
                     if written < 0 {
+                        // Retry transparently on EINTR. Any other errno is a
+                        // real write failure and we surface it.
+                        if errno == EINTR { continue }
                         throw NSError(domain: "mac-control-mcp", code: Int(errno),
                                       userInfo: [NSLocalizedDescriptionKey: String(cString: strerror(errno))])
+                    }
+                    if written == 0 {
+                        // POSIX write(2) returning 0 with positive `remaining`
+                        // is not supposed to happen on a pipe, but defend
+                        // against it explicitly so we never spin here.
+                        throw NSError(domain: "mac-control-mcp", code: -1,
+                                      userInfo: [NSLocalizedDescriptionKey: "write(2) returned 0; refusing to loop"])
                     }
                     remaining -= written
                     ptr = ptr.advanced(by: Int(written))
