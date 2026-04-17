@@ -214,13 +214,19 @@ extension ToolRegistry {
 
     func callLaunchApp(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         // Accept `identifier` (canonical) OR `bundle_id` (the name used
-        // by sibling tools activate_app / quit_app / wait_for_app). A
-        // previous version required `identifier` only, which meant
-        // callers had to remember a different parameter name per tool
-        // in the same family — silly and error-prone.
-        let raw = arguments["identifier"]?.stringValue
-            ?? arguments["bundle_id"]?.stringValue
-        guard let identifier = raw, !identifier.isEmpty else {
+        // by sibling tools activate_app / quit_app / wait_for_app). Pick
+        // the first NON-EMPTY value across both keys — not just the
+        // first non-nil. A previous version used `??`, which only falls
+        // through on nil; a caller sending `{"identifier": "",
+        // "bundle_id": "com.apple.Safari"}` (common with form-default
+        // empty strings) would take the empty `identifier` and error
+        // out despite a valid bundle_id being present. (Codex v11
+        // MEDIUM.)
+        let candidates = [arguments["identifier"], arguments["bundle_id"]]
+        let identifier = candidates
+            .compactMap { $0?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+        guard let identifier, !identifier.isEmpty else {
             return invalidArgument("launch_app requires identifier (bundle ID, path, or app name).")
         }
         let result = await appLifecycle.launch(identifier: identifier)

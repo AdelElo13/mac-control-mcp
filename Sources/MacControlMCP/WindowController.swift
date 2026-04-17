@@ -145,9 +145,34 @@ actor WindowController {
             _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
             return AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue) == .success
         case "normal", "default", "show":
-            _ = AXUIElementSetAttributeValue(window, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
-            _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
-            return AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue) == .success
+            // Composite: unminimize → raise → make main. Previously all
+            // but the final AX call were fire-and-forget (`_ = ...`), so
+            // a failure in step 1 or 2 still reported success (Codex v11
+            // HIGH: false-positive "state applied" when the window was
+            // still minimized). Verify each step and only succeed if
+            // either the call returned .success OR the state was
+            // already correct going in (so e.g. an already-raised window
+            // doesn't fail the raise step).
+            let unminStatus = AXUIElementSetAttributeValue(
+                window, kAXMinimizedAttribute as CFString, kCFBooleanFalse
+            )
+            // Verify not still minimized, regardless of whether the
+            // write returned success (some apps report .noValue here
+            // but the attribute is already false).
+            var minRef: CFTypeRef?
+            AXUIElementCopyAttributeValue(window, kAXMinimizedAttribute as CFString, &minRef)
+            let stillMinimized = (minRef as? Bool) ?? false
+            guard unminStatus == .success || !stillMinimized else { return false }
+
+            let raiseStatus = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+            // Raise can legitimately return .noValue for already-front
+            // windows; accept .success or .noValue, reject anything else.
+            guard raiseStatus == .success || raiseStatus == .noValue else { return false }
+
+            let mainStatus = AXUIElementSetAttributeValue(
+                window, kAXMainAttribute as CFString, kCFBooleanTrue
+            )
+            return mainStatus == .success
         default:
             return false
         }

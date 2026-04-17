@@ -33,16 +33,15 @@ enum PathValidator {
     static func allowedRoots() -> [URL] {
         var roots: [URL] = []
         // User-scoped temp (NSTemporaryDirectory → /var/folders/.../T/).
+        // This is the ONLY temp path we accept. /tmp and /private/tmp
+        // are shared across the system and open a TOCTOU hole between
+        // `validate(...)` and the subsequent write: another process on
+        // the same host can swap a symlink/regular-file at the same
+        // path and redirect the write outside the allowed roots. The
+        // user-scoped temp is per-UID and not writable by other users,
+        // so it doesn't carry that risk. (Codex v11 MEDIUM — added
+        // `/tmp` was convenient but materially weakened the guarantee.)
         roots.append(URL(fileURLWithPath: NSTemporaryDirectory()).standardizedFileURL)
-        // POSIX temp locations. /tmp is the conventional shell temp on
-        // macOS and resolves to /private/tmp; both are standard and both
-        // are writable only by the same user's effective permissions,
-        // so they're no less safe than the user-scoped temp. A previous
-        // version rejected `/tmp/foo.png` even though that's where most
-        // clients default their screenshots — causing every capture_*
-        // call with /tmp paths to fail.
-        roots.append(URL(fileURLWithPath: "/tmp").standardizedFileURL)
-        roots.append(URL(fileURLWithPath: "/private/tmp").standardizedFileURL)
 
         let home = URL(fileURLWithPath: NSHomeDirectory())
         for name in ["Desktop", "Documents", "Downloads", "Pictures"] {

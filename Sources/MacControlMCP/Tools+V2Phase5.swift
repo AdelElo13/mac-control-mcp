@@ -373,33 +373,39 @@ extension ToolRegistry {
         guard let query = arguments["query"]?.stringValue, !query.isEmpty else {
             return invalidArgument("spotlight_search requires query.")
         }
-        let ok = await spotlight.search(query)
-        if !ok {
+        let outcome = await spotlight.search(query)
+        // Distinguish each failure mode so callers can react — a
+        // metadatad outage is very different from "query ran, zero hits".
+        switch outcome {
+        case .emptyQuery:
+            return invalidArgument("spotlight_search requires a non-empty query.")
+        case .backendUnavailable:
             return errorResult(
-                "Spotlight index unavailable (metadatad not responding).",
-                ["ok": .bool(false)]
+                "Spotlight index backend refused to start (metadatad may be down or the search scope is unavailable).",
+                ["ok": .bool(false), "reason": .string("backend_unavailable")]
+            )
+        case .timedOut:
+            return errorResult(
+                "Spotlight query timed out after 2s — index may be rebuilding or unresponsive.",
+                ["ok": .bool(false), "reason": .string("timed_out")]
+            )
+        case .ok(let results):
+            let previewJSON: [JSONValue] = results.map { p in
+                .object([
+                    "index": .number(Double(p.index)),
+                    "title": .string(p.title),
+                    "path": .string(p.path)
+                ])
+            }
+            return successResult(
+                "\(results.count) result(s) from Spotlight index.",
+                [
+                    "ok": .bool(true),
+                    "query": .string(query),
+                    "results": .array(previewJSON)
+                ]
             )
         }
-        // Results now come from NSMetadataQuery (Spotlight's index), not
-        // the popover AX tree — ranked Top-Hits-style with app/file path
-        // included so `spotlight_open_result(index: N)` opens exactly
-        // what the caller saw at that rank.
-        let previews = await spotlight.currentResults(limit: 10)
-        let previewJSON: [JSONValue] = previews.map { p in
-            .object([
-                "index": .number(Double(p.index)),
-                "title": .string(p.title),
-                "path": .string(p.path)
-            ])
-        }
-        return successResult(
-            "\(previews.count) result(s) from Spotlight index.",
-            [
-                "ok": .bool(true),
-                "query": .string(query),
-                "results": .array(previewJSON)
-            ]
-        )
     }
 
     func callSpotlightOpenResult(_ arguments: [String: JSONValue]) async -> ToolCallResult {

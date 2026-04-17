@@ -32,22 +32,40 @@ actor SpotlightController {
         let path: String
     }
 
+    /// Outcome of a Spotlight search. Distinguishes "query ran cleanly"
+    /// from "the backend refused to start", so a metadatad outage gets
+    /// reported as an error instead of masked as "0 results".
+    enum SearchOutcome: Sendable {
+        case ok(results: [ResultPreview])
+        case emptyQuery
+        case backendUnavailable      // NSMetadataQuery.start() returned false
+        case timedOut                // 2s elapsed without NSMetadataQueryDidFinishGathering
+    }
+
     /// Cached results from the most recent `search`. `openResult(index:)`
     /// uses this so it opens exactly what the caller saw in the preview.
     private var lastResults: [ResultPreview] = []
 
-    /// Search Spotlight's index. Always idempotent: a fresh NSMetadataQuery
-    /// is created per call, awaited to the first-batch notification, then
-    /// stopped. No global state touched.
-    func search(_ query: String, limit: Int = 10) async -> Bool {
+    /// Search Spotlight's index. Idempotent: a fresh NSMetadataQuery is
+    /// created per call and stopped before returning. A previous version
+    /// flattened startup-failure and timeout into "0 results with ok",
+    /// which hid real outages (Codex v11 HIGH: metadatad down looked
+    /// identical to "no hits"). The returned SearchOutcome now keeps
+    /// those states distinct so the tool layer can surface them as
+    /// errors.
+    func search(_ query: String, limit: Int = 10) async -> SearchOutcome {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             lastResults = []
-            return false
+            return .emptyQuery
         }
-        let results = await runMetadataQuery(query: trimmed, limit: limit)
-        lastResults = results
-        return true
+        let outcome = await runMetadataQuery(query: trimmed, limit: limit)
+        if case .ok(let results) = outcome {
+            lastResults = results
+        } else {
+            lastResults = []
+        }
+        return outcome
     }
 
     /// Peek at results collected by the last `search` call. Shape is
@@ -76,7 +94,7 @@ actor SpotlightController {
     /// stop the query, return. The whole thing is bounded by a 2s
     /// timeout — Spotlight usually answers in < 200 ms, and a stale
     /// index shouldn't hang the MCP server.
-    private func runMetadataQuery(query: String, limit: Int) async -> [ResultPreview] {
+    private func runMetadataQuery(query: String, limit: Int) async -> SearchOutcome {
         // Use Swift-native NSPredicate format-string API (type-safe
         // bound parameter) rather than NSPredicate(fromMetadataQueryString:).
         // An earlier version tried the query-string syntax with
@@ -87,7 +105,7 @@ actor SpotlightController {
         // substitution is the documented, crash-safe path.
         let pattern = "*\(query)*"
 
-        return await withCheckedContinuation { (continuation: CheckedContinuation<[ResultPreview], Never>) in
+        return await withCheckedContinuation { (continuation: CheckedContinuation<SearchOutcome, Never>) in
             DispatchQueue.main.async {
                 let mq = NSMetadataQuery()
                 mq.predicate = NSPredicate(
@@ -107,11 +125,17 @@ actor SpotlightController {
                     NSMetadataQueryUserHomeScope,
                 ]
 
+                // Why explicit outcome tracking: previously "startup
+                // refused" and "query answered with 0 hits" collapsed
+                // into the same return — a nil/empty array — so the
+                // tool layer couldn't distinguish "metadatad down" from
+                // "no results". Now each exit path tags itself.
+                enum ExitCause { case gathered, timedOut, startFailed }
                 var settled = false
                 var observer: NSObjectProtocol?
                 var timeoutWork: DispatchWorkItem?
 
-                let finish: () -> Void = {
+                let finish: (ExitCause) -> Void = { cause in
                     guard !settled else { return }
                     settled = true
                     if let obs = observer {
@@ -119,6 +143,16 @@ actor SpotlightController {
                     }
                     timeoutWork?.cancel()
                     mq.stop()
+                    switch cause {
+                    case .startFailed:
+                        continuation.resume(returning: .backendUnavailable)
+                        return
+                    case .timedOut:
+                        continuation.resume(returning: .timedOut)
+                        return
+                    case .gathered:
+                        break
+                    }
                     let items = (mq.results as? [NSMetadataItem]) ?? []
                     var out: [ResultPreview] = []
                     var seen = Set<String>()
@@ -135,20 +169,20 @@ actor SpotlightController {
                         )
                         if out.count >= limit { break }
                     }
-                    continuation.resume(returning: out)
+                    continuation.resume(returning: .ok(results: out))
                 }
 
                 observer = NotificationCenter.default.addObserver(
                     forName: .NSMetadataQueryDidFinishGathering,
                     object: mq,
                     queue: .main
-                ) { _ in finish() }
+                ) { _ in finish(.gathered) }
 
-                timeoutWork = DispatchWorkItem { finish() }
+                timeoutWork = DispatchWorkItem { finish(.timedOut) }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: timeoutWork!)
 
                 if !mq.start() {
-                    finish()
+                    finish(.startFailed)
                 }
             }
         }
