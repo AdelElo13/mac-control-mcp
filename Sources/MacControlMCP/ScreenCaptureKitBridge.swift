@@ -69,11 +69,28 @@ enum ScreenCaptureKitBridge {
 
         let filter = SCContentFilter(desktopIndependentWindow: target)
         let config = SCStreamConfiguration()
-        // Match the window's real pixel dimensions at the display scale.
-        // `frame` is in points; pixel scale matches the display's scale.
-        let scale = CGFloat(1) // let SCK pick the right scale for us
-        config.width = Int(target.frame.width * NSScreen.main!.backingScaleFactor * scale)
-        config.height = Int(target.frame.height * NSScreen.main!.backingScaleFactor * scale)
+
+        // Size derivation (Codex v10 HIGH): a previous version used
+        //   config.width = Int(target.frame.width * NSScreen.main!.backingScaleFactor)
+        // which
+        //   (1) force-unwrapped NSScreen.main — crashes on headless /
+        //       detached-display contexts,
+        //   (2) assumed the target window lives on the main display's
+        //       scale, which is wrong when the window is on a secondary
+        //       display with a different backingScaleFactor.
+        //
+        // We now find the NSScreen that contains the window's frame and
+        // use THAT screen's backing scale. If no screen contains the
+        // frame (window off-screen / off-Space / headless), fall back to
+        // 2× as a reasonable Retina default rather than crashing.
+        let containingScreen = NSScreen.screens.first { screen in
+            screen.frame.intersects(target.frame)
+        }
+        let scale = containingScreen?.backingScaleFactor
+            ?? NSScreen.main?.backingScaleFactor
+            ?? 2.0
+        config.width = max(1, Int((target.frame.width * scale).rounded()))
+        config.height = max(1, Int((target.frame.height * scale).rounded()))
         config.showsCursor = false
         config.capturesAudio = false
         config.scalesToFit = false

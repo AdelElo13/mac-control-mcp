@@ -120,15 +120,27 @@ actor BrowserController {
     /// browser's Develop menu.
     func evalJS(browser: Browser, code: String, windowIndex: Int = 1, tabIndex: Int? = nil) -> EvalResult {
         // Wrap user code so the result is always a well-formed JS string
-        // before AppleScript ever touches it. We IIFE the user expression,
-        // then coerce the result:
+        // before AppleScript ever touches it.
+        //
+        // Indirect eval `(0, eval)(code)` gives us REPL-like semantics:
+        //   - `1+1`              → 2
+        //   - `'hi'.toUpperCase()` → "HI"
+        //   - `const x=1; x`     → 1       (block with trailing expression)
+        //   - `document.title`   → "..."
+        // whereas a naive `return (CODE)` wrapper would syntax-fail on
+        // any statement-style script. `(0, eval)` also runs in global
+        // scope so `const`/`let` from prior calls don't leak.
+        //
+        // Coercion of the returned value:
         //   string         → as-is
         //   null/undefined → "null" / "undefined"
         //   object         → JSON.stringify
         //   number/bool/…  → String(x)   (period decimal, no locale)
         //
-        // User code is embedded as an expression. Multi-statement blocks
-        // still work via inner IIFE semantics.
+        // Success/error are now distinguished by a structured JSON
+        // envelope (not a sentinel string prefix), so a page result
+        // that happens to look like an error sentinel can't be
+        // misclassified (Codex v10 #MEDIUM).
         let wrappedJS = """
         (function(){
             function __mcp_coerce(v){
@@ -138,8 +150,12 @@ actor BrowserController {
                 if (typeof v === "object") { try { return JSON.stringify(v); } catch(e) { return String(v); } }
                 return String(v);
             }
-            try { return __mcp_coerce((function(){ return (\(code)); })()); }
-            catch(e) { return "__MCP_JS_ERROR__:" + (e && e.message ? e.message : String(e)); }
+            try {
+                var __r = (0, eval)(\(jsStringLiteral(code)));
+                return JSON.stringify({ ok: true, v: __mcp_coerce(__r) });
+            } catch(e) {
+                return JSON.stringify({ ok: false, err: (e && e.message ? e.message : String(e)) });
+            }
         })()
         """
 
@@ -175,20 +191,23 @@ actor BrowserController {
             return EvalResult(success: false, value: nil, error: "osascript invocation failed")
         }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.hasPrefix("OK\t") {
-            let value = String(trimmed.dropFirst(3))
-            // Our JS wrapper also catches JS errors and returns them as a
-            // sentinel string so AppleScript doesn't throw; unwrap it.
-            if value.hasPrefix("__MCP_JS_ERROR__:") {
-                return EvalResult(success: false, value: nil,
-                                  error: String(value.dropFirst("__MCP_JS_ERROR__:".count)))
-            }
-            return EvalResult(success: true, value: value, error: nil)
-        }
         if trimmed.hasPrefix("ERR\t") {
             return EvalResult(success: false, value: nil, error: String(trimmed.dropFirst(4)))
         }
-        return EvalResult(success: false, value: nil, error: "Unexpected response: \(trimmed)")
+        guard trimmed.hasPrefix("OK\t") else {
+            return EvalResult(success: false, value: nil, error: "Unexpected response: \(trimmed)")
+        }
+        // The wrapper ALWAYS returns a JSON envelope — parse it.
+        let envelope = String(trimmed.dropFirst(3))
+        guard let data = envelope.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            // Old-format compatibility: treat raw string as value.
+            return EvalResult(success: true, value: envelope, error: nil)
+        }
+        if let ok = json["ok"] as? Bool, ok {
+            return EvalResult(success: true, value: (json["v"] as? String) ?? "", error: nil)
+        }
+        return EvalResult(success: false, value: nil, error: (json["err"] as? String) ?? "unknown JS error")
     }
 
     /// Open a new tab. If the browser has no window, creates one first
@@ -268,6 +287,21 @@ actor BrowserController {
     private func escape(_ s: String) -> String {
         s.replacingOccurrences(of: "\\", with: "\\\\")
          .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
+    /// JSON-encode a Swift string into a JS string literal. Used so the
+    /// user's raw JS code can be safely embedded inside a larger JS
+    /// wrapper as a string argument to `(0, eval)()`. JSONEncoder handles
+    /// every edge case (quotes, newlines, unicode) that naive string
+    /// escaping misses.
+    private func jsStringLiteral(_ s: String) -> String {
+        guard let data = try? JSONEncoder().encode(s),
+              let literal = String(data: data, encoding: .utf8) else {
+            // Fallback — JSONEncoder never fails on a plain String, but
+            // handle it defensively.
+            return "\"\(escape(s))\""
+        }
+        return literal
     }
 
     private func parseTabs(browser: String, raw: String) -> [TabInfo] {

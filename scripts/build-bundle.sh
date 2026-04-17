@@ -10,8 +10,20 @@
 # silently with no prompt on macOS 15+.
 #
 # Install location: ~/Applications/MacControlMCP.app (user-local; no sudo).
-# Bundle identifier: dev.macmcp.server (stable across builds so permission
-# grants survive rebuilds).
+# Bundle identifier: dev.macmcp.server (stable name).
+#
+# CAVEAT — TCC grants and ad-hoc signing (Codex v10 HIGH):
+# macOS keys Screen Recording / Accessibility grants on the code's
+# "designated requirement". For ad-hoc signed binaries (codesign --sign -)
+# that requirement is cdhash-based, which changes every time the
+# executable content changes. So: after rebuilding, the user typically
+# has to re-grant permission. We cannot honestly claim the grant
+# persists across rebuilds with ad-hoc signing alone — a Developer ID
+# certificate would, but that needs an Apple Developer account.
+#
+# Workflow recommendation:
+#   - develop: rebuild freely; re-grant on first capture after each build
+#   - ship:    sign with a Developer ID cert + notarise for persistent grants
 set -e
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"

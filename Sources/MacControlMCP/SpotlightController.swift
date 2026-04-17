@@ -10,17 +10,51 @@ actor SpotlightController {
         let title: String
     }
 
-    /// Open Spotlight and type the query. Leaves the search popover open for
-    /// follow-up `openTopResult()` or the user to act on.
-    func search(_ query: String) -> Bool {
-        // Cmd+Space opens Spotlight (default hotkey). Users who have remapped
-        // this shortcut will need a different approach.
+    /// Open Spotlight and type the query, then verify Spotlight is
+    /// actually the frontmost receiver of keystrokes before reporting
+    /// success.
+    ///
+    /// Codex v10 HIGH: a previous version always returned true as long
+    /// as the key events were posted. That's a lie if the user has
+    /// remapped Cmd+Space (e.g. to Alfred/Raycast) — we'd then type the
+    /// query into whatever app was frontmost, and a later
+    /// spotlight_open_result would send Down+Return into that same
+    /// wrong app. Now we check Spotlight.app is running and its AX tree
+    /// has a visible search/result element before returning success.
+    func search(_ query: String) async -> Bool {
         pressShortcut(key: 49 /* space */, flags: [.maskCommand])
-        Thread.sleep(forTimeInterval: 0.3)
+        // Spotlight needs a moment to appear. Poll its process +
+        // shareable AX tree so we don't type into the wrong app.
+        for _ in 0..<10 {
+            try? await Task.sleep(nanoseconds: 60_000_000)
+            if await spotlightProcessIsVisible() { break }
+        }
+        guard await spotlightProcessIsVisible() else { return false }
         typeString(query)
-        // Spotlight's result list takes a moment to populate.
-        Thread.sleep(forTimeInterval: 0.4)
+        // Result list needs a moment to populate.
+        try? await Task.sleep(nanoseconds: 400_000_000)
         return true
+    }
+
+    /// True iff Spotlight.app is running AND has at least one visible
+    /// AX window — i.e. the search popover is open and keystrokes will
+    /// actually land there.
+    ///
+    /// NSWorkspace is main-actor-affine so we hop there for the
+    /// runningApplications lookup (Codex v10 MEDIUM).
+    private func spotlightProcessIsVisible() async -> Bool {
+        let pid: pid_t = await MainActor.run {
+            NSWorkspace.shared.runningApplications.first {
+                ($0.bundleIdentifier ?? "").lowercased() == "com.apple.spotlight"
+            }?.processIdentifier ?? 0
+        }
+        guard pid > 0 else { return false }
+        let app = AXUIElementCreateApplication(pid)
+        var windowsRef: CFTypeRef?
+        let status = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &windowsRef)
+        guard status == .success,
+              let windows = windowsRef as? [AXUIElement] else { return false }
+        return !windows.isEmpty
     }
 
     /// Peek at Spotlight's current result titles via AX. Returns `[]` if
@@ -30,16 +64,18 @@ actor SpotlightController {
     ///
     /// Spotlight runs inside `Spotlight` (pid from WindowServer list) with
     /// its result table exposed as AXTable → AXRow → AXStaticText.
-    func currentResults(limit: Int = 10) -> [ResultPreview] {
+    func currentResults(limit: Int = 10) async -> [ResultPreview] {
         // Spotlight.app has .accessory activation policy (hidden from
         // runningApplications' default regular-only filter). Iterate ALL
-        // running apps and match by bundle ID.
-        let spotlight = NSWorkspace.shared.runningApplications.first { app in
-            let bid = app.bundleIdentifier ?? ""
-            return bid == "com.apple.Spotlight" || bid.lowercased() == "com.apple.spotlight"
+        // running apps and match by bundle ID. NSWorkspace is
+        // main-actor-affine so we hop there for the lookup.
+        let pid: pid_t = await MainActor.run {
+            NSWorkspace.shared.runningApplications.first {
+                ($0.bundleIdentifier ?? "").lowercased() == "com.apple.spotlight"
+            }?.processIdentifier ?? 0
         }
-        guard let spotlight else { return [] }
-        let root = AXUIElementCreateApplication(spotlight.processIdentifier)
+        guard pid > 0 else { return [] }
+        let root = AXUIElementCreateApplication(pid)
         var visited = Set<AXKey>()
         var rawTitles: [String] = []
         collectRowTitles(element: root, depth: 0, maxDepth: 16, visited: &visited, into: &rawTitles, limit: limit * 3)

@@ -375,7 +375,10 @@ extension ToolRegistry {
         }
         let ok = await spotlight.search(query)
         if !ok {
-            return errorResult("Spotlight open failed.", ["ok": .bool(false)])
+            return errorResult(
+                "Spotlight did not open (Cmd+Space may be remapped to Alfred/Raycast, or Spotlight is disabled). Keystrokes were NOT sent — no query typed.",
+                ["ok": .bool(false), "hint": .string("Check System Settings → Keyboard → Keyboard Shortcuts → Spotlight to ensure Cmd+Space still triggers Spotlight.")]
+            )
         }
         // Peek at the Spotlight result list via AX so the caller can
         // decide whether the ranked results match their expectation
@@ -396,6 +399,16 @@ extension ToolRegistry {
 
     func callSpotlightOpenResult(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         let index = max(1, arguments["index"]?.intValue ?? 1)
+        // Codex v10 HIGH: refuse to press Down+Return if Spotlight isn't
+        // actually the frontmost receiver. Otherwise we'd randomly hit
+        // enter in whatever app is focused.
+        let results = await spotlight.currentResults(limit: 1)
+        if results.isEmpty {
+            return errorResult(
+                "Spotlight is not open. Call spotlight_search first and verify the returned 'results' array is non-empty before calling spotlight_open_result.",
+                ["ok": .bool(false), "spotlight_visible": .bool(false)]
+            )
+        }
         let ok = await spotlight.openResult(index: index)
         return ok
             ? successResult("Result \(index) opened.", ["ok": .bool(true), "index": .number(Double(index))])
