@@ -252,14 +252,16 @@ extension ToolRegistry {
         let kind = BrowserController.Browser.detect(arguments["browser"]?.stringValue)
         let url = arguments["url"]?.stringValue
         let ok = await browser.newTab(browser: kind, url: url)
+        let err = await browser.lastError
         let payload: [String: JSONValue] = [
             "ok": .bool(ok),
             "browser": .string(kind.rawValue),
-            "url": url.map(JSONValue.string) ?? .null
+            "url": url.map(JSONValue.string) ?? .null,
+            "error": err.map(JSONValue.string) ?? .null
         ]
         return ok
             ? successResult("New tab opened.", payload)
-            : errorResult("Failed to open tab — is the browser running?", payload)
+            : errorResult("Failed to open tab: \(err ?? "is the browser running?")", payload)
     }
 
     func callBrowserCloseTab(_ arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -267,15 +269,17 @@ extension ToolRegistry {
         let windowIndex = arguments["window_index"]?.intValue ?? 1
         let tabIndex = arguments["tab_index"]?.intValue
         let ok = await browser.closeTab(browser: kind, windowIndex: windowIndex, tabIndex: tabIndex)
+        let err = await browser.lastError
         let payload: [String: JSONValue] = [
             "ok": .bool(ok),
             "browser": .string(kind.rawValue),
             "window_index": .number(Double(windowIndex)),
-            "tab_index": tabIndex.map { .number(Double($0)) } ?? .null
+            "tab_index": tabIndex.map { .number(Double($0)) } ?? .null,
+            "error": err.map(JSONValue.string) ?? .null
         ]
         return ok
             ? successResult("Tab closed.", payload)
-            : errorResult("Failed to close tab.", payload)
+            : errorResult("Failed to close tab: \(err ?? "unknown error")", payload)
     }
 
     func callCaptureWindow(_ arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -283,7 +287,13 @@ extension ToolRegistry {
             return invalidArgument("capture_window requires a positive integer pid.")
         }
         let title = arguments["title_contains"]?.stringValue
-        let outputPath = arguments["output_path"]?.stringValue
+        let rawPath = arguments["output_path"]?.stringValue
+        let outputPath: String?
+        do {
+            outputPath = try rawPath.map(PathValidator.validate)
+        } catch {
+            return invalidArgument(String(describing: error))
+        }
         do {
             let capture = try await screen.captureWindow(ownerPID: pid, titleContains: title, outputPath: outputPath)
             return successResult(
@@ -311,7 +321,13 @@ extension ToolRegistry {
         guard idx < list.count else {
             return errorResult("display_index out of range — found \(list.count) display(s).", ["ok": .bool(false)])
         }
-        let outputPath = arguments["output_path"]?.stringValue
+        let rawPath = arguments["output_path"]?.stringValue
+        let outputPath: String?
+        do {
+            outputPath = try rawPath.map(PathValidator.validate)
+        } catch {
+            return invalidArgument(String(describing: error))
+        }
         do {
             let capture = try await screen.captureDisplayByID(CGDirectDisplayID(list[idx].id), outputPath: outputPath)
             return successResult(
@@ -375,13 +391,15 @@ extension ToolRegistry {
             return nil
         }()
         let ok = await system.setVolume(volume, muted: muted)
+        let err = await system.lastError
         return ok
             ? successResult("Volume set to \(max(0, min(100, volume))).", [
                 "ok": .bool(true),
                 "volume": .number(Double(max(0, min(100, volume)))),
                 "muted": muted.map(JSONValue.bool) ?? .null
               ])
-            : errorResult("Volume change failed.", ["ok": .bool(false)])
+            : errorResult("Volume change failed: \(err ?? "unknown error")",
+                          ["ok": .bool(false), "error": err.map(JSONValue.string) ?? .null])
     }
 
     func callSetDarkMode(_ arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -389,11 +407,12 @@ extension ToolRegistry {
             return invalidArgument("set_dark_mode requires enabled (boolean).")
         }
         let ok = await system.setDarkMode(enabled: enabled)
+        let err = await system.lastError
         return ok
             ? successResult(enabled ? "Dark mode enabled." : "Light mode enabled.",
                             ["ok": .bool(true), "enabled": .bool(enabled)])
-            : errorResult("Dark mode toggle failed — check Automation permissions.",
-                          ["ok": .bool(false)])
+            : errorResult("Dark mode toggle failed: \(err ?? "check Automation permissions")",
+                          ["ok": .bool(false), "error": err.map(JSONValue.string) ?? .null])
     }
 
     func callKeyDown(_ arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -490,7 +509,14 @@ extension ToolRegistry {
                     ]
                 )
             }
-            try? await Task.sleep(nanoseconds: UInt64(intervalMs) * 1_000_000)
+            do {
+                try await Task.sleep(nanoseconds: UInt64(intervalMs) * 1_000_000)
+            } catch {
+                return errorResult(
+                    "Cancelled during poll.",
+                    ["ok": .bool(false), "cancelled": .bool(true)]
+                )
+            }
         }
         return errorResult(
             "Timed out after \(timeout)s.",
@@ -533,7 +559,14 @@ extension ToolRegistry {
                     )
                 }
             }
-            try? await Task.sleep(nanoseconds: UInt64(intervalMs) * 1_000_000)
+            do {
+                try await Task.sleep(nanoseconds: UInt64(intervalMs) * 1_000_000)
+            } catch {
+                return errorResult(
+                    "Cancelled during poll.",
+                    ["ok": .bool(false), "cancelled": .bool(true)]
+                )
+            }
         }
         return errorResult(
             "Timed out after \(timeout)s.",
@@ -568,7 +601,14 @@ extension ToolRegistry {
                     )
                 }
             }
-            try? await Task.sleep(nanoseconds: UInt64(intervalMs) * 1_000_000)
+            do {
+                try await Task.sleep(nanoseconds: UInt64(intervalMs) * 1_000_000)
+            } catch {
+                return errorResult(
+                    "Cancelled during poll.",
+                    ["ok": .bool(false), "cancelled": .bool(true)]
+                )
+            }
         }
         return errorResult(
             "Timed out after \(timeout)s.",
@@ -638,7 +678,14 @@ extension ToolRegistry {
                 )
             }
             _ = await mouse.scroll(deltaX: 0, deltaY: -40)
-            try? await Task.sleep(nanoseconds: 80_000_000)
+            do {
+                try await Task.sleep(nanoseconds: 80_000_000)
+            } catch {
+                return errorResult(
+                    "Cancelled during scroll.",
+                    ["ok": .bool(false), "cancelled": .bool(true)]
+                )
+            }
         }
         return errorResult(
             "Element not found after \(maxScrolls) scroll attempts.",

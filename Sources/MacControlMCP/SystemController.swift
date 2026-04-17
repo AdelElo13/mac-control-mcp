@@ -45,21 +45,15 @@ actor SystemController {
         return runOsascript(script) != nil
     }
 
+    private(set) var lastError: String?
+
     private func runOsascript(_ script: String) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", script]
-        let outPipe = Pipe(); let errPipe = Pipe()
-        process.standardOutput = outPipe
-        process.standardError = errPipe
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return nil
+        let result = OsascriptRunner.run(script)
+        if result.ok {
+            lastError = nil
+            return result.stdout
         }
-        guard process.terminationStatus == 0 else { return nil }
-        let data = outPipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8)
+        lastError = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        return nil
     }
 }

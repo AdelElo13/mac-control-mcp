@@ -3,6 +3,11 @@ import ApplicationServices
 import CoreGraphics
 import AppKit
 
+// `AXUIElement` is documented as safe to use from any thread — the
+// Accessibility framework internally serialises AX requests. It has no
+// Swift-visible mutable state; the handle is an opaque CF reference.
+// Sendable conformance is therefore sound in practice; `@unchecked` is
+// used only because Apple does not mark the type `Sendable` themselves.
 extension AXUIElement: @retroactive @unchecked Sendable {}
 
 actor AccessibilityController {
@@ -163,7 +168,7 @@ actor AccessibilityController {
         return true
     }
 
-    func typeText(text: String) -> TypeTextResult {
+    func typeText(text: String) async -> TypeTextResult {
         if setFocusedElementValue(text) {
             return TypeTextResult(success: true, strategy: "ax_set_value")
         }
@@ -172,7 +177,7 @@ actor AccessibilityController {
             return TypeTextResult(success: true, strategy: "cg_unicode")
         }
 
-        if pasteTextViaClipboard(text) {
+        if await pasteTextViaClipboard(text) {
             return TypeTextResult(success: true, strategy: "clipboard_paste")
         }
 
@@ -674,23 +679,22 @@ actor AccessibilityController {
         return true
     }
 
-    private func pasteTextViaClipboard(_ text: String) -> Bool {
-        let pasteboard = NSPasteboard.general
-        let previousText = pasteboard.string(forType: .string)
-
-        pasteboard.clearContents()
-        guard pasteboard.setString(text, forType: .string) else {
-            return false
+    private func pasteTextViaClipboard(_ text: String) async -> Bool {
+        // Capture full pasteboard state (all items + types) so restoration
+        // is lossless and always happens, even if the paste fails.
+        let snapshot = await MainActor.run { PasteboardSnapshot.capture() }
+        defer {
+            Task { @MainActor in PasteboardSnapshot.restore(snapshot) }
         }
+
+        let setOK = await MainActor.run { () -> Bool in
+            NSPasteboard.general.clearContents()
+            return NSPasteboard.general.setString(text, forType: .string)
+        }
+        guard setOK else { return false }
 
         let pasted = pressKey(keyCode: 9, modifiers: [.maskCommand])
-        Thread.sleep(forTimeInterval: 0.05)
-
-        pasteboard.clearContents()
-        if let previousText {
-            _ = pasteboard.setString(previousText, forType: .string)
-        }
-
+        try? await Task.sleep(nanoseconds: 50_000_000)
         return pasted
     }
 }

@@ -75,6 +75,9 @@ actor WindowController {
     }
 
     /// Bring a window to the front. Raises the app first, then the window.
+    /// Returns true only when BOTH the raise and main-attribute assign
+    /// succeed, so callers don't get a false-positive success when the AX
+    /// tree rejects the request.
     func focusWindow(pid: pid_t, index: Int) -> Bool {
         guard let app = NSRunningApplication(processIdentifier: pid) else { return false }
         app.activate(options: [])
@@ -87,9 +90,9 @@ actor WindowController {
         }
 
         let window = array[index]
-        _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
-        _ = AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
-        return true
+        let raise = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+        let setMain = AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
+        return raise == .success && setMain == .success
     }
 
     /// Move the window to an absolute position in global coordinates.
@@ -153,20 +156,30 @@ actor WindowController {
         AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleRef)
         let title = titleRef as? String
 
-        var positionRef: CFTypeRef?
-        AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &positionRef)
+        // Extract position/size but surface the "unknown" case clearly via
+        // the optional return values so callers can distinguish a legit
+        // zero-origin window from one where the AX tree didn't hand us
+        // valid geometry at all.
         var point = CGPoint.zero
-        if let raw = positionRef, CFGetTypeID(raw) == AXValueGetTypeID() {
+        var positionRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &positionRef) == .success,
+           let raw = positionRef,
+           CFGetTypeID(raw) == AXValueGetTypeID() {
             let axValue = unsafeDowncast(raw, to: AXValue.self)
-            _ = AXValueGetValue(axValue, .cgPoint, &point)
+            if AXValueGetType(axValue) == .cgPoint {
+                _ = AXValueGetValue(axValue, .cgPoint, &point)
+            }
         }
 
-        var sizeRef: CFTypeRef?
-        AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &sizeRef)
         var size = CGSize.zero
-        if let raw = sizeRef, CFGetTypeID(raw) == AXValueGetTypeID() {
+        var sizeRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &sizeRef) == .success,
+           let raw = sizeRef,
+           CFGetTypeID(raw) == AXValueGetTypeID() {
             let axValue = unsafeDowncast(raw, to: AXValue.self)
-            _ = AXValueGetValue(axValue, .cgSize, &size)
+            if AXValueGetType(axValue) == .cgSize {
+                _ = AXValueGetValue(axValue, .cgSize, &size)
+            }
         }
 
         var minimizedRef: CFTypeRef?

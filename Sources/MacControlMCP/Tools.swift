@@ -25,7 +25,12 @@ struct ToolCallResult: Sendable {
     }
 }
 
-final class ToolRegistry {
+// ToolRegistry holds actor references and a few stateless JSON helpers.
+// All mutable state lives inside the referenced actors, so the registry
+// itself is effectively a Sendable dispatch table. @unchecked Sendable
+// is used here because the Swift 6 compiler cannot yet see through this
+// "bag of actors" pattern automatically.
+final class ToolRegistry: @unchecked Sendable {
     let accessibility: AccessibilityController
     let elementCache: ElementCache
     let windows: WindowController
@@ -493,6 +498,9 @@ final class ToolRegistry {
         let description: String
     }
 
+    /// Parse a JSON modifiers array. Delegates name→flag mapping to the
+    /// shared `ModifierMap` (see Tools+V2Phase5.swift) so key_down/key_up/
+    /// press_key_sequence and press_key all use the exact same parsing.
     private func parseModifiers(_ rawValue: JSONValue?) -> Result<[CGEventFlags], ToolInputError> {
         guard let rawValue else { return .success([]) }
         guard let values = rawValue.arrayValue else {
@@ -507,7 +515,7 @@ final class ToolRegistry {
                 return .failure(ToolInputError(description: "modifiers must be an array of strings."))
             }
 
-            if let flag = modifierFlag(for: modifier) {
+            if let flag = ModifierMap.flag(for: modifier) {
                 flags.append(flag)
             } else {
                 unknown.append(modifier)
@@ -519,23 +527,6 @@ final class ToolRegistry {
         }
 
         return .success(flags)
-    }
-
-    private func modifierFlag(for value: String) -> CGEventFlags? {
-        switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-        case "command", "cmd":
-            return .maskCommand
-        case "shift":
-            return .maskShift
-        case "option", "alt":
-            return .maskAlternate
-        case "control", "ctrl":
-            return .maskControl
-        case "fn", "function":
-            return .maskSecondaryFn
-        default:
-            return nil
-        }
     }
 
     func invalidArgument(_ message: String) -> ToolCallResult {

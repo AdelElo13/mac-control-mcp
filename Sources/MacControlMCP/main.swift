@@ -1,10 +1,10 @@
 import Foundation
 
-let accessibility = AccessibilityController()
-let toolRegistry = ToolRegistry(accessibility: accessibility)
-nonisolated(unsafe) let server = MCPServer(toolRegistry: toolRegistry)
-
-final class MCPServer {
+// MCPServer is an actor so its mutable `readBuffer` is safely isolated,
+// which lets us hold the global server reference without resorting to
+// `nonisolated(unsafe)`. The stdio loop still runs in a single Task; the
+// actor just gives the compiler a correct concurrency story.
+actor MCPServer {
     private let toolRegistry: ToolRegistry
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
@@ -164,6 +164,9 @@ final class MCPServer {
 }
 
 Task {
+    let accessibility = AccessibilityController()
+    let toolRegistry = ToolRegistry(accessibility: accessibility)
+    let server = MCPServer(toolRegistry: toolRegistry)
     await server.run()
     exit(EXIT_SUCCESS)
 }

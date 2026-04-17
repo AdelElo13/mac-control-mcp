@@ -308,7 +308,14 @@ extension ToolRegistry {
                 )
             }
 
-            try? await Task.sleep(nanoseconds: UInt64(intervalMs) * 1_000_000)
+            do {
+                try await Task.sleep(nanoseconds: UInt64(intervalMs) * 1_000_000)
+            } catch {
+                return errorResult(
+                    "Cancelled after \(attempts) attempt(s).",
+                    ["ok": .bool(false), "attempts": .number(Double(attempts)), "cancelled": .bool(true)]
+                )
+            }
         }
 
         return errorResult(

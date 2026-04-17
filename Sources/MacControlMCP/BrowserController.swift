@@ -195,26 +195,22 @@ actor BrowserController {
 
     // MARK: - Helpers
 
+    /// Last AppleScript error from a failed `runOsascript` call on this
+    /// actor. Cleared whenever a subsequent call succeeds so stale errors
+    /// don't leak into later tool invocations.
+    private(set) var lastError: String?
+
+    /// Returns stdout on success. On non-zero exit, returns nil and
+    /// populates `lastError` with the captured stderr so the caller can
+    /// surface the AppleScript error instead of silently failing.
     private func runOsascript(script: String) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", script]
-
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return nil
+        let result = OsascriptRunner.run(script)
+        if result.ok {
+            lastError = nil
+            return result.stdout
         }
-
-        guard process.terminationStatus == 0 else { return nil }
-        let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8)
+        lastError = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        return nil
     }
 
     private func escape(_ s: String) -> String {

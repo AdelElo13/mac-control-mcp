@@ -34,7 +34,13 @@ actor MenuController {
                 return Result(success: false, clickedPath: clicked, missingSegment: segment)
             }
 
-            _ = AXUIElementPerformAction(item, kAXPressAction as CFString)
+            // AXPress can fail if the item is disabled or the AX tree is in
+            // a weird state; previously we swallowed this and reported
+            // success, which made flaky menu automation impossible to debug.
+            let pressStatus = AXUIElementPerformAction(item, kAXPressAction as CFString)
+            guard pressStatus == .success else {
+                return Result(success: false, clickedPath: clicked, missingSegment: "\(segment) (AXPress=\(pressStatus.rawValue))")
+            }
             clicked.append(segment)
 
             // For all but the last segment, walk into the child menu container.

@@ -129,16 +129,18 @@ extension ToolRegistry {
         let tabIndex = arguments["tab_index"]?.intValue
 
         let ok = await browser.navigate(browser: browserKind, url: url, windowIndex: windowIndex, tabIndex: tabIndex)
+        let err = await browser.lastError
         let payload: [String: JSONValue] = [
             "ok": .bool(ok),
             "browser": .string(browserKind.rawValue),
             "url": .string(url),
             "window_index": .number(Double(windowIndex)),
-            "tab_index": tabIndex.map { .number(Double($0)) } ?? .null
+            "tab_index": tabIndex.map { .number(Double($0)) } ?? .null,
+            "error": err.map(JSONValue.string) ?? .null
         ]
         return ok
             ? successResult("Navigation issued.", payload)
-            : errorResult("browser_navigate failed — is the browser running?", payload)
+            : errorResult("browser_navigate failed: \(err ?? "is the browser running?")", payload)
     }
 
     func callBrowserEvalJS(_ arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -162,7 +164,13 @@ extension ToolRegistry {
     }
 
     func callCaptureScreen(_ arguments: [String: JSONValue]) async -> ToolCallResult {
-        let outputPath = arguments["output_path"]?.stringValue
+        let rawPath = arguments["output_path"]?.stringValue
+        let outputPath: String?
+        do {
+            outputPath = try rawPath.map(PathValidator.validate)
+        } catch {
+            return invalidArgument(String(describing: error))
+        }
 
         do {
             let capture: ScreenController.CaptureResult

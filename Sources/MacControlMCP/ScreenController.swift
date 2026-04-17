@@ -3,7 +3,6 @@ import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
 import Vision
-import AppKit
 
 /// Screen capture + OCR. Screenshots are written to disk (PNG) and the path
 /// is returned to the caller — a base64 payload would blow past MCP frame
@@ -116,9 +115,15 @@ actor ScreenController {
 
     /// Run OCR on the given image file. Uses the Vision framework's
     /// accurate recognition level and the system default language list.
+    ///
+    /// We deliberately use CGImageSource rather than NSImage here. NSImage
+    /// is part of AppKit and is documented as not thread-safe; calling it
+    /// from a non-main actor was flagged by review. CGImageSource is an
+    /// ImageIO primitive that is safe to use off the main thread.
     func ocr(imagePath: String, languages: [String] = []) throws -> OCRResult {
-        guard let image = NSImage(contentsOfFile: imagePath),
-              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+        let url = URL(fileURLWithPath: imagePath) as CFURL
+        guard let source = CGImageSourceCreateWithURL(url, nil),
+              let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
             throw ScreenError.captureFailed
         }
 

@@ -16,28 +16,34 @@ actor FileDialogController {
     /// Type a path into the frontmost save/open dialog. On success the
     /// dialog's text field has the path and the dialog is ready for a
     /// confirm call (or another selection).
-    func setPath(_ path: String) -> Result {
+    func setPath(_ path: String) async -> Result {
         // Cmd+Shift+G opens the "Go to folder" sheet on all macOS file dialogs.
         pressShortcut(key: 5 /* g */, flags: [.maskCommand, .maskShift])
-        Thread.sleep(forTimeInterval: 0.25)
+        try? await Task.sleep(nanoseconds: 250_000_000)
 
-        // Write path via pasteboard for reliability with Unicode/long paths.
-        let pasteboard = NSPasteboard.general
-        let previous = pasteboard.string(forType: .string)
-        pasteboard.clearContents()
-        guard pasteboard.setString(path, forType: .string) else {
+        // Snapshot the full pasteboard state (all items, all types) so we
+        // can restore it even if something goes wrong mid-flow. Previously
+        // only plain text was captured and an early `return Result(...)`
+        // on setString failure leaked the cleared clipboard.
+        let snapshot = await MainActor.run { PasteboardSnapshot.capture() }
+        defer {
+            Task { @MainActor in PasteboardSnapshot.restore(snapshot) }
+        }
+
+        let setOK = await MainActor.run { () -> Bool in
+            NSPasteboard.general.clearContents()
+            return NSPasteboard.general.setString(path, forType: .string)
+        }
+        guard setOK else {
             return Result(success: false, detail: "Pasteboard refused the path.")
         }
+
         pressShortcut(key: 9 /* v */, flags: [.maskCommand])
-        Thread.sleep(forTimeInterval: 0.2)
+        try? await Task.sleep(nanoseconds: 200_000_000)
         // Confirm the "Go to folder" sheet
         pressShortcut(key: 36 /* return */, flags: [])
-        Thread.sleep(forTimeInterval: 0.25)
+        try? await Task.sleep(nanoseconds: 250_000_000)
 
-        pasteboard.clearContents()
-        if let previous {
-            _ = pasteboard.setString(previous, forType: .string)
-        }
         return Result(success: true, detail: "Navigated to \(path).")
     }
 

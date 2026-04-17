@@ -348,8 +348,11 @@ extension ToolRegistry {
     }
 
     func callListWindows(_ arguments: [String: JSONValue]) async -> ToolCallResult {
-        if let pidValue = arguments["pid"], pidValue.intValue != nil {
-            guard let pid = parsePID(pidValue) else {
+        // Only fall through to "all apps" if the pid key is absent. If it's
+        // present but malformed, reject with an explicit error instead of
+        // silently returning the wrong thing.
+        if let pidValue = arguments["pid"], case .null = pidValue { } else if arguments["pid"] != nil {
+            guard let pid = parsePID(arguments["pid"]) else {
                 return invalidArgument("list_windows pid must be a positive integer.")
             }
             let windows = await windows.listAppWindows(pid: pid)
