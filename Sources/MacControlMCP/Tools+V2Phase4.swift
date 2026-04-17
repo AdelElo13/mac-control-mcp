@@ -40,7 +40,7 @@ extension ToolRegistry {
                     "index": .object(["type": .string("integer")]),
                     "state": .object([
                         "type": .string("string"),
-                        "description": .string("minimize | unminimize | fullscreen | exit_fullscreen | main")
+                        "description": .string("minimize | unminimize/restore | normal/default/show (unminimize + raise + main) | main/raise | fullscreen | exit_fullscreen/windowed")
                     ])
                 ],
                 required: ["pid", "index", "state"]
@@ -144,15 +144,22 @@ extension ToolRegistry {
         }
 
         let ok = await windows.setState(pid: pid, index: index, state: state)
-        let payload: [String: JSONValue] = [
+        var payload: [String: JSONValue] = [
             "ok": .bool(ok),
             "pid": .number(Double(pid)),
             "index": .number(Double(index)),
             "state": .string(state)
         ]
-        return ok
-            ? successResult("Window state applied.", payload)
-            : errorResult("Unknown state or AX call failed.", payload)
+        if ok {
+            return successResult("Window state applied.", payload)
+        }
+        let supported = WindowController.supportedStates
+        let isKnown = supported.contains { $0.caseInsensitiveCompare(state) == .orderedSame }
+        payload["supported_states"] = .array(supported.map { .string($0) })
+        let message = isKnown
+            ? "State '\(state)' is valid but the AX call failed — window may be unreachable (wrong pid/index) or the system denied the attribute write."
+            : "Unknown state '\(state)'. Accepted: \(supported.joined(separator: ", "))."
+        return errorResult(message, payload)
     }
 
     func callFileDialogSetPath(_ arguments: [String: JSONValue]) async -> ToolCallResult {

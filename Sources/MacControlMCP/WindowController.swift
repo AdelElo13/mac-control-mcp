@@ -121,8 +121,15 @@ actor WindowController {
         return status == .success
     }
 
-    /// Apply a high-level state transition: minimize, unminimize, fullscreen,
-    /// exit_fullscreen, main (bring to main).
+    /// Apply a high-level state transition. Accepts multiple names per
+    /// state because callers reach for different vocabulary
+    /// (minimize / minimized; unminimize / restore; normal / default /
+    /// show; main / raise; fullscreen; exit_fullscreen / windowed).
+    ///
+    /// "normal" is a composite — it guarantees the window is visible
+    /// and frontmost by (a) unminimizing it if it was minimized and
+    /// (b) raising + making it main. Handy when a caller just wants
+    /// "please show this window" without knowing the prior state.
     func setState(pid: pid_t, index: Int, state: String) -> Bool {
         guard let window = window(pid: pid, index: index) else { return false }
         switch state.lowercased() {
@@ -137,10 +144,26 @@ actor WindowController {
         case "main", "raise":
             _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
             return AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue) == .success
+        case "normal", "default", "show":
+            _ = AXUIElementSetAttributeValue(window, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+            _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+            return AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue) == .success
         default:
             return false
         }
     }
+
+    /// Documented list of accepted `state` values. Exposed so the tool
+    /// layer can return an informative error listing valid options
+    /// instead of a generic "unknown state".
+    static let supportedStates: [String] = [
+        "minimize", "minimized",
+        "unminimize", "restore",
+        "normal", "default", "show",
+        "main", "raise",
+        "fullscreen",
+        "exit_fullscreen", "windowed"
+    ]
 
     /// Return the window `(pid, index)` pointer or nil if out of bounds.
     func window(pid: pid_t, index: Int) -> AXUIElement? {
