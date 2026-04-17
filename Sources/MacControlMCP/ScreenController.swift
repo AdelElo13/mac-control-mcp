@@ -182,6 +182,10 @@ actor ScreenController {
             try writePNG(image: image, to: path)
             return CaptureResult(path: path, width: image.width, height: image.height)
         } catch {
+            if let bridgeError = error as? ScreenCaptureKitBridge.BridgeError,
+               case .permissionDenied = bridgeError {
+                throw ScreenError.permissionDenied("CGRequestScreenCaptureAccess returned denied.")
+            }
             let detail = String(describing: error)
             if detail.contains("-3801") || detail.contains("TCC") || detail.contains("declined") {
                 // Surface the permission issue clearly instead of falling

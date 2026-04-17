@@ -24,22 +24,40 @@ import AppKit
 enum ScreenCaptureKitBridge {
     enum BridgeError: Error, CustomStringConvertible {
         case windowNotFound(CGWindowID)
+        case permissionDenied
         case captureFailed(String)
 
         var description: String {
             switch self {
             case .windowNotFound(let id):
                 return "ScreenCaptureKit did not expose windowID=\(id). Window may be minimized, off-screen, or Screen Recording permission may be missing."
+            case .permissionDenied:
+                return "Screen Recording permission is not granted."
             case .captureFailed(let reason):
                 return "ScreenCaptureKit capture failed: \(reason)"
             }
         }
     }
 
+    private static func ensureScreenRecordingPermission() -> Bool {
+        if CGPreflightScreenCaptureAccess() {
+            return true
+        }
+        // First access should trigger the system consent flow when possible.
+        // On some macOS versions this may return before the user finishes
+        // toggling permission in System Settings, so we preflight again.
+        _ = CGRequestScreenCaptureAccess()
+        return CGPreflightScreenCaptureAccess()
+    }
+
     /// Capture a single CGImage of the given window ID. Runs on the current
     /// actor; the ScreenCaptureKit calls are inherently async and we await
     /// them.
     static func captureWindow(windowID: CGWindowID) async throws -> CGImage {
+        guard ensureScreenRecordingPermission() else {
+            throw BridgeError.permissionDenied
+        }
+
         let content = try await SCShareableContent.excludingDesktopWindows(
             false,
             onScreenWindowsOnly: false

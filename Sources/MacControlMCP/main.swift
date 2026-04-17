@@ -2,6 +2,12 @@ import Foundation
 #if canImport(Darwin)
 import Darwin
 #endif
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
+#if canImport(AppKit)
+import AppKit
+#endif
 
 // MCPServer is an actor so its mutable `readBuffer` is safely isolated,
 // which lets us hold the global server reference without resorting to
@@ -220,6 +226,44 @@ actor MCPServer {
             message: message
         )
     }
+}
+
+private func handleScreenRecordingCommand(arguments: [String]) -> Int32? {
+    #if canImport(CoreGraphics)
+    if arguments.contains("--check-screen-recording") {
+        let granted = CGPreflightScreenCaptureAccess()
+        print(granted ? "granted" : "denied")
+        return granted ? EXIT_SUCCESS : EXIT_FAILURE
+    }
+
+    if arguments.contains("--request-screen-recording") {
+        if CGPreflightScreenCaptureAccess() {
+            print("granted")
+            return EXIT_SUCCESS
+        }
+
+        _ = CGRequestScreenCaptureAccess()
+        let granted = CGPreflightScreenCaptureAccess()
+        if !granted {
+            #if canImport(AppKit)
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                _ = NSWorkspace.shared.open(url)
+            }
+            #endif
+            print("denied")
+            return EXIT_FAILURE
+        }
+
+        print("granted")
+        return EXIT_SUCCESS
+    }
+    #endif
+
+    return nil
+}
+
+if let exitCode = handleScreenRecordingCommand(arguments: CommandLine.arguments) {
+    exit(exitCode)
 }
 
 Task {
