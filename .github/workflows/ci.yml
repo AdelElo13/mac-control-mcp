@@ -39,4 +39,8 @@ jobs:
         run: swift build
 
       - name: swift test
-        run: swift test --enable-code-coverage
+        # Coverage merging was triggering an unrelated SIGPIPE at the
+        # end of the run that turned the exit code non-zero even when
+        # every assertion passed. Drop coverage for now; can be
+        # re-added behind a separate job that runs on a fresh shell.
+        run: swift test
