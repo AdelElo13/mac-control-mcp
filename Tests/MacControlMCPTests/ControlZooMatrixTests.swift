@@ -106,7 +106,11 @@ struct ControlZooMatrixTests {
 
     // MARK: - The test
 
-    @Test("every AppKit control type in ControlZoo passes")
+    @Test(
+        "every AppKit control type in ControlZoo passes",
+        .enabled(if: ProcessInfo.processInfo.environment["CI"] == nil,
+                 "ControlZoo spawns a GUI AppKit app, which can't run on a headless CI runner. Skipped when CI=true.")
+    )
     func compatMatrix() async throws {
         guard let pid = try await Self.launchHarness() else { return }
 
