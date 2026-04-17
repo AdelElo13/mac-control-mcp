@@ -307,8 +307,13 @@ extension ToolRegistry {
             )
         } catch {
             return errorResult(
-                "Window capture failed: \(error).",
-                ["ok": .bool(false), "pid": .number(Double(pid))]
+                "Window capture failed: \(error)",
+                [
+                    "ok": .bool(false),
+                    "pid": .number(Double(pid)),
+                    "error": .string(String(describing: error)),
+                    "hint": .string("If this is a permission issue, add mac-control-mcp to System Settings → Privacy & Security → Screen Recording and restart. If the window is on another Space, focus it first via focus_window.")
+                ]
             )
         }
     }

@@ -28,11 +28,31 @@ actor ScreenController {
         let joinedText: String
     }
 
-    enum ScreenError: Error {
+    enum ScreenError: Error, CustomStringConvertible {
         case noDisplay
         case captureFailed
         case encodingFailed
         case writeFailed
+        /// SCK returned -3801; user has not granted Screen Recording
+        /// permission to the mac-control-mcp binary.
+        case permissionDenied(String)
+        /// The window exists in AX but is not rendered on the current
+        /// Space. Capturing the region would return the desktop wallpaper
+        /// rather than the window's content.
+        case windowNotOnCurrentSpace
+
+        var description: String {
+            switch self {
+            case .noDisplay: return "No main display."
+            case .captureFailed: return "Screen capture failed."
+            case .encodingFailed: return "PNG encoding failed."
+            case .writeFailed: return "PNG write failed."
+            case .permissionDenied(let detail):
+                return "Screen Recording permission not granted to mac-control-mcp. Open System Settings → Privacy & Security → Screen Recording and enable the MCP binary, then restart it. (Underlying error: \(detail))"
+            case .windowNotOnCurrentSpace:
+                return "Window exists but is on a different macOS Space. Bring it to the foreground (or switch Spaces) before capturing."
+            }
+        }
     }
 
     /// Capture the main display (or a specific `displayID`) and write a PNG
@@ -81,29 +101,136 @@ actor ScreenController {
 
     /// Capture a specific on-screen window. `windowID` comes from
     /// CGWindowListCopyWindowInfo; for app windows we look it up by the
-    /// window's owner PID + title via CGWindowListCopyWindowInfo.
-    func captureWindow(ownerPID: pid_t, titleContains: String? = nil, outputPath: String? = nil) throws -> CaptureResult {
-        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+    /// window's owner PID + optional title filter.
+    ///
+    /// CGWindowListCopyWindowInfo bridges numeric CF values into NSNumber
+    /// when handed to Swift, so we must extract Int32/UInt32 via
+    /// NSNumber.int32Value / uint32Value. A previous version used direct
+    /// `as? pid_t` / `as? CGWindowID` casts, which silently returned nil
+    /// and made every capture_window call fail — caught by testing
+    /// against the ControlZoo harness.
+    ///
+    /// Also uses `[.optionAll]` so we still find the window when it lives
+    /// on a different macOS Space (the capture itself may fail if the
+    /// window isn't actually rendered, but the lookup no longer does).
+    /// Capture a specific on-screen window.
+    ///
+    /// Three-strategy fallback chain (documented failure modes):
+    ///   1. ScreenCaptureKit — primary path on macOS 14+. Required for
+    ///      per-window capture on macOS 15+ where the legacy CG APIs
+    ///      silently return nil. Requires Screen Recording permission
+    ///      granted explicitly to the mac-control-mcp binary. If the
+    ///      user has NOT granted this permission, SCK throws
+    ///      "user declined TCCs" (-3801) and we surface that as a
+    ///      clear ScreenError.permissionDenied with guidance.
+    ///   2. Legacy CGWindowListCreateImage by windowID — preserved for
+    ///      macOS 14.0-14.3 where it still works. Off-Space windows
+    ///      return nil here; we fall through.
+    ///   3. Region crop at the window's global bounds — only useful
+    ///      when the window is actually rendered on the current Space.
+    ///      Gated by `kCGWindowIsOnscreen` to avoid capturing the
+    ///      desktop wallpaper behind a phantom off-Space window.
+    ///
+    /// Lookup hygiene:
+    ///   - `.optionAll` instead of `.optionOnScreenOnly` so we find the
+    ///     window even when off-Space.
+    ///   - NSNumber.int32Value / uint32Value for pid/windowID extraction
+    ///     (casting CFNumberRef directly to pid_t returns nil).
+    ///   - Prefer onscreen + layer-0 windows when a PID has multiple.
+    func captureWindow(ownerPID: pid_t, titleContains: String? = nil, outputPath: String? = nil) async throws -> CaptureResult {
+        let options: CGWindowListOption = [.optionAll, .excludeDesktopElements]
         guard let info = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
             throw ScreenError.captureFailed
         }
 
-        let match = info.first { dict in
-            guard (dict[kCGWindowOwnerPID as String] as? pid_t) == ownerPID else { return false }
-            guard let title = titleContains, !title.isEmpty else { return true }
-            let candidate = (dict[kCGWindowName as String] as? String) ?? ""
-            return candidate.localizedCaseInsensitiveContains(title)
+        let candidates = info.filter { dict in
+            let pidNum = dict[kCGWindowOwnerPID as String] as? NSNumber
+            return pidNum?.int32Value == ownerPID
         }
 
-        guard let match, let windowID = match[kCGWindowNumber as String] as? CGWindowID else {
+        // Match selection:
+        //   - If title filter provided, require substring match.
+        //   - Otherwise prefer onscreen + layer 0 + non-empty name.
+        let match: [String: Any]?
+        if let title = titleContains, !title.isEmpty {
+            match = candidates.first { dict in
+                let candidate = (dict[kCGWindowName as String] as? String) ?? ""
+                return candidate.localizedCaseInsensitiveContains(title)
+            }
+        } else {
+            func isOnScreen(_ d: [String: Any]) -> Bool {
+                (d[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue == true
+            }
+            func isLayer0(_ d: [String: Any]) -> Bool {
+                (d[kCGWindowLayer as String] as? NSNumber)?.intValue == 0
+            }
+            match = candidates.first(where: { isOnScreen($0) && isLayer0($0) })
+                ?? candidates.first(where: { isLayer0($0) })
+                ?? candidates.first
+        }
+
+        guard let match,
+              let wnum = match[kCGWindowNumber as String] as? NSNumber else {
             throw ScreenError.captureFailed
         }
+        let windowID = CGWindowID(wnum.uint32Value)
 
-        guard let image = CGWindowListCreateImage(
+        // Strategy 1: ScreenCaptureKit.
+        do {
+            let image = try await ScreenCaptureKitBridge.captureWindow(windowID: windowID)
+            let path = outputPath ?? Self.defaultTempPath()
+            try writePNG(image: image, to: path)
+            return CaptureResult(path: path, width: image.width, height: image.height)
+        } catch {
+            let detail = String(describing: error)
+            if detail.contains("-3801") || detail.contains("TCC") || detail.contains("declined") {
+                // Surface the permission issue clearly instead of falling
+                // back to a misleading desktop-wallpaper screenshot.
+                throw ScreenError.permissionDenied(detail)
+            }
+            FileHandle.standardError.write("[captureWindow] SCK non-permission failure, trying legacy: \(detail)\n".data(using: .utf8)!)
+        }
+
+        // Strategy 2 (legacy fallback): CGWindowListCreateImage by windowID.
+        // When this works it gives us the window even if occluded. Returns
+        // nil on macOS 15+ in many cases — that's why SCK is Strategy 1.
+        if let image = CGWindowListCreateImage(
             .null,
             .optionIncludingWindow,
             windowID,
             [.bestResolution, .boundsIgnoreFraming]
+        ) {
+            let path = outputPath ?? Self.defaultTempPath()
+            try writePNG(image: image, to: path)
+            return CaptureResult(path: path, width: image.width, height: image.height)
+        }
+
+        // Strategy 3 (last resort): crop the window's bounds from the
+        // current-Space screen. Only useful when the window IS on the
+        // current Space; otherwise we'd return the desktop wallpaper.
+        // Abort if we detect we'd be capturing desktop only.
+        guard let boundsDict = match[kCGWindowBounds as String] as? [String: Any] else {
+            throw ScreenError.captureFailed
+        }
+        let x = (boundsDict["X"] as? NSNumber)?.doubleValue ?? 0
+        let y = (boundsDict["Y"] as? NSNumber)?.doubleValue ?? 0
+        let w = (boundsDict["Width"] as? NSNumber)?.doubleValue ?? 0
+        let h = (boundsDict["Height"] as? NSNumber)?.doubleValue ?? 0
+        let bounds = CGRect(x: x, y: y, width: w, height: h)
+
+        // If the window is marked as off-screen by the window server,
+        // region capture will return desktop only — refuse instead of
+        // returning a misleading screenshot.
+        let onScreen = (match[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue ?? false
+        guard onScreen else {
+            throw ScreenError.windowNotOnCurrentSpace
+        }
+
+        guard let image = CGWindowListCreateImage(
+            bounds,
+            .optionOnScreenOnly,
+            kCGNullWindowID,
+            [.bestResolution]
         ) else {
             throw ScreenError.captureFailed
         }
