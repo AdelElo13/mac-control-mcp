@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#endif
 
 // MCPServer is an actor so its mutable `readBuffer` is safely isolated,
 // which lets us hold the global server reference without resorting to
@@ -24,7 +27,16 @@ actor MCPServer {
                 continue
             }
 
-            let chunk = input.readData(ofLength: 4096)
+            // `availableData` returns whatever bytes are ready right now
+            // (one read(2) syscall). Previously `readData(ofLength: 4096)`
+            // blocked the task until either 4096 bytes were buffered OR
+            // stdin closed — which froze interactive MCP clients who send
+            // small JSON-RPC frames (~100 bytes) and expect a reply before
+            // sending the next request. Functional test against a Python
+            // MCP driver pinpointed this: the server processed the frame
+            // in memory but readData blocked while waiting for 3.5 KB
+            // more bytes that the client was never going to send.
+            let chunk = input.availableData
             if chunk.isEmpty {
                 _ = await drainReadBuffer()
                 if !readBuffer.isEmpty {
@@ -143,7 +155,32 @@ actor MCPServer {
     private func write(response: JSONRPCResponse) {
         do {
             let message = try StdioMessageFramer.frame(response, encoder: encoder)
-            try output.write(contentsOf: message)
+            // Bypass FileHandle and write via the raw POSIX descriptor so the
+            // response arrives immediately even when the client keeps stdin
+            // open between requests. Functional testing against a Python MCP
+            // driver showed FileHandle-backed writes appearing to the other
+            // side only after stdin close or EOF — a subtle buffering gap
+            // that breaks live MCP clients which stream requests and expect
+            // streamed responses. Direct write(2) + fflush(nil) makes the
+            // write atomic and visible at once.
+            try message.withUnsafeBytes { buffer -> Void in
+                guard let base = buffer.baseAddress else {
+                    throw NSError(domain: "mac-control-mcp", code: -1,
+                                  userInfo: [NSLocalizedDescriptionKey: "empty buffer"])
+                }
+                var remaining = buffer.count
+                var ptr = base
+                while remaining > 0 {
+                    let written = Darwin.write(1, ptr, remaining)
+                    if written < 0 {
+                        throw NSError(domain: "mac-control-mcp", code: Int(errno),
+                                      userInfo: [NSLocalizedDescriptionKey: String(cString: strerror(errno))])
+                    }
+                    remaining -= written
+                    ptr = ptr.advanced(by: Int(written))
+                }
+            }
+            fflush(stdout)
         } catch {
             log("Failed to write response: \(error.localizedDescription)")
         }
