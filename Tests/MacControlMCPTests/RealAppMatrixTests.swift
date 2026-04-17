@@ -340,14 +340,90 @@ struct RealAppMatrixTests {
             return
         }
 
-        // Before CFHash fix, foundCount would be close to 0 (pointer
-        // dedup poisoning). After, it should be in the hundreds.
-        if foundCount >= 20 {
+        // Codex v8 #7 — ratio check: find_elements(AXMenuItem) should
+        // find roughly as many menu items as appear in get_ui_tree.
+        // A ratio < 0.5 means we're losing more than half to dedup
+        // bugs or some other regression. This is much stricter than
+        // the old "foundCount >= 20" that could pass with 30 items
+        // on a tree of thousands.
+        guard case .object(let menuCount)? = driver.callTool(
+            "find_elements",
+            arguments: #"{"pid":\#(pid),"role":"AXMenuItem","max_depth":10,"limit":5000}"#, timeout: 30
+        ),
+              case .number(let totalMenuItems) = menuCount["count"] ?? .null else {
+            Self.expect("find_elements coverage", in: "Finder", .fail("uncapped find_elements failed"))
+            return
+        }
+
+        // Count menu items actually in the tree (ground truth) for ratio comparison.
+        guard case .array(let treeNodes) = tree["nodes"] ?? .null else {
+            Self.expect("find_elements coverage", in: "Finder", .fail("tree nodes missing"))
+            return
+        }
+        let menuItemsInTree = treeNodes.reduce(0) { acc, n in
+            guard case .object(let o) = n,
+                  case .string(let role) = o["role"] ?? .null,
+                  role == "AXMenuItem" else { return acc }
+            return acc + 1
+        }
+
+        if menuItemsInTree == 0 {
             Self.expect("find_elements coverage", in: "Finder",
-                .pass("tree=\(Int(treeCount)), find_elements returned \(Int(foundCount)) menu items"))
+                .navigation("no AXMenuItem in tree — cannot compute ratio"))
+            return
+        }
+
+        let ratio = Double(totalMenuItems) / Double(menuItemsInTree)
+        if ratio >= 0.8 {
+            Self.expect("find_elements coverage", in: "Finder",
+                .pass("tree had \(menuItemsInTree) AXMenuItem, find_elements returned \(Int(totalMenuItems)) (ratio \(String(format: "%.2f", ratio)))"))
         } else {
             Self.expect("find_elements coverage", in: "Finder",
-                .fail("only \(Int(foundCount)) menu items found in tree of \(Int(treeCount)) — CFHash regression?"))
+                .fail("find_elements dropped \(Int(100 * (1 - ratio)))% of menu items (tree=\(menuItemsInTree), found=\(Int(totalMenuItems))) — CFHash regression?"))
         }
+    }
+}
+
+// MARK: - Strict-outcome assertion — Codex v8 #1
+
+/// If every real-world test ends up in a skip state, the suite is green
+/// but proved nothing. This guard runs at suite end and fails if NO test
+/// produced a strict .pass Outcome.
+@Suite("Real-world coverage sanity", .serialized)
+struct RealWorldCoverageGuard {
+    @Test("at least one real-app assertion must strictly pass")
+    func atLeastOneStrictPass() {
+        // Drive the three real-world tests again and count outcomes.
+        // Since the Outcome enum is private to each test, we instead
+        // assert by re-running the CFHash regression guard which has a
+        // deterministic pass condition on any macOS system with Finder
+        // running (always true on macOS).
+        // If Finder can't be driven at all, we fail loudly — this is
+        // the canary that the whole MCP is broken.
+        let binary = RealAppMatrixTests.serverBinary()
+        guard let driver = RealAppMatrixTests.Driver(binary: binary) else {
+            Issue.record("cannot spawn mac-control-mcp — real-world coverage is 0")
+            return
+        }
+        defer { driver.close() }
+        driver.initialize()
+        guard let pid = RealAppMatrixTests.pidFor(driver: driver, name: "Finder") else {
+            Issue.record("Finder is not running — strict real-world coverage required, skip not acceptable here")
+            return
+        }
+        guard case .object(let w)? = driver.callTool("list_windows", arguments: #"{"pid":\#(pid)}"#),
+              case .number(let wc) = w["count"] ?? .null, wc > 0 else {
+            Issue.record("Finder has no visible windows on current Space — strict coverage requires at least this baseline")
+            return
+        }
+        guard case .object(let find)? = driver.callTool(
+            "find_elements",
+            arguments: #"{"pid":\#(pid),"role":"AXMenuItem","max_depth":8,"limit":500}"#
+        ),
+              case .number(let count) = find["count"] ?? .null else {
+            Issue.record("find_elements failed against live Finder — strict coverage absent")
+            return
+        }
+        #expect(count >= 50, "Finder menubar should have >= 50 AXMenuItem, got \(Int(count)) — real-world baseline broken")
     }
 }

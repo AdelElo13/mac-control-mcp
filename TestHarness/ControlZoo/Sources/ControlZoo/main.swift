@@ -12,6 +12,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var window: NSWindow!
     var outlineView: NSOutlineView!
     var outlineItems: [String] = ["Alpha", "Bravo", "Charlie", "Delta", "Echo"]
+    /// Codex v8 #4 — observable side-effect label for btn_click so the
+    /// test can assert the button did something, not just that AXPress
+    /// returned ax_status == 0.
+    var clickLabel: NSTextField?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -70,8 +74,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // LevelIndicator — identifier: li_meter (custom, like Logic level meter)
         stack.addArrangedSubview(labeledRow("AXLevelIndicator:", control: makeLevelIndicator(id: "li_meter", value: 0.6)))
 
-        // Button — identifier: btn_click
-        stack.addArrangedSubview(labeledRow("AXButton:", control: makeButton(id: "btn_click", title: "Click me")))
+        // Button — identifier: btn_click + observable side-effect label
+        // (Codex v8 #4: button test now asserts observable state change)
+        clickLabel = makeClickLabel()
+        let btnRow = NSStackView()
+        btnRow.orientation = .horizontal
+        btnRow.spacing = 8
+        btnRow.addArrangedSubview(makeButton(id: "btn_click", title: "Click me"))
+        btnRow.addArrangedSubview(clickLabel!)
+        stack.addArrangedSubview(labeledRow("AXButton:", control: btnRow))
 
         // OutlineView (with selection) — identifier: outline_items
         stack.addArrangedSubview(labeledRow("AXOutline:", control: makeOutline(id: "outline_items"), height: 160))
@@ -211,10 +222,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func buttonClicked(_ sender: NSButton) {
-        // The test will verify AXValue changed on this sibling label.
-        if let label = window.contentView?.viewWithTag(99) as? NSTextField {
-            label.stringValue = "clicked_\(Int(Date().timeIntervalSince1970))"
-        }
+        // Codex v8 #4 — update the observable label so tests can confirm
+        // the button actually ran its action. The AX tree exposes this
+        // label's AXValue, which the compat matrix reads post-press.
+        clickLabel?.stringValue = "clicked_\(Int(Date().timeIntervalSince1970 * 1000))"
+    }
+
+    private func makeClickLabel() -> NSTextField {
+        let tf = NSTextField(labelWithString: "not_clicked")
+        tf.setAccessibilityIdentifier("btn_click_label")
+        tf.font = .systemFont(ofSize: 11)
+        return tf
     }
 
     private func makeOutline(id: String) -> NSScrollView {

@@ -145,6 +145,15 @@ struct ControlZooMatrixTests {
 
         // btn_click: AXPress action returns ax_status == 0
         try runButtonPress(driver: driver, elementID: idMap["btn_click"], label: "AXButton")
+
+        // tf_secure: bullet-count verifies plaintext write (Codex v8 #2)
+        try runSecureFieldWrite(driver: driver, elementID: idMap["tf_secure"], label: "AXSecureTextField")
+
+        // pu_one: AXShowMenu + menu AXPress (Codex v8 #2)
+        try await runPopUpMenuNav(driver: driver, pid: pid, elementID: idMap["pu_one"], label: "AXPopUpButton")
+
+        // outline_items: select a row and verify AXSelected flipped (Codex v8 #2)
+        try await runOutlineRowSelection(driver: driver, pid: pid, label: "AXOutline row")
     }
 
     // MARK: - Per-control probes
@@ -159,13 +168,20 @@ struct ControlZooMatrixTests {
         driver.setValueString(elementID: elementID, value: before) // restore
     }
 
+    // Codex v8 #3 — previously used `after != before` which passed when
+    // post-press read returned nil. Now requires non-nil read and an
+    // explicit "0"→"1" or "1"→"0" transition.
     func runToggleViaPress(driver: MCPDriver, elementID: String?, label: String) async throws {
         guard let elementID else { Issue.record("\(label): missing element id"); return }
-        let before = driver.readValue(elementID: elementID) ?? ""
+        let before = driver.readValue(elementID: elementID)
+        #expect(before != nil, "\(label): could not read initial AXValue")
+        #expect(before == "0" || before == "1", "\(label): unexpected initial AXValue \(before ?? "nil")")
         _ = driver.performAction(elementID: elementID, action: "AXPress")
         try? await Task.sleep(nanoseconds: 150_000_000)
         let after = driver.readValue(elementID: elementID)
-        #expect(after != before, "\(label) AXPress did not flip AXValue (\(before))")
+        #expect(after != nil, "\(label): could not read AXValue after AXPress")
+        let expected = (before == "0") ? "1" : "0"
+        #expect(after == expected, "\(label) AXPress transition mismatch: \(before ?? "nil") → \(after ?? "nil") (expected \(expected))")
         _ = driver.performAction(elementID: elementID, action: "AXPress") // restore
     }
 
@@ -188,8 +204,31 @@ struct ControlZooMatrixTests {
         _ = driver.performAction(elementID: elementID, action: "AXDecrement")
     }
 
+    // Codex v8 #4 — pass criterion is now the observable side-effect
+    // (btn_click_label's AXValue changes), not just ax_status == 0.
     func runButtonPress(driver: MCPDriver, elementID: String?, label: String) throws {
         guard let elementID else { Issue.record("\(label): missing element id"); return }
+
+        // Find the observable label and read its initial value.
+        let tree = driver.toolResult(
+            name: "find_elements",
+            arguments: #"{"pid":\#(Self.runningHarnessPID() ?? 0),"role":"AXStaticText","max_depth":12,"limit":50}"#
+        )
+        var labelID: String? = nil
+        if case .object(let root) = tree,
+           case .array(let arr) = root["elements"] ?? .null {
+            for entry in arr {
+                guard case .object(let o) = entry,
+                      case .string(let id) = o["id"] ?? .null else { continue }
+                if let ident = driver.readAttribute(elementID: id, name: "AXIdentifier"),
+                   ident == "btn_click_label" {
+                    labelID = id
+                    break
+                }
+            }
+        }
+
+        let beforeLabel = labelID.flatMap { driver.readValue(elementID: $0) }
         let response = driver.performAction(elementID: elementID, action: "AXPress")
         guard case .object(let payload) = response,
               case .number(let status) = payload["ax_status"] ?? .null else {
@@ -197,6 +236,130 @@ struct ControlZooMatrixTests {
             return
         }
         #expect(Int(status) == 0, "\(label) AXPress ax_status != 0 (got \(status))")
+
+        guard let labelID else {
+            Issue.record("\(label): btn_click_label not found — cannot verify observable side-effect")
+            return
+        }
+        Thread.sleep(forTimeInterval: 0.1)
+        let afterLabel = driver.readValue(elementID: labelID)
+        #expect(afterLabel != nil && afterLabel != beforeLabel,
+                "\(label): click label did not change (\(beforeLabel ?? "nil") → \(afterLabel ?? "nil"))")
+    }
+
+    // Codex v8 #2 — NSSecureTextField: AXValue is returned as a string of
+    // bullet chars, one per plaintext character. Writing plaintext X shows
+    // up as len(X) bullets — that's the verification.
+    func runSecureFieldWrite(driver: MCPDriver, elementID: String?, label: String) throws {
+        guard let elementID else { Issue.record("\(label): missing element id"); return }
+        let plaintext = "mcp_pw_\(UUID().uuidString.prefix(6))"
+        driver.setValueString(elementID: elementID, value: plaintext)
+        guard let bullets = driver.readValue(elementID: elementID) else {
+            Issue.record("\(label) could not read AXValue after write")
+            return
+        }
+        #expect(bullets.count == plaintext.count,
+                "\(label): wrote \(plaintext.count) chars, got \(bullets.count) bullets")
+    }
+
+    // Codex v8 #2 — NSPopUpButton: AXValue set is a no-op; the real flow
+    // is AXShowMenu → find AXMenuItem by title → AXPress it → verify
+    // the popup's AXValue now equals the target.
+    func runPopUpMenuNav(driver: MCPDriver, pid: pid_t, elementID: String?, label: String) async throws {
+        guard let elementID else { Issue.record("\(label): missing element id"); return }
+        let before = driver.readValue(elementID: elementID) ?? ""
+        let target = "Blue"
+        _ = driver.performAction(elementID: elementID, action: "AXShowMenu")
+        try? await Task.sleep(nanoseconds: 250_000_000)
+
+        // Re-walk the tree — the menu items are now visible
+        guard let menuTree = driver.toolResult(
+            name: "get_ui_tree",
+            arguments: #"{"pid":\#(pid),"max_depth":16}"#
+        ),
+              case .object(let tRoot) = menuTree,
+              case .array(let tNodes) = tRoot["nodes"] ?? .null else {
+            Issue.record("\(label): get_ui_tree after AXShowMenu failed")
+            return
+        }
+
+        let blueID = tNodes.compactMap { (n) -> String? in
+            guard case .object(let o) = n,
+                  case .string(let role) = o["role"] ?? .null, role == "AXMenuItem",
+                  case .string(let title) = o["title"] ?? .null, title == target,
+                  case .string(let id) = o["id"] ?? .null else { return nil }
+            return id
+        }.first
+
+        guard let blueID else {
+            // Escape the menu before failing
+            _ = driver.toolResult(name: "press_key", arguments: #"{"key":"escape"}"#)
+            Issue.record("\(label): could not find AXMenuItem '\(target)'")
+            return
+        }
+
+        _ = driver.performAction(elementID: blueID, action: "AXPress")
+        try? await Task.sleep(nanoseconds: 150_000_000)
+
+        let after = driver.readValue(elementID: elementID)
+        #expect(after == target, "\(label): wanted \(target) got \(after ?? "nil") (before=\(before))")
+
+        // Restore to original via the same menu flow
+        _ = driver.performAction(elementID: elementID, action: "AXShowMenu")
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        if let restoreTree = driver.toolResult(name: "get_ui_tree", arguments: #"{"pid":\#(pid),"max_depth":16}"#),
+           case .object(let r1) = restoreTree,
+           case .array(let r2) = r1["nodes"] ?? .null {
+            for n in r2 {
+                guard case .object(let o) = n,
+                      case .string(let role) = o["role"] ?? .null, role == "AXMenuItem",
+                      case .string(let title) = o["title"] ?? .null, title == before,
+                      case .string(let id) = o["id"] ?? .null else { continue }
+                _ = driver.performAction(elementID: id, action: "AXPress")
+                break
+            }
+        }
+    }
+
+    // Codex v8 #2 — NSOutlineView row: set AXSelected and verify it flipped
+    // to 1 from 0. If it was already 1 (from a prior run) we deliberately
+    // deselect first so the transition is observable.
+    func runOutlineRowSelection(driver: MCPDriver, pid: pid_t, label: String) async throws {
+        guard let tree = driver.toolResult(
+            name: "get_ui_tree",
+            arguments: #"{"pid":\#(pid),"max_depth":16}"#
+        ),
+              case .object(let t) = tree,
+              case .array(let nodes) = t["nodes"] ?? .null else {
+            Issue.record("\(label): get_ui_tree failed")
+            return
+        }
+        let rowIDs = nodes.compactMap { (n) -> String? in
+            guard case .object(let o) = n,
+                  case .string(let role) = o["role"] ?? .null, role == "AXRow",
+                  case .string(let id) = o["id"] ?? .null else { return nil }
+            return id
+        }
+        #expect(rowIDs.count >= 3, "\(label): expected >= 3 rows, got \(rowIDs.count)")
+        guard rowIDs.count >= 3 else { return }
+        // Ensure a known unselected row
+        let target = rowIDs[2]
+        _ = driver.toolResult(
+            name: "set_element_attribute",
+            arguments: #"{"element_id":"\#(target)","name":"AXSelected","value":false}"#
+        )
+        try? await Task.sleep(nanoseconds: 80_000_000)
+        let before = driver.readAttribute(elementID: target, name: "AXSelected") ?? "?"
+
+        _ = driver.toolResult(
+            name: "set_element_attribute",
+            arguments: #"{"element_id":"\#(target)","name":"AXSelected","value":true}"#
+        )
+        try? await Task.sleep(nanoseconds: 80_000_000)
+        let after = driver.readAttribute(elementID: target, name: "AXSelected")
+
+        #expect(before == "0", "\(label): row was not deselected before the test (got \(before))")
+        #expect(after == "1", "\(label): row should be selected after set, got \(after ?? "nil")")
     }
 }
 
@@ -255,13 +418,17 @@ final class MCPDriver {
     }
 
     func readValue(elementID: String) -> String? {
+        readAttribute(elementID: elementID, name: "AXValue")
+    }
+
+    func readAttribute(elementID: String, name: String) -> String? {
         guard let response = toolResult(
             name: "get_element_attributes",
-            arguments: #"{"element_id":"\#(elementID)","names":["AXValue"]}"#
+            arguments: #"{"element_id":"\#(elementID)","names":["\#(name)"]}"#
         ),
               case .object(let payload) = response,
               case .object(let values) = payload["values"] ?? .null,
-              case .string(let value) = values["AXValue"] ?? .null else { return nil }
+              case .string(let value) = values[name] ?? .null else { return nil }
         return value
     }
 

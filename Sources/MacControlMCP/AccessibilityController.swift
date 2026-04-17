@@ -75,17 +75,28 @@ actor AccessibilityController {
         let unavailable: [String]
     }
 
+    // Codex v8 #9 — expanded to include every role `list_elements`
+    // should surface as actionable: AXSwitch, AXStepper, AXLevelIndicator
+    // (custom meters), AXIncrementor, AXDecrementor, AXRow. Previously
+    // these were exposed via get_ui_tree but filtered OUT by list_elements'
+    // whitelist — a confusing divergence.
     private let actionableRoles: Set<String> = [
         "AXButton",
         "AXCheckBox",
         "AXComboBox",
+        "AXDecrementor",
         "AXDisclosureTriangle",
+        "AXIncrementor",
+        "AXLevelIndicator",
         "AXLink",
         "AXMenuButton",
         "AXPopUpButton",
         "AXRadioButton",
+        "AXRow",
         "AXSecureTextField",
         "AXSlider",
+        "AXStepper",
+        "AXSwitch",
         "AXTextArea",
         "AXTextField"
     ]

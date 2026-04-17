@@ -256,9 +256,17 @@ extension ToolRegistry {
             return errorResult("Unknown or expired element_id.", ["ok": .bool(false), "element_id": .string(id)])
         }
 
+        // Codex v8 #10 — strict type check on `names`. If the key is
+        // PRESENT but not an array, reject rather than silently treating
+        // as "empty names" (which opens the unintended list-attributes
+        // path). Omit the key entirely if you want that behaviour.
+        if let raw = arguments["names"], case .array(_) = raw { } else if arguments["names"] != nil,
+                                                                         !(arguments["names"] == .null) {
+            return invalidArgument("get_element_attributes: names must be an array of strings (or omitted to list names).")
+        }
         let requestedNames = arguments["names"]?.arrayValue?.compactMap { $0.stringValue } ?? []
 
-        // Empty names → list available attribute names instead of reading values.
+        // Empty names (or omitted) → list available attribute names instead of reading values.
         if requestedNames.isEmpty {
             let names = await accessibility.attributeNames(element: element)
             let actions = await accessibility.actionNames(element: element)
@@ -319,6 +327,14 @@ extension ToolRegistry {
         }
         guard let element = await elementCache.resolve(id) else {
             return errorResult("Unknown or expired element_id.", ["ok": .bool(false), "element_id": .string(id)])
+        }
+
+        // Codex v8 #10 — strict type check on `action`. If the key is
+        // PRESENT but not a string, reject with invalidArgument rather
+        // than silently treating it as "no action" and listing actions.
+        if let raw = arguments["action"], case .string(_) = raw { } else if arguments["action"] != nil,
+                                                                            !(arguments["action"] == .null) {
+            return invalidArgument("perform_element_action: action must be a string (or omitted to list actions).")
         }
 
         // No action specified → list available actions.
