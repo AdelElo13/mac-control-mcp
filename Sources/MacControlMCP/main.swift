@@ -152,6 +152,18 @@ actor MCPServer {
         }
     }
 
+    // ARCHITECTURAL NOTE (Codex v5/v6 MEDIUM, deferred):
+    // `write` performs a blocking Darwin.write inside actor-isolated code,
+    // which means a slow or stalled stdout consumer head-of-line stalls
+    // the protocol handler — we cannot process the next incoming request
+    // until the previous response has been fully flushed to the pipe.
+    //
+    // This is acceptable for the MCP stdio use case: an MCP client drives
+    // the server over its own stdio, drains promptly, and tears down when
+    // done. A misbehaving client freezing us simply stalls the client it
+    // owns. A more concurrency-correct design would offload writes to a
+    // dedicated writer Task with a bounded queue, but that's added
+    // complexity for a scenario that doesn't materialise in practice.
     private func write(response: JSONRPCResponse) {
         do {
             let message = try StdioMessageFramer.frame(response, encoder: encoder)

@@ -157,6 +157,51 @@ struct StdioIntegrationTests {
         #expect(text.contains("accessibility"))
     }
 
+    @Test("server reassembles a frame written byte-by-byte to stdin")
+    func fragmentedFrameReassembly() throws {
+        // Guards the read path against the original bug's inverse: when
+        // the OS hands us ONE byte at a time instead of a batch, the
+        // drainReadBuffer / availableData loop must keep polling until
+        // the complete Content-Length header + body are in the buffer.
+        let binary = Self.serverBinary()
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: binary)
+        let stdinPipe = Pipe()
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardInput = stdinPipe
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+        try process.run()
+        Self.setNonBlocking(stdoutPipe.fileHandleForReading.fileDescriptor)
+
+        let request = #"{"jsonrpc":"2.0","id":42,"method":"initialize","params":{}}"#
+        let framed = Self.frame(request)
+
+        // Write one byte at a time with a small delay. This is the kind of
+        // stdin pattern we'd see over a very slow IPC channel.
+        for byte in framed {
+            stdinPipe.fileHandleForWriting.write(Data([byte]))
+            Thread.sleep(forTimeInterval: 0.002)
+        }
+
+        var stdoutBuf = Data()
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            stdoutBuf.append(Self.drainNonBlocking(stdoutPipe.fileHandleForReading.fileDescriptor))
+            if stdoutBuf.contains("\"id\":42".data(using: .utf8)!) { break }
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+
+        try? stdinPipe.fileHandleForWriting.close()
+        process.waitUntilExit()
+        stdoutBuf.append(Self.drainNonBlocking(stdoutPipe.fileHandleForReading.fileDescriptor))
+
+        let text = String(data: stdoutBuf, encoding: .utf8) ?? ""
+        #expect(text.contains("\"id\":42"))
+        #expect(text.contains("mac-control-mcp"))
+    }
+
     @Test("server handles three frames delivered in a single stdin chunk")
     func multiFrameSingleChunk() throws {
         // Guard the drainReadBuffer loop: when the OS happens to deliver
