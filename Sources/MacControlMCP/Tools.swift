@@ -80,6 +80,17 @@ final class ToolRegistry: @unchecked Sendable {
             Self.definitionsV2Phase3 + Self.definitionsV2Phase4 + Self.definitionsV2Phase5
     }
 
+    // MARK: - Tool dispatch
+    //
+    // MAINTAINABILITY NOTE (Codex v1 LOW):
+    // This single switch statement now dispatches 63 tools. Splitting it
+    // into a `[String: @Sendable (Arguments) -> ToolCallResult]` table per
+    // phase file would reduce surface area and make tool registration
+    // self-contained. The split is intentionally deferred until we add
+    // more tools OR the switch exceeds ~100 cases — doing it now would
+    // churn 63 case arms for little immediate benefit and complicate the
+    // actor-hop story for tools that need async access to specific
+    // controllers.
     func callTool(name: String, arguments: [String: JSONValue]) async -> ToolCallResult {
         switch name {
         case "list_elements":

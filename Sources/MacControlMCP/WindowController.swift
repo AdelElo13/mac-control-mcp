@@ -19,13 +19,20 @@ actor WindowController {
     /// Enumerate all windows of all regular running apps. Windows are ordered
     /// per-app in the AX child order, which approximately matches z-order for
     /// the active app and is stable across calls for inactive apps.
-    func listWindows() -> [WindowInfo] {
+    func listWindows() async -> [WindowInfo] {
+        // NSWorkspace.runningApplications is main-actor-affine under strict
+        // concurrency — snapshot the (pid, name) pairs on MainActor, then
+        // do the AX work (which is thread-safe) here on the actor thread.
+        struct AppSnap: Sendable { let pid: pid_t; let name: String }
+        let apps: [AppSnap] = await MainActor.run {
+            NSWorkspace.shared.runningApplications
+                .filter { $0.activationPolicy == .regular && $0.processIdentifier > 0 }
+                .map { AppSnap(pid: $0.processIdentifier, name: $0.localizedName ?? "Unknown") }
+        }
+
         var result: [WindowInfo] = []
-
-        for app in NSWorkspace.shared.runningApplications
-            where app.activationPolicy == .regular && app.processIdentifier > 0 {
-
-            let appElement = AXUIElementCreateApplication(app.processIdentifier)
+        for app in apps {
+            let appElement = AXUIElementCreateApplication(app.pid)
             var mainWindowRef: CFTypeRef?
             AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute as CFString, &mainWindowRef)
             let mainWindow = mainWindowRef.flatMap { raw -> AXUIElement? in
@@ -38,13 +45,7 @@ actor WindowController {
             guard status == .success, let array = windowsRef as? [AXUIElement] else { continue }
 
             for (index, window) in array.enumerated() {
-                let info = describe(
-                    window: window,
-                    index: index,
-                    appName: app.localizedName ?? "Unknown",
-                    pid: app.processIdentifier,
-                    mainWindow: mainWindow
-                )
+                let info = describe(window: window, index: index, appName: app.name, pid: app.pid, mainWindow: mainWindow)
                 result.append(info)
             }
         }
@@ -54,9 +55,11 @@ actor WindowController {
 
     /// List windows for a single app by PID. Faster than `listWindows()`
     /// when the caller already knows which app they want.
-    func listAppWindows(pid: pid_t) -> [WindowInfo] {
+    func listAppWindows(pid: pid_t) async -> [WindowInfo] {
         let appElement = AXUIElementCreateApplication(pid)
-        let name = NSRunningApplication(processIdentifier: pid)?.localizedName ?? "Unknown"
+        let name: String = await MainActor.run {
+            NSRunningApplication(processIdentifier: pid)?.localizedName ?? "Unknown"
+        }
 
         var mainWindowRef: CFTypeRef?
         AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute as CFString, &mainWindowRef)
@@ -78,9 +81,14 @@ actor WindowController {
     /// Returns true only when BOTH the raise and main-attribute assign
     /// succeed, so callers don't get a false-positive success when the AX
     /// tree rejects the request.
-    func focusWindow(pid: pid_t, index: Int) -> Bool {
-        guard let app = NSRunningApplication(processIdentifier: pid) else { return false }
-        app.activate(options: [])
+    func focusWindow(pid: pid_t, index: Int) async -> Bool {
+        // NSRunningApplication activation is main-actor affine.
+        let appActivated: Bool = await MainActor.run {
+            guard let app = NSRunningApplication(processIdentifier: pid) else { return false }
+            app.activate(options: [])
+            return true
+        }
+        guard appActivated else { return false }
 
         let appElement = AXUIElementCreateApplication(pid)
         var windowsRef: CFTypeRef?

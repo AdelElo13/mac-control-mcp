@@ -585,8 +585,15 @@ extension ToolRegistry {
         let deadline = Date().addingTimeInterval(timeout)
 
         while Date() < deadline {
-            if let front = NSWorkspace.shared.frontmostApplication {
-                let pid = front.processIdentifier
+            // Snapshot frontmost app state on MainActor (NSWorkspace is
+            // main-actor-affine in strict concurrency mode).
+            struct Front: Sendable { let pid: pid_t; let name: String? }
+            let front = await MainActor.run { () -> Front? in
+                guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
+                return Front(pid: app.processIdentifier, name: app.localizedName)
+            }
+            if let front {
+                let pid = front.pid
                 // An Open/Save dialog appears as an AXSheet with role AXSheet
                 // under the focused window, containing an AXPopUpButton for the
                 // sidebar + AXTextField for path. We detect by searching for
@@ -601,7 +608,7 @@ extension ToolRegistry {
                         [
                             "ok": .bool(true),
                             "pid": .number(Double(pid)),
-                            "app": front.localizedName.map(JSONValue.string) ?? .null
+                            "app": front.name.map(JSONValue.string) ?? .null
                         ]
                     )
                 }

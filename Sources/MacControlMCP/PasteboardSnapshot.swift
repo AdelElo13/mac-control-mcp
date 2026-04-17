@@ -61,6 +61,15 @@ enum PasteboardSnapshot {
     /// `nonisolated` + `@Sendable` on the closure lets actor callers use it
     /// without tripping strict-concurrency sending-value errors; the capture/
     /// restore calls internally hop to MainActor via `MainActor.run`.
+    ///
+    /// NOTE: `@Sendable` only requires that captured values be Sendable. It
+    /// does NOT prevent capturing actor references (actors are themselves
+    /// Sendable). Callers must still avoid mutating per-actor state inside
+    /// the closure through those references in ways that would not compose
+    /// correctly with the surrounding actor's isolation. Today our two
+    /// callers — AccessibilityController.pasteTextViaClipboard and
+    /// FileDialogController.setPath — only invoke nonisolated methods on
+    /// `self` inside the closure, so the call-site discipline is sound.
     nonisolated static func withSnapshot<T: Sendable>(
         _ body: @Sendable () async throws -> T
     ) async rethrows -> T {
