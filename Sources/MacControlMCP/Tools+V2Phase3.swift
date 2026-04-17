@@ -53,15 +53,18 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "launch_app",
-            description: "Launch an application by bundle ID, absolute path, or app name.",
+            description: "Launch an application by bundle ID, absolute path, or app name. Accepts `identifier` (canonical) or `bundle_id` (alias — same meaning, aligns with activate_app/quit_app/wait_for_app).",
             inputSchema: schema(
                 properties: [
                     "identifier": .object([
                         "type": .string("string"),
                         "description": .string("Bundle ID (com.apple.Safari), path (/Applications/Safari.app), or name ('Safari').")
+                    ]),
+                    "bundle_id": .object([
+                        "type": .string("string"),
+                        "description": .string("Alias for `identifier` — accepted for consistency with activate_app/quit_app/wait_for_app.")
                     ])
-                ],
-                required: ["identifier"]
+                ]
             )
         ),
         MCPToolDefinition(
@@ -210,8 +213,15 @@ extension ToolRegistry {
     }
 
     func callLaunchApp(_ arguments: [String: JSONValue]) async -> ToolCallResult {
-        guard let identifier = arguments["identifier"]?.stringValue, !identifier.isEmpty else {
-            return invalidArgument("launch_app requires identifier.")
+        // Accept `identifier` (canonical) OR `bundle_id` (the name used
+        // by sibling tools activate_app / quit_app / wait_for_app). A
+        // previous version required `identifier` only, which meant
+        // callers had to remember a different parameter name per tool
+        // in the same family — silly and error-prone.
+        let raw = arguments["identifier"]?.stringValue
+            ?? arguments["bundle_id"]?.stringValue
+        guard let identifier = raw, !identifier.isEmpty else {
+            return invalidArgument("launch_app requires identifier (bundle ID, path, or app name).")
         }
         let result = await appLifecycle.launch(identifier: identifier)
         let ok = (result.pid != nil)

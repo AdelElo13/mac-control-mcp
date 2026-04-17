@@ -32,7 +32,17 @@ enum PathValidator {
 
     static func allowedRoots() -> [URL] {
         var roots: [URL] = []
+        // User-scoped temp (NSTemporaryDirectory → /var/folders/.../T/).
         roots.append(URL(fileURLWithPath: NSTemporaryDirectory()).standardizedFileURL)
+        // POSIX temp locations. /tmp is the conventional shell temp on
+        // macOS and resolves to /private/tmp; both are standard and both
+        // are writable only by the same user's effective permissions,
+        // so they're no less safe than the user-scoped temp. A previous
+        // version rejected `/tmp/foo.png` even though that's where most
+        // clients default their screenshots — causing every capture_*
+        // call with /tmp paths to fail.
+        roots.append(URL(fileURLWithPath: "/tmp").standardizedFileURL)
+        roots.append(URL(fileURLWithPath: "/private/tmp").standardizedFileURL)
 
         let home = URL(fileURLWithPath: NSHomeDirectory())
         for name in ["Desktop", "Documents", "Downloads", "Pictures"] {
