@@ -34,10 +34,19 @@ APP_NAME="MacControlMCP"
 INSTALL_DIR="${HOME}/Applications"
 APP_PATH="${INSTALL_DIR}/${APP_NAME}.app"
 
-echo "[build-bundle] swift build (release)..."
-swift build -c release --disable-sandbox
+echo "[build-bundle] swift build (release) — arm64 + x86_64..."
+# Build both slices so the shipped .app is universal and runs on Intel
+# Macs without emulation. We do two separate release builds (one per
+# triple) and lipo them together. Swift Package Manager doesn't have a
+# single-shot "universal" flag, so this is the standard pattern.
+swift build -c release --disable-sandbox --arch arm64 --arch x86_64
 
-BIN="${PROJECT_ROOT}/.build/release/mac-control-mcp"
+BIN="${PROJECT_ROOT}/.build/apple/Products/Release/mac-control-mcp"
+# Fallback for older SwiftPM versions that don't write to the
+# multi-arch path.
+if [ ! -f "$BIN" ]; then
+    BIN="${PROJECT_ROOT}/.build/release/mac-control-mcp"
+fi
 if [ ! -f "$BIN" ]; then
     echo "ERROR: binary not found at $BIN"
     exit 1
@@ -120,8 +129,44 @@ cat > "$ENT" <<EOF
 </plist>
 EOF
 
-echo "[build-bundle] ad-hoc codesigning with entitlements..."
-codesign --force --deep --sign - --entitlements "$ENT" "${APP_PATH}"
+# Codesigning strategy: prefer Developer ID Application (enables
+# persistent TCC grants + Gatekeeper accepts the binary on other Macs +
+# can be notarised), fall back to ad-hoc for local dev when no
+# Developer ID cert is installed.
+#
+# Override either:
+#   - SIGNING_IDENTITY env: pass the exact SHA-1 or "Developer ID Application: …"
+#   - NOTARIZE_PROFILE env: name of a `xcrun notarytool store-credentials` profile
+#     (if set AND signing is Developer ID, we submit + staple after signing)
+if [ -n "${SIGNING_IDENTITY:-}" ]; then
+    SIGN_WITH="$SIGNING_IDENTITY"
+    SIGN_LABEL="override ($SIGNING_IDENTITY)"
+elif DEV_ID=$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Developer ID Application:/ {print $2; exit}'); [ -n "$DEV_ID" ]; then
+    SIGN_WITH="$DEV_ID"
+    SIGN_LABEL="Developer ID ($DEV_ID)"
+else
+    SIGN_WITH="-"
+    SIGN_LABEL="ad-hoc (no Developer ID cert found)"
+fi
+
+echo "[build-bundle] codesigning: $SIGN_LABEL ..."
+codesign --force --deep --options runtime --timestamp \
+    --sign "$SIGN_WITH" --entitlements "$ENT" "${APP_PATH}"
+
+# Notarise + staple if a Developer ID was used AND a notarytool profile
+# was passed. Skip silently on ad-hoc so local dev stays fast.
+if [ -n "${NOTARIZE_PROFILE:-}" ] && [ "$SIGN_WITH" != "-" ]; then
+    echo "[build-bundle] notarising via profile '${NOTARIZE_PROFILE}'..."
+    NOTARY_ZIP="${PROJECT_ROOT}/.build/${APP_NAME}-notary.zip"
+    rm -f "$NOTARY_ZIP"
+    (cd "$(dirname "$APP_PATH")" && /usr/bin/ditto -c -k --keepParent "$(basename "$APP_PATH")" "$NOTARY_ZIP")
+    xcrun notarytool submit "$NOTARY_ZIP" \
+        --keychain-profile "$NOTARIZE_PROFILE" \
+        --wait
+    echo "[build-bundle] stapling ticket..."
+    xcrun stapler staple "${APP_PATH}"
+    spctl --assess --type execute --verbose "${APP_PATH}" || true
+fi
 
 # Register with LaunchServices so TCC actually sees the new app.
 LS_REGISTER=/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister
