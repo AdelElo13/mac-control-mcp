@@ -8,6 +8,10 @@
 
 Native Swift MCP server for full macOS automation. 63 tools in one signed `.app` bundle — no Python, no Node runtime, no Electron.
 
+<p align="center">
+  <img src="docs/demo.gif" width="720" alt="mac-control-mcp driving Safari: open tab, type query, capture window, OCR, Spotlight search — all via MCP stdio">
+</p>
+
 Gives any MCP-compatible client (Claude Desktop, Claude Code, Cursor, etc.) the ability to:
 
 - Read and mutate the Accessibility tree of any running app
