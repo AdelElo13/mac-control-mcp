@@ -266,6 +266,18 @@ if let exitCode = handleScreenRecordingCommand(arguments: CommandLine.arguments)
     exit(exitCode)
 }
 
+// Ignore SIGPIPE. This is an MCP stdio server — when the client closes
+// its end of stdout, any pending Darwin.write call would otherwise take
+// down the process with SIGPIPE before we can handle EPIPE in Swift
+// and exit cleanly. Seen on CI: one stdio test closed its subprocess
+// pipe mid-write, the binary died with signal 13, and `swift test`
+// flagged the whole run as failed even though every test assertion
+// had actually passed. Ignoring the signal converts the write failure
+// into a plain EPIPE return, which our existing write loop handles.
+#if canImport(Darwin)
+signal(SIGPIPE, SIG_IGN)
+#endif
+
 Task {
     let accessibility = AccessibilityController()
     let toolRegistry = ToolRegistry(accessibility: accessibility)
