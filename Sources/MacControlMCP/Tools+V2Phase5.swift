@@ -374,9 +374,24 @@ extension ToolRegistry {
             return invalidArgument("spotlight_search requires query.")
         }
         let ok = await spotlight.search(query)
-        return ok
-            ? successResult("Spotlight opened.", ["ok": .bool(true), "query": .string(query)])
-            : errorResult("Spotlight open failed.", ["ok": .bool(false)])
+        if !ok {
+            return errorResult("Spotlight open failed.", ["ok": .bool(false)])
+        }
+        // Peek at the Spotlight result list via AX so the caller can
+        // decide whether the ranked results match their expectation
+        // BEFORE invoking spotlight_open_result.
+        let previews = await spotlight.currentResults(limit: 10)
+        let previewJSON: [JSONValue] = previews.map { p in
+            .object(["index": .number(Double(p.index)), "title": .string(p.title)])
+        }
+        return successResult(
+            "Spotlight opened. \(previews.count) result preview(s) collected.",
+            [
+                "ok": .bool(true),
+                "query": .string(query),
+                "results": .array(previewJSON)
+            ]
+        )
     }
 
     func callSpotlightOpenResult(_ arguments: [String: JSONValue]) async -> ToolCallResult {

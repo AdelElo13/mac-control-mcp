@@ -110,10 +110,39 @@ actor BrowserController {
         return runOsascript(script: script) != nil
     }
 
-    /// Evaluate JavaScript in a tab. The result is whatever the JS expression
-    /// evaluates to, stringified. Requires "Allow JavaScript from Apple Events"
-    /// to be enabled in the browser's Develop menu.
+    /// Evaluate JavaScript in a tab. The result is always returned as a
+    /// JavaScript-formatted string (numbers via `String(n)`, objects via
+    /// `JSON.stringify`), so the caller never sees AppleScript's locale-
+    /// dependent number coercion — `1+1` returns `"2"` regardless of
+    /// system locale, not `"2,0"` on nl-NL.
+    ///
+    /// Requires "Allow JavaScript from Apple Events" enabled in the
+    /// browser's Develop menu.
     func evalJS(browser: Browser, code: String, windowIndex: Int = 1, tabIndex: Int? = nil) -> EvalResult {
+        // Wrap user code so the result is always a well-formed JS string
+        // before AppleScript ever touches it. We IIFE the user expression,
+        // then coerce the result:
+        //   string         → as-is
+        //   null/undefined → "null" / "undefined"
+        //   object         → JSON.stringify
+        //   number/bool/…  → String(x)   (period decimal, no locale)
+        //
+        // User code is embedded as an expression. Multi-statement blocks
+        // still work via inner IIFE semantics.
+        let wrappedJS = """
+        (function(){
+            function __mcp_coerce(v){
+                if (v === null) return "null";
+                if (v === undefined) return "undefined";
+                if (typeof v === "string") return v;
+                if (typeof v === "object") { try { return JSON.stringify(v); } catch(e) { return String(v); } }
+                return String(v);
+            }
+            try { return __mcp_coerce((function(){ return (\(code)); })()); }
+            catch(e) { return "__MCP_JS_ERROR__:" + (e && e.message ? e.message : String(e)); }
+        })()
+        """
+
         let command: String
         switch browser {
         case .safari:
@@ -121,7 +150,7 @@ actor BrowserController {
             command = """
             tell application "Safari"
                 try
-                    set result to (do JavaScript "\(escape(code))" in \(tabRef))
+                    set result to (do JavaScript "\(escape(wrappedJS))" in \(tabRef))
                     return "OK\\t" & (result as string)
                 on error errMsg
                     return "ERR\\t" & errMsg
@@ -133,7 +162,7 @@ actor BrowserController {
             command = """
             tell application "Google Chrome"
                 try
-                    set result to (execute \(tabRef) javascript "\(escape(code))")
+                    set result to (execute \(tabRef) javascript "\(escape(wrappedJS))")
                     return "OK\\t" & (result as string)
                 on error errMsg
                     return "ERR\\t" & errMsg
@@ -148,6 +177,12 @@ actor BrowserController {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.hasPrefix("OK\t") {
             let value = String(trimmed.dropFirst(3))
+            // Our JS wrapper also catches JS errors and returns them as a
+            // sentinel string so AppleScript doesn't throw; unwrap it.
+            if value.hasPrefix("__MCP_JS_ERROR__:") {
+                return EvalResult(success: false, value: nil,
+                                  error: String(value.dropFirst("__MCP_JS_ERROR__:".count)))
+            }
             return EvalResult(success: true, value: value, error: nil)
         }
         if trimmed.hasPrefix("ERR\t") {
