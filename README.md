@@ -1,5 +1,10 @@
 # mac-control-mcp
 
+[![CI](https://github.com/AdelElo13/mac-control-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/AdelElo13/mac-control-mcp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-blue.svg)](#install)
+[![Notarized](https://img.shields.io/badge/signed-Developer%20ID%20%2B%20Notarized-success.svg)](#install)
+
 Native Swift MCP server for full macOS automation. 63 tools in one signed `.app` bundle — no Python, no Node runtime, no Electron.
 
 Gives any MCP-compatible client (Claude Desktop, Claude Code, Cursor, etc.) the ability to:
@@ -69,10 +74,25 @@ Total: **63 tools**.
 - AppleScript string interpolation for `browser_eval_js` wraps user code in `(0, eval)(…)` via `JSON.stringify`, so quotes/newlines/unicode can't break out of the wrapper.
 - No network calls. Everything is local system integration.
 
+## Status (verified in the current release)
+
+| Scope | State |
+|---|---|
+| Unit / integration test suite | 63 tests in 11 suites, all green locally and on CI (macos-15) |
+| Live tool probe | 43 of the 63 tools exercised end-to-end via real MCP stdio against the running binary, all pass |
+| Destructive tools (volume, dark mode, force_quit_app, drag_and_drop, file_dialog_*) | Verified live in a reversible way |
+| Code signing | Developer ID Application (A3W973JZ49) with hardened runtime |
+| Apple notarization | Accepted by Apple Notary Service, ticket stapled, `spctl` reports `source=Notarized Developer ID` |
+| Gatekeeper flow | Extracted + launched with the `com.apple.quarantine` xattr set; no right-click-open needed |
+| Architectures | Universal binary (arm64 + x86_64). Intel slice compiles cleanly but has not been runtime-verified on actual Intel hardware |
+| `move_window_to_display` | Skipped — requires a 2+ display setup |
+
+If you run into an untested path, please open an issue with the reproduction — happy to fix fast.
+
 ## Caveats
 
-- **Ad-hoc codesigning means TCC grants don't persist across rebuilds.** macOS keys Screen Recording / Accessibility grants on the code's cdhash, which changes every build. For persistent grants, sign with a Developer ID certificate and notarise (requires an Apple Developer account).
 - **Cross-origin iframes** block `browser_eval_js` — same-origin policy, not a limitation of the tool. Use AX coords or synthetic CGEvents for content inside embedded iframes from other origins.
+- **First-run TCC prompts are unavoidable.** macOS requires the user to grant Screen Recording, Accessibility and Apple Events the first time. The usage-description strings in `Info.plist` make the consent dialogs show up with a clear reason, but you still need to click Allow in System Settings once.
 
 ## Development
 
