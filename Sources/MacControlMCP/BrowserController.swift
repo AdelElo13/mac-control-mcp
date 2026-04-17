@@ -85,17 +85,24 @@ actor BrowserController {
         return tabs.first { $0.active }
     }
 
+    /// Set a tab's URL. Creates a window if none exists (same reasoning
+    /// as newTab — was failing on windowless browsers).
     func navigate(browser: Browser, url: String, windowIndex: Int = 1, tabIndex: Int? = nil) -> Bool {
         let tabRef: String
+        let ensureWindow: String
         switch browser {
         case .safari:
             tabRef = tabIndex.map { "tab \($0) of window \(windowIndex)" } ?? "current tab of window \(windowIndex)"
+            ensureWindow = "if (count of windows) = 0 then make new document"
         case .chrome:
             tabRef = tabIndex.map { "tab \($0) of window \(windowIndex)" } ?? "active tab of window \(windowIndex)"
+            ensureWindow = "if (count of windows) = 0 then make new window"
         }
 
         let script = """
         tell application "\(browser.rawValue)"
+            activate
+            \(ensureWindow)
             set URL of \(tabRef) to "\(escape(url))"
             return "ok"
         end tell
@@ -149,7 +156,9 @@ actor BrowserController {
         return EvalResult(success: false, value: nil, error: "Unexpected response: \(trimmed)")
     }
 
-    /// Open a new tab in the frontmost window, optionally navigating to url.
+    /// Open a new tab. If the browser has no window, creates one first
+    /// so new_tab works from a fresh launch state (was failing with
+    /// 'Can't get window 1' when Safari was running but windowless).
     func newTab(browser: Browser, url: String?) -> Bool {
         let script: String
         switch browser {
@@ -158,7 +167,11 @@ actor BrowserController {
             script = """
             tell application "Safari"
                 activate
-                tell front window to set current tab to (make new tab)\(nav)
+                if (count of windows) = 0 then
+                    make new document
+                else
+                    tell front window to set current tab to (make new tab)
+                end if\(nav)
                 return "ok"
             end tell
             """
@@ -167,7 +180,11 @@ actor BrowserController {
             script = """
             tell application "Google Chrome"
                 activate
-                tell front window to make new tab\(nav)
+                if (count of windows) = 0 then
+                    make new window
+                else
+                    tell front window to make new tab
+                end if\(nav)
                 return "ok"
             end tell
             """
