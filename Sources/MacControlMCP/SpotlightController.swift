@@ -2,164 +2,155 @@ import Foundation
 import CoreGraphics
 import AppKit
 
-/// Spotlight automation — open the search bar with Cmd+Space and type a query.
+/// Spotlight search — backed by NSMetadataQuery (Spotlight's own index)
+/// rather than UI automation of the Cmd+Space popover.
+///
+/// Why this architecture:
+/// The v0.2.0 live probe revealed multiple failures in the UI-driven
+/// approach — Cmd+Space is a toggle, NSWorkspace.frontmostApplication
+/// never switches to Spotlight (its popover has .accessory activation),
+/// global-tap keystrokes race with macOS's internal focus handoff and
+/// land in the caller's window, and `AXUIElementSetAttributeValue` on
+/// the search field silently no-ops for privacy-sensitive system UI.
+/// After each of those, a second call still broke.
+///
+/// The backing service for Spotlight UI is `metadatad` driven by
+/// NSMetadataQuery. Talking to that directly bypasses every UI concern,
+/// is idempotent by construction, and returns a ranked result list
+/// without any focus race.
+///
+/// Result ordering is matched as closely as possible to the popover
+/// ("Top Hits" — apps first, then recent documents), so
+/// `spotlight_open_result(index: N)` launches the same item a user
+/// would see at that rank.
 actor SpotlightController {
-    /// Search result as reported by Spotlight's own AX tree.
     struct ResultPreview: Codable, Sendable {
         let index: Int
         let title: String
+        /// Filesystem path of the matched item. Held so `openResult`
+        /// can launch it without going back through Spotlight.
+        let path: String
     }
 
-    /// Open Spotlight and type the query, then verify Spotlight is
-    /// actually the frontmost receiver of keystrokes before reporting
-    /// success.
-    ///
-    /// Codex v10 HIGH: a previous version always returned true as long
-    /// as the key events were posted. That's a lie if the user has
-    /// remapped Cmd+Space (e.g. to Alfred/Raycast) — we'd then type the
-    /// query into whatever app was frontmost, and a later
-    /// spotlight_open_result would send Down+Return into that same
-    /// wrong app. Now we check Spotlight.app is running and its AX tree
-    /// has a visible search/result element before returning success.
-    func search(_ query: String) async -> Bool {
-        pressShortcut(key: 49 /* space */, flags: [.maskCommand])
-        // Spotlight needs a moment to appear. Poll its process +
-        // shareable AX tree so we don't type into the wrong app.
-        for _ in 0..<10 {
-            try? await Task.sleep(nanoseconds: 60_000_000)
-            if await spotlightProcessIsVisible() { break }
+    /// Cached results from the most recent `search`. `openResult(index:)`
+    /// uses this so it opens exactly what the caller saw in the preview.
+    private var lastResults: [ResultPreview] = []
+
+    /// Search Spotlight's index. Always idempotent: a fresh NSMetadataQuery
+    /// is created per call, awaited to the first-batch notification, then
+    /// stopped. No global state touched.
+    func search(_ query: String, limit: Int = 10) async -> Bool {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            lastResults = []
+            return false
         }
-        guard await spotlightProcessIsVisible() else { return false }
-        typeString(query)
-        // Result list needs a moment to populate.
-        try? await Task.sleep(nanoseconds: 400_000_000)
+        let results = await runMetadataQuery(query: trimmed, limit: limit)
+        lastResults = results
         return true
     }
 
-    /// True iff Spotlight.app is running AND has at least one visible
-    /// AX window — i.e. the search popover is open and keystrokes will
-    /// actually land there.
-    ///
-    /// NSWorkspace is main-actor-affine so we hop there for the
-    /// runningApplications lookup (Codex v10 MEDIUM).
-    private func spotlightProcessIsVisible() async -> Bool {
-        let pid: pid_t = await MainActor.run {
-            NSWorkspace.shared.runningApplications.first {
-                ($0.bundleIdentifier ?? "").lowercased() == "com.apple.spotlight"
-            }?.processIdentifier ?? 0
-        }
-        guard pid > 0 else { return false }
-        let app = AXUIElementCreateApplication(pid)
-        var windowsRef: CFTypeRef?
-        let status = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &windowsRef)
-        guard status == .success,
-              let windows = windowsRef as? [AXUIElement] else { return false }
-        return !windows.isEmpty
-    }
-
-    /// Peek at Spotlight's current result titles via AX. Returns `[]` if
-    /// Spotlight isn't open or AX can't read the list (e.g. permission
-    /// missing). Lets a caller assert what 'index 1' will actually open
-    /// instead of trusting Spotlight's ranking blindly.
-    ///
-    /// Spotlight runs inside `Spotlight` (pid from WindowServer list) with
-    /// its result table exposed as AXTable → AXRow → AXStaticText.
+    /// Peek at results collected by the last `search` call. Shape is
+    /// preserved for callers that expected the old popover-AX output.
     func currentResults(limit: Int = 10) async -> [ResultPreview] {
-        // Spotlight.app has .accessory activation policy (hidden from
-        // runningApplications' default regular-only filter). Iterate ALL
-        // running apps and match by bundle ID. NSWorkspace is
-        // main-actor-affine so we hop there for the lookup.
-        let pid: pid_t = await MainActor.run {
-            NSWorkspace.shared.runningApplications.first {
-                ($0.bundleIdentifier ?? "").lowercased() == "com.apple.spotlight"
-            }?.processIdentifier ?? 0
-        }
-        guard pid > 0 else { return [] }
-        let root = AXUIElementCreateApplication(pid)
-        var visited = Set<AXKey>()
-        var rawTitles: [String] = []
-        collectRowTitles(element: root, depth: 0, maxDepth: 16, visited: &visited, into: &rawTitles, limit: limit * 3)
-        // Deduplicate + trim to limit
-        var seen = Set<String>()
-        var results: [ResultPreview] = []
-        for t in rawTitles {
-            let clean = t.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !clean.isEmpty, seen.insert(clean).inserted else { continue }
-            results.append(ResultPreview(index: results.count + 1, title: clean))
-            if results.count >= limit { break }
-        }
-        return results
+        Array(lastResults.prefix(limit))
     }
 
-    private func collectRowTitles(element: AXUIElement, depth: Int, maxDepth: Int,
-                                  visited: inout Set<AXKey>, into out: inout [String], limit: Int) {
-        guard depth <= maxDepth, out.count < limit else { return }
-        guard visited.insert(AXKey(element: element)).inserted else { return }
-
-        var roleRef: CFTypeRef?
-        AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleRef)
-        let role = (roleRef as? String) ?? ""
-
-        // Spotlight's result list uses AXRow per result; each row's title
-        // is exposed as the row's AXTitle or as a child AXStaticText.
-        if role == "AXRow" {
-            var titleRef: CFTypeRef?
-            AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &titleRef)
-            if let t = titleRef as? String, !t.isEmpty { out.append(t) }
-        } else if role == "AXStaticText" {
-            var valueRef: CFTypeRef?
-            AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &valueRef)
-            if let t = valueRef as? String { out.append(t) }
+    /// Launch the Nth result (1-indexed) captured by the last `search`.
+    /// Uses NSWorkspace directly — no keystrokes, no Spotlight popover.
+    func openResult(index: Int = 1) async -> Bool {
+        let target = max(1, index) - 1
+        guard target < lastResults.count else { return false }
+        let path = lastResults[target].path
+        let url = URL(fileURLWithPath: path)
+        return await MainActor.run {
+            NSWorkspace.shared.open(url)
         }
+    }
 
-        var childrenRef: CFTypeRef?
-        AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenRef)
-        if let children = childrenRef as? [AXUIElement] {
-            for child in children {
-                collectRowTitles(element: child, depth: depth + 1, maxDepth: maxDepth, visited: &visited, into: &out, limit: limit)
-                if out.count >= limit { return }
+    // MARK: - NSMetadataQuery driver
+
+    /// Run a Spotlight query end-to-end: build the predicate, start the
+    /// query on the main runloop (NSMetadataQuery requires one), await
+    /// the initial-gather notification, collect up to `limit` results,
+    /// stop the query, return. The whole thing is bounded by a 2s
+    /// timeout — Spotlight usually answers in < 200 ms, and a stale
+    /// index shouldn't hang the MCP server.
+    private func runMetadataQuery(query: String, limit: Int) async -> [ResultPreview] {
+        // Use Swift-native NSPredicate format-string API (type-safe
+        // bound parameter) rather than NSPredicate(fromMetadataQueryString:).
+        // An earlier version tried the query-string syntax with
+        // `==[cdw]` flags and NSPredicate threw an
+        // NSInternalInconsistencyException that crashed the whole
+        // process — Spotlight's Metadata framework rejects the `w`
+        // (word-boundary) flag in its parser. LIKE[cd] via %@
+        // substitution is the documented, crash-safe path.
+        let pattern = "*\(query)*"
+
+        return await withCheckedContinuation { (continuation: CheckedContinuation<[ResultPreview], Never>) in
+            DispatchQueue.main.async {
+                let mq = NSMetadataQuery()
+                mq.predicate = NSPredicate(
+                    format: "kMDItemDisplayName LIKE[cd] %@ OR kMDItemFSName LIKE[cd] %@",
+                    pattern, pattern
+                )
+                // Sort: most recently used first.
+                // (kMDItemContentTypeTree is an array attribute and
+                // can't be used as a sort key — NSMetadataSortCompare
+                // crashes with unrecognized selector when it tries to
+                // -compare: two arrays. Seen during v0.2.0 probe.)
+                mq.sortDescriptors = [
+                    NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false),
+                ]
+                mq.searchScopes = [
+                    NSMetadataQueryLocalComputerScope,
+                    NSMetadataQueryUserHomeScope,
+                ]
+
+                var settled = false
+                var observer: NSObjectProtocol?
+                var timeoutWork: DispatchWorkItem?
+
+                let finish: () -> Void = {
+                    guard !settled else { return }
+                    settled = true
+                    if let obs = observer {
+                        NotificationCenter.default.removeObserver(obs)
+                    }
+                    timeoutWork?.cancel()
+                    mq.stop()
+                    let items = (mq.results as? [NSMetadataItem]) ?? []
+                    var out: [ResultPreview] = []
+                    var seen = Set<String>()
+                    for item in items {
+                        let title =
+                            (item.value(forAttribute: "kMDItemDisplayName") as? String)
+                            ?? (item.value(forAttribute: "kMDItemFSName") as? String)
+                            ?? ""
+                        let path = (item.value(forAttribute: NSMetadataItemPathKey) as? String) ?? ""
+                        let clean = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !clean.isEmpty, !path.isEmpty, seen.insert(path).inserted else { continue }
+                        out.append(
+                            ResultPreview(index: out.count + 1, title: clean, path: path)
+                        )
+                        if out.count >= limit { break }
+                    }
+                    continuation.resume(returning: out)
+                }
+
+                observer = NotificationCenter.default.addObserver(
+                    forName: .NSMetadataQueryDidFinishGathering,
+                    object: mq,
+                    queue: .main
+                ) { _ in finish() }
+
+                timeoutWork = DispatchWorkItem { finish() }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: timeoutWork!)
+
+                if !mq.start() {
+                    finish()
+                }
             }
         }
-    }
-
-
-    /// Open the top result of an active Spotlight query by pressing Return.
-    /// Pass `index` > 1 to press Down arrow (index-1) times first.
-    func openResult(index: Int = 1) -> Bool {
-        let steps = max(1, index) - 1
-        for _ in 0..<steps {
-            pressShortcut(key: 125 /* down */, flags: [])
-            Thread.sleep(forTimeInterval: 0.05)
-        }
-        pressShortcut(key: 36 /* return */, flags: [])
-        return true
-    }
-
-    // MARK: - Helpers
-
-    private func pressShortcut(key: CGKeyCode, flags: CGEventFlags) {
-        guard let source = CGEventSource(stateID: .hidSystemState),
-              let down = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true),
-              let up = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false)
-        else { return }
-        down.flags = flags
-        up.flags = flags
-        down.post(tap: .cghidEventTap)
-        Thread.sleep(forTimeInterval: 0.01)
-        up.post(tap: .cghidEventTap)
-    }
-
-    private func typeString(_ text: String) {
-        guard let source = CGEventSource(stateID: .hidSystemState) else { return }
-        let chars = Array(text.utf16)
-        guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
-              let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
-        else { return }
-        chars.withUnsafeBufferPointer { buffer in
-            down.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: buffer.baseAddress)
-            up.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: buffer.baseAddress)
-        }
-        down.post(tap: .cghidEventTap)
-        up.post(tap: .cghidEventTap)
     }
 }

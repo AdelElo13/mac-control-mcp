@@ -376,19 +376,24 @@ extension ToolRegistry {
         let ok = await spotlight.search(query)
         if !ok {
             return errorResult(
-                "Spotlight did not open (Cmd+Space may be remapped to Alfred/Raycast, or Spotlight is disabled). Keystrokes were NOT sent — no query typed.",
-                ["ok": .bool(false), "hint": .string("Check System Settings → Keyboard → Keyboard Shortcuts → Spotlight to ensure Cmd+Space still triggers Spotlight.")]
+                "Spotlight index unavailable (metadatad not responding).",
+                ["ok": .bool(false)]
             )
         }
-        // Peek at the Spotlight result list via AX so the caller can
-        // decide whether the ranked results match their expectation
-        // BEFORE invoking spotlight_open_result.
+        // Results now come from NSMetadataQuery (Spotlight's index), not
+        // the popover AX tree — ranked Top-Hits-style with app/file path
+        // included so `spotlight_open_result(index: N)` opens exactly
+        // what the caller saw at that rank.
         let previews = await spotlight.currentResults(limit: 10)
         let previewJSON: [JSONValue] = previews.map { p in
-            .object(["index": .number(Double(p.index)), "title": .string(p.title)])
+            .object([
+                "index": .number(Double(p.index)),
+                "title": .string(p.title),
+                "path": .string(p.path)
+            ])
         }
         return successResult(
-            "Spotlight opened. \(previews.count) result preview(s) collected.",
+            "\(previews.count) result(s) from Spotlight index.",
             [
                 "ok": .bool(true),
                 "query": .string(query),
@@ -399,19 +404,25 @@ extension ToolRegistry {
 
     func callSpotlightOpenResult(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         let index = max(1, arguments["index"]?.intValue ?? 1)
-        // Codex v10 HIGH: refuse to press Down+Return if Spotlight isn't
-        // actually the frontmost receiver. Otherwise we'd randomly hit
-        // enter in whatever app is focused.
-        let results = await spotlight.currentResults(limit: 1)
+        // Results were cached by the last `spotlight_search` call.
+        // Open via NSWorkspace with the recorded filesystem path —
+        // deterministic, no keystrokes.
+        let results = await spotlight.currentResults(limit: 10)
         if results.isEmpty {
             return errorResult(
-                "Spotlight is not open. Call spotlight_search first and verify the returned 'results' array is non-empty before calling spotlight_open_result.",
-                ["ok": .bool(false), "spotlight_visible": .bool(false)]
+                "No Spotlight results cached. Call spotlight_search first.",
+                ["ok": .bool(false)]
+            )
+        }
+        if index > results.count {
+            return errorResult(
+                "index \(index) out of range (cached \(results.count) result(s)).",
+                ["ok": .bool(false), "cached": .number(Double(results.count))]
             )
         }
         let ok = await spotlight.openResult(index: index)
         return ok
-            ? successResult("Result \(index) opened.", ["ok": .bool(true), "index": .number(Double(index))])
+            ? successResult("Result \(index) opened.", ["ok": .bool(true), "index": .number(Double(index)), "path": .string(results[index - 1].path)])
             : errorResult("Failed to open result.", ["ok": .bool(false)])
     }
 
