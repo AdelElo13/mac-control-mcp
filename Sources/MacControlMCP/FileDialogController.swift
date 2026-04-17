@@ -102,14 +102,14 @@ actor FileDialogController {
     }
 
     private func findRow(in root: AXUIElement, titled title: String) -> AXUIElement? {
-        var visited = Set<UInt>()
+        var visited = Set<AXKey>()
         return searchRow(element: root, target: title.lowercased(), visited: &visited, depth: 0)
     }
 
-    private func searchRow(element: AXUIElement, target: String, visited: inout Set<UInt>, depth: Int) -> AXUIElement? {
+    private func searchRow(element: AXUIElement, target: String, visited: inout Set<AXKey>, depth: Int) -> AXUIElement? {
         guard depth < 20 else { return nil }
         // CFHash, not pointer identity — see AccessibilityController.findElements.
-        guard visited.insert(CFHash(element)).inserted else { return nil }
+        guard visited.insert(AXKey(element: element)).inserted else { return nil }
 
         var roleRef: CFTypeRef?
         AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleRef)

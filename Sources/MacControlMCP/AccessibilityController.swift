@@ -10,6 +10,20 @@ import AppKit
 // used only because Apple does not mark the type `Sendable` themselves.
 extension AXUIElement: @retroactive @unchecked Sendable {}
 
+/// A Hashable wrapper around AXUIElement for use as a Set element during
+/// tree walks. Hashes via CFHash (logical identity, stable across CFRef
+/// allocator churn) and compares via CFEqual (handles the theoretical
+/// hash-collision case where two distinct elements share a hash). This
+/// is the canonical Foundation pattern for CF types and gives Set its
+/// expected semantics without any pointer-address heuristics.
+struct AXKey: Hashable {
+    let element: AXUIElement
+    func hash(into hasher: inout Hasher) { hasher.combine(CFHash(element)) }
+    static func == (lhs: AXKey, rhs: AXKey) -> Bool {
+        CFEqual(lhs.element, rhs.element)
+    }
+}
+
 actor AccessibilityController {
     struct Point: Codable, Sendable {
         let x: Double
@@ -87,7 +101,7 @@ actor AccessibilityController {
 
     func listElements(pid: pid_t, maxDepth: Int = 8) -> [ElementInfo] {
         let root = AXUIElementCreateApplication(pid)
-        var visited = Set<UInt>()
+        var visited = Set<AXKey>()
         var output: [ElementInfo] = []
 
         _ = walk(element: root, depth: 0, maxDepth: max(1, maxDepth), visited: &visited) { element, depth, role in
@@ -103,20 +117,14 @@ actor AccessibilityController {
         // Inline recurse mirrors findElements — see that function for the
         // explanation of why the private `walk` helper is avoided here.
         let root = AXUIElementCreateApplication(pid)
-        var visited = Set<UInt>()
+        var visited = Set<AXKey>()
         var match: AXUIElement?
 
         func recurse(element: AXUIElement, depth: Int) -> Bool {
             guard depth <= 20 else { return false }
-            // CRITICAL: we must hash by CFHash(element), NOT by the CFRef
-            // pointer address. Core Foundation recycles freed pointers, so
-            // an AXUIElement that was released from one subtree can reappear
-            // with a *different* logical identity but the same memory address,
-            // which poisons a pointer-keyed Set and silently drops 90+% of
-            // the tree on real apps. CFHash returns the AX element's stable
-            // logical hash (pid + attribute path) and survives ref cycling.
-            let key = CFHash(element)
-            guard visited.insert(key).inserted else { return false }
+            // AXKey wraps CFHash + CFEqual — see its definition for why
+            // the pointer address is wrong here.
+            guard visited.insert(AXKey(element: element)).inserted else { return false }
 
             let currentRole = stringAttribute(of: element, attribute: kAXRoleAttribute as CFString) ?? "AXUnknown"
             let roleMatches: Bool = {
@@ -308,18 +316,13 @@ actor AccessibilityController {
     /// points into the returned array so the tree can be reconstructed.
     func treeWalk(pid: pid_t, maxDepth: Int) -> [TreeNode] {
         let root = AXUIElementCreateApplication(pid)
-        var visited = Set<UInt>()
+        var visited = Set<AXKey>()
         var nodes: [TreeNode] = []
 
         func recurse(element: AXUIElement, depth: Int) -> Int {
-            // CRITICAL: we must hash by CFHash(element), NOT by the CFRef
-            // pointer address. Core Foundation recycles freed pointers, so
-            // an AXUIElement that was released from one subtree can reappear
-            // with a *different* logical identity but the same memory address,
-            // which poisons a pointer-keyed Set and silently drops 90+% of
-            // the tree on real apps. CFHash returns the AX element's stable
-            // logical hash (pid + attribute path) and survives ref cycling.
-            let key = CFHash(element)
+            // AXKey wraps CFHash + CFEqual — see its definition for why
+            // the pointer address is wrong here.
+            let key = AXKey(element: element)
             guard visited.insert(key).inserted else { return -1 }
 
             let placeholderIndex = nodes.count
@@ -383,20 +386,13 @@ actor AccessibilityController {
         // to confuse the compiler's reference handling enough to break the
         // set's identity semantics in that code path.
         let root = AXUIElementCreateApplication(pid)
-        var visited = Set<UInt>()
+        var visited = Set<AXKey>()
         var matches: [(AXUIElement, ElementInfo)] = []
 
         func recurse(element: AXUIElement, depth: Int) {
             guard matches.count < limit, depth <= maxDepth else { return }
-            // CRITICAL: hash by CFHash(element), NOT by the CFRef pointer
-            // address. Core Foundation recycles freed pointers — an
-            // AXUIElement released from one subtree can reappear with a
-            // different logical identity at the same address, which
-            // poisons a pointer-keyed Set and silently drops most of the
-            // tree. CFHash returns the AX element's logical hash (pid +
-            // attribute path) and survives ref cycling. This was found
-            // during Logic Pro testing where 95% of nodes were dropped.
-            guard visited.insert(CFHash(element)).inserted else { return }
+            // AXKey wraps CFHash + CFEqual — see its definition.
+            guard visited.insert(AXKey(element: element)).inserted else { return }
 
             let currentRole = stringAttribute(of: element, attribute: kAXRoleAttribute as CFString) ?? "AXUnknown"
             if matchesFilter(element: element, currentRole: currentRole, role: role, title: title, value: value) {
@@ -433,19 +429,14 @@ actor AccessibilityController {
         // visitor + actor-isolation interaction drops most of the tree on
         // real applications.
         let root = AXUIElementCreateApplication(pid)
-        var visited = Set<UInt>()
+        var visited = Set<AXKey>()
         var matches: [(AXUIElement, ElementInfo)] = []
 
         func recurse(element: AXUIElement, depth: Int) {
             guard matches.count < limit, depth <= maxDepth else { return }
-            // CRITICAL: we must hash by CFHash(element), NOT by the CFRef
-            // pointer address. Core Foundation recycles freed pointers, so
-            // an AXUIElement that was released from one subtree can reappear
-            // with a *different* logical identity but the same memory address,
-            // which poisons a pointer-keyed Set and silently drops 90+% of
-            // the tree on real apps. CFHash returns the AX element's stable
-            // logical hash (pid + attribute path) and survives ref cycling.
-            let key = CFHash(element)
+            // AXKey wraps CFHash + CFEqual — see its definition for why
+            // the pointer address is wrong here.
+            let key = AXKey(element: element)
             guard visited.insert(key).inserted else { return }
 
             let currentRole = stringAttribute(of: element, attribute: kAXRoleAttribute as CFString) ?? "AXUnknown"
@@ -623,12 +614,12 @@ actor AccessibilityController {
         element: AXUIElement,
         depth: Int,
         maxDepth: Int,
-        visited: inout Set<UInt>,
+        visited: inout Set<AXKey>,
         visitor: (AXUIElement, Int, String) -> Bool
     ) -> Bool {
         guard depth <= maxDepth else { return false }
 
-        guard visited.insert(CFHash(element)).inserted else { return false }
+        guard visited.insert(AXKey(element: element)).inserted else { return false }
 
         let role = stringAttribute(of: element, attribute: kAXRoleAttribute as CFString) ?? "AXUnknown"
         if visitor(element, depth, role) {
