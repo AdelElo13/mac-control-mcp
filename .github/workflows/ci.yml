@@ -12,15 +12,19 @@ permissions:
 jobs:
   test:
     name: swift build + test
-    runs-on: macos-14
+    # macos-15 ships Xcode 16 by default, which bundles Swift 6 — we
+    # need that because Package.swift declares
+    # `swift-tools-version: 6.0`. macos-14 defaults to Xcode 15 /
+    # Swift 5.10, which refuses to parse the manifest.
+    runs-on: macos-15
     timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode 16
+      - name: Show toolchain selection
         run: |
-          sudo xcode-select -s /Applications/Xcode_16.app || sudo xcode-select -s /Applications/Xcode.app
+          xcode-select --print-path
           swift --version
           xcodebuild -version
 
