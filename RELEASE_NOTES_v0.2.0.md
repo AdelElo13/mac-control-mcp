@@ -4,7 +4,7 @@ Native Swift MCP server for full macOS automation. 63 tools across accessibility
 
 ## What's in the box
 
-- **Proper `.app` bundle** (`Scripts/build-bundle.sh`) with `NSScreenCaptureUsageDescription`, `NSAccessibilityUsageDescription`, `NSAppleEventsUsageDescription` and ad-hoc codesign so TCC can actually see the process and prompt for permission. Unsigned CLI binaries silently fail on macOS 15+; this fixes that.
+- **Proper `.app` bundle** (`scripts/build-bundle.sh`) with `NSScreenCaptureUsageDescription`, `NSAccessibilityUsageDescription`, `NSAppleEventsUsageDescription` and ad-hoc codesign so TCC can actually see the process and prompt for permission. Unsigned CLI binaries silently fail on macOS 15+; this fixes that.
 - **ScreenCaptureKit window capture** for macOS 14+/15+ — the legacy `CGWindowListCreateImage` returns nil for most per-window captures on recent macOS. SCK also handles cross-Space and multi-display with correct backing scale.
 - **63 MCP tools** covering the full interactive surface: AX tree read/click/type, Safari + Chrome automation, screenshots (full/window/display), OCR, clipboard, window/app control, menus, Spotlight, volume, dark mode, displays, system info.
 - **Swift 6 strict concurrency** — actors for shared mutable state, `@Sendable` value types across boundaries, `@preconcurrency` only where Apple frameworks force it.
@@ -32,7 +32,7 @@ Native Swift MCP server for full macOS automation. 63 tools across accessibility
 ```bash
 git clone https://github.com/AdelElo13/mac-control-mcp.git
 cd mac-control-mcp
-./Scripts/build-bundle.sh
+./scripts/build-bundle.sh
 ```
 
 Binary lands at `~/Applications/MacControlMCP.app/Contents/MacOS/MacControlMCP`. Point your MCP client at that path. First capture triggers the TCC consent dialog — grant Screen Recording, Accessibility, and Apple Events.

@@ -20,7 +20,7 @@ Gives any MCP-compatible client (Claude Desktop, Claude Code, Cursor, etc.) the 
 ```bash
 git clone https://github.com/AdelElo13/mac-control-mcp.git
 cd mac-control-mcp
-./Scripts/build-bundle.sh
+./scripts/build-bundle.sh
 ```
 
 This produces `~/Applications/MacControlMCP.app/Contents/MacOS/MacControlMCP`. Point your MCP client at that path.

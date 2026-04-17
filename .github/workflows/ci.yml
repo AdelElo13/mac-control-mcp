@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: swift build + test
+    runs-on: macos-14
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 16
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.app || sudo xcode-select -s /Applications/Xcode.app
+          swift --version
+          xcodebuild -version
+
+      - name: Show toolchain info
+        run: |
+          echo "=== macOS ==="
+          sw_vers
+          echo "=== Swift ==="
+          swift --version
+
+      - name: swift build (debug)
+        run: swift build
+
+      - name: swift test
+        run: swift test --enable-code-coverage
