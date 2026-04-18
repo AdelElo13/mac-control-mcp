@@ -10,8 +10,8 @@ extension ToolRegistry {
             description: "Walk the full accessibility tree of a process and return every node (including containers) with stable element IDs for follow-up calls.",
             inputSchema: schema(
                 properties: [
-                    "pid": .object(["type": .string("integer"), "description": .string("Target process ID.")]),
-                    "max_depth": .object(["type": .string("integer"), "description": .string("Traversal depth limit (default 12, max 64).")])
+                    "pid": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Target process ID.")]),
+                    "max_depth": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Traversal depth limit (default 12, max 64).")])
                 ],
                 required: ["pid"]
             )
@@ -21,12 +21,12 @@ extension ToolRegistry {
             description: "Find all matching accessibility elements (not just the first) by role/title/value.",
             inputSchema: schema(
                 properties: [
-                    "pid": .object(["type": .string("integer")]),
+                    "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "role": .object(["type": .string("string")]),
                     "title": .object(["type": .string("string")]),
                     "value": .object(["type": .string("string")]),
-                    "max_depth": .object(["type": .string("integer")]),
-                    "limit": .object(["type": .string("integer"), "description": .string("Max matches to return (default 100).")])
+                    "max_depth": .object(["type": .array([.string("integer"), .string("string")])]),
+                    "limit": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Max matches to return (default 100).")])
                 ],
                 required: ["pid"]
             )
@@ -36,12 +36,12 @@ extension ToolRegistry {
             description: "Regex search over role/title/value. Invalid regex falls back to case-insensitive substring.",
             inputSchema: schema(
                 properties: [
-                    "pid": .object(["type": .string("integer")]),
+                    "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "role_regex": .object(["type": .string("string")]),
                     "title_regex": .object(["type": .string("string")]),
                     "value_regex": .object(["type": .string("string")]),
-                    "max_depth": .object(["type": .string("integer")]),
-                    "limit": .object(["type": .string("integer")])
+                    "max_depth": .object(["type": .array([.string("integer"), .string("string")])]),
+                    "limit": .object(["type": .array([.string("integer"), .string("string")])])
                 ],
                 required: ["pid"]
             )
@@ -88,7 +88,7 @@ extension ToolRegistry {
             description: "List all windows of all running regular apps (or one app if pid is provided).",
             inputSchema: schema(
                 properties: [
-                    "pid": .object(["type": .string("integer"), "description": .string("Optional — restrict to this app.")])
+                    "pid": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Optional — restrict to this app.")])
                 ]
             )
         ),
@@ -97,8 +97,8 @@ extension ToolRegistry {
             description: "Bring a window to the front by pid + window index (from list_windows).",
             inputSchema: schema(
                 properties: [
-                    "pid": .object(["type": .string("integer")]),
-                    "index": .object(["type": .string("integer")])
+                    "pid": .object(["type": .array([.string("integer"), .string("string")])]),
+                    "index": .object(["type": .array([.string("integer"), .string("string")])])
                 ],
                 required: ["pid", "index"]
             )
@@ -108,7 +108,7 @@ extension ToolRegistry {
             description: "Click a menu item by title path, e.g. path=[\"File\",\"Export\",\"PDF...\"].",
             inputSchema: schema(
                 properties: [
-                    "pid": .object(["type": .string("integer")]),
+                    "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "path": .object([
                         "type": .string("array"),
                         "items": .object(["type": .string("string")])
@@ -122,7 +122,7 @@ extension ToolRegistry {
             description: "List top-level menubar titles for an app — useful for discovery before click_menu_path.",
             inputSchema: schema(
                 properties: [
-                    "pid": .object(["type": .string("integer")])
+                    "pid": .object(["type": .array([.string("integer"), .string("string")])])
                 ],
                 required: ["pid"]
             )

@@ -2,3 +2,10 @@
 .swiftpm/
 *.xcodeproj/
 DerivedData/
+
+# Negate global ~/.gitignore_global "Icon?" rule that incorrectly matches
+# .icns and .iconset paths (Finder uses literal "Icon\r" / "Icon?" stub
+# files; this project ships proper .icns assets).
+!assets/
+!*.icns
+!*.iconset/

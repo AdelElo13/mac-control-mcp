@@ -10,8 +10,8 @@ extension ToolRegistry {
             description: "Move a window to an absolute (x,y) position in global coordinates.",
             inputSchema: schema(
                 properties: [
-                    "pid": .object(["type": .string("integer")]),
-                    "index": .object(["type": .string("integer")]),
+                    "pid": .object(["type": .array([.string("integer"), .string("string")])]),
+                    "index": .object(["type": .array([.string("integer"), .string("string")])]),
                     "x": .object(["type": .string("number")]),
                     "y": .object(["type": .string("number")])
                 ],
@@ -23,8 +23,8 @@ extension ToolRegistry {
             description: "Resize a window to the given width and height.",
             inputSchema: schema(
                 properties: [
-                    "pid": .object(["type": .string("integer")]),
-                    "index": .object(["type": .string("integer")]),
+                    "pid": .object(["type": .array([.string("integer"), .string("string")])]),
+                    "index": .object(["type": .array([.string("integer"), .string("string")])]),
                     "width": .object(["type": .string("number")]),
                     "height": .object(["type": .string("number")])
                 ],
@@ -36,8 +36,8 @@ extension ToolRegistry {
             description: "Apply a window state: minimize, unminimize, fullscreen, exit_fullscreen, or main.",
             inputSchema: schema(
                 properties: [
-                    "pid": .object(["type": .string("integer")]),
-                    "index": .object(["type": .string("integer")]),
+                    "pid": .object(["type": .array([.string("integer"), .string("string")])]),
+                    "index": .object(["type": .array([.string("integer"), .string("string")])]),
                     "state": .object([
                         "type": .string("string"),
                         "description": .string("minimize | unminimize/restore | normal/default/show (unminimize + raise + main) | main/raise | fullscreen | exit_fullscreen/windowed")

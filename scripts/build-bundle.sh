@@ -61,6 +61,14 @@ mkdir -p "${APP_PATH}/Contents/Resources"
 cp "$BIN" "${APP_PATH}/Contents/MacOS/${APP_NAME}"
 chmod +x "${APP_PATH}/Contents/MacOS/${APP_NAME}"
 
+# Copy app icon if present in assets/icons/AppIcon.icns. Bundle is still
+# usable without it (Finder shows the generic .app icon), so this is a
+# soft requirement.
+ICON_SRC="${PROJECT_ROOT}/assets/icons/AppIcon.icns"
+if [ -f "$ICON_SRC" ]; then
+    cp "$ICON_SRC" "${APP_PATH}/Contents/Resources/AppIcon.icns"
+fi
+
 # Info.plist — minimum fields TCC needs to identify the app stably.
 #   - CFBundleIdentifier: stable identity across rebuilds so TCC grants
 #     persist. The TCC database keys off this + code signing identity.
@@ -76,6 +84,8 @@ cat > "${APP_PATH}/Contents/Info.plist" <<EOF
     <string>en</string>
     <key>CFBundleExecutable</key>
     <string>${APP_NAME}</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>${BUNDLE_ID}</string>
     <key>CFBundleInfoDictionaryVersion</key>
@@ -85,7 +95,7 @@ cat > "${APP_PATH}/Contents/Info.plist" <<EOF
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.2.1</string>
+    <string>0.2.2</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSUIElement</key>

@@ -130,12 +130,20 @@ actor AccessibilityController {
     func findElement(pid: pid_t, role: String?, title: String?) -> AXUIElement? {
         // Inline recurse mirrors findElements — see that function for the
         // explanation of why the private `walk` helper is avoided here.
+        //
+        // Wall-clock deadline: each call is capped at 5 seconds. Every
+        // AXUIElementCopyAttributeValue is an IPC round trip, and a wide
+        // scope (e.g. AXMenuBarItem anywhere in a large app) can visit
+        // thousands of nodes. Without a deadline the tool call just hangs
+        // until the MCP client gives up — reported in v0.2.1 testing.
+        let deadline = Date().addingTimeInterval(5.0)
         let root = AXUIElementCreateApplication(pid)
         var visited = Set<AXKey>()
         var match: AXUIElement?
 
         func recurse(element: AXUIElement, depth: Int) -> Bool {
             guard depth <= 20 else { return false }
+            guard Date() < deadline else { return true } // "true" aborts outer loops
             // AXKey wraps CFHash + CFEqual — see its definition for why
             // the pointer address is wrong here.
             guard visited.insert(AXKey(element: element)).inserted else { return false }
@@ -399,12 +407,18 @@ actor AccessibilityController {
         // actor isolation + inout parameters + capturing closures appears
         // to confuse the compiler's reference handling enough to break the
         // set's identity semantics in that code path.
+        //
+        // Wall-clock deadline (5 s) bounds the worst-case broad query
+        // against apps with massive AX trees (Finder, Logic Pro). See
+        // queryElements / findElement for the same pattern.
+        let deadline = Date().addingTimeInterval(5.0)
         let root = AXUIElementCreateApplication(pid)
         var visited = Set<AXKey>()
         var matches: [(AXUIElement, ElementInfo)] = []
 
         func recurse(element: AXUIElement, depth: Int) {
             guard matches.count < limit, depth <= maxDepth else { return }
+            guard Date() < deadline else { return }
             // AXKey wraps CFHash + CFEqual — see its definition.
             guard visited.insert(AXKey(element: element)).inserted else { return }
 
@@ -442,12 +456,20 @@ actor AccessibilityController {
         // the private `walk(...)` helper's inout-visited-set + capturing-
         // visitor + actor-isolation interaction drops most of the tree on
         // real applications.
+        //
+        // Wall-clock deadline: 5 seconds. Broad patterns like
+        // `AXMenuItem` across a whole app can touch thousands of AX
+        // nodes; each lookup is an IPC round trip to the target process,
+        // so without a cap the query just hangs until the client
+        // disconnects. Reported in v0.2.1 testing.
+        let deadline = Date().addingTimeInterval(5.0)
         let root = AXUIElementCreateApplication(pid)
         var visited = Set<AXKey>()
         var matches: [(AXUIElement, ElementInfo)] = []
 
         func recurse(element: AXUIElement, depth: Int) {
             guard matches.count < limit, depth <= maxDepth else { return }
+            guard Date() < deadline else { return }
             // AXKey wraps CFHash + CFEqual — see its definition for why
             // the pointer address is wrong here.
             let key = AXKey(element: element)

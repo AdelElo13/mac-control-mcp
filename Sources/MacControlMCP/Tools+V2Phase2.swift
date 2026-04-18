@@ -32,8 +32,8 @@ extension ToolRegistry {
                 properties: [
                     "browser": .object(["type": .string("string")]),
                     "url": .object(["type": .string("string")]),
-                    "window_index": .object(["type": .string("integer")]),
-                    "tab_index": .object(["type": .string("integer")])
+                    "window_index": .object(["type": .array([.string("integer"), .string("string")])]),
+                    "tab_index": .object(["type": .array([.string("integer"), .string("string")])])
                 ],
                 required: ["url"]
             )
@@ -45,8 +45,8 @@ extension ToolRegistry {
                 properties: [
                     "browser": .object(["type": .string("string")]),
                     "code": .object(["type": .string("string")]),
-                    "window_index": .object(["type": .string("integer")]),
-                    "tab_index": .object(["type": .string("integer")])
+                    "window_index": .object(["type": .array([.string("integer"), .string("string")])]),
+                    "tab_index": .object(["type": .array([.string("integer"), .string("string")])])
                 ],
                 required: ["code"]
             )
@@ -56,10 +56,10 @@ extension ToolRegistry {
             description: "Capture the main display (or a rectangular region) to a PNG file and return its path, width, and height.",
             inputSchema: schema(
                 properties: [
-                    "x": .object(["type": .string("integer"), "description": .string("Region origin x. Omit for full screen.")]),
-                    "y": .object(["type": .string("integer")]),
-                    "width": .object(["type": .string("integer")]),
-                    "height": .object(["type": .string("integer")]),
+                    "x": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Region origin x. Omit for full screen.")]),
+                    "y": .object(["type": .array([.string("integer"), .string("string")])]),
+                    "width": .object(["type": .array([.string("integer"), .string("string")])]),
+                    "height": .object(["type": .array([.string("integer"), .string("string")])]),
                     "output_path": .object(["type": .string("string"), "description": .string("Optional PNG output path. Default: temp file.")])
                 ]
             )
@@ -69,10 +69,10 @@ extension ToolRegistry {
             description: "Capture the screen (or a region) and run OCR. Returns joined text plus per-block coordinates and confidence.",
             inputSchema: schema(
                 properties: [
-                    "x": .object(["type": .string("integer")]),
-                    "y": .object(["type": .string("integer")]),
-                    "width": .object(["type": .string("integer")]),
-                    "height": .object(["type": .string("integer")]),
+                    "x": .object(["type": .array([.string("integer"), .string("string")])]),
+                    "y": .object(["type": .array([.string("integer"), .string("string")])]),
+                    "width": .object(["type": .array([.string("integer"), .string("string")])]),
+                    "height": .object(["type": .array([.string("integer"), .string("string")])]),
                     "languages": .object([
                         "type": .string("array"),
                         "items": .object(["type": .string("string")]),

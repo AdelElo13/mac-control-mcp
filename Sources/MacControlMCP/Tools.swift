@@ -573,11 +573,11 @@ final class ToolRegistry: @unchecked Sendable {
             inputSchema: schema(
                 properties: [
                     "pid": .object([
-                        "type": .string("integer"),
+                        "type": .array([.string("integer"), .string("string")]),
                         "description": .string("Target process ID.")
                     ]),
                     "max_depth": .object([
-                        "type": .string("integer"),
+                        "type": .array([.string("integer"), .string("string")]),
                         "description": .string("Traversal depth limit (default 8).")
                     ])
                 ],
@@ -590,7 +590,7 @@ final class ToolRegistry: @unchecked Sendable {
             inputSchema: schema(
                 properties: [
                     "pid": .object([
-                        "type": .string("integer"),
+                        "type": .array([.string("integer"), .string("string")]),
                         "description": .string("Target process ID.")
                     ]),
                     "role": .object([
@@ -611,7 +611,7 @@ final class ToolRegistry: @unchecked Sendable {
             inputSchema: schema(
                 properties: [
                     "pid": .object([
-                        "type": .string("integer"),
+                        "type": .array([.string("integer"), .string("string")]),
                         "description": .string("Target process ID when clicking by selector.")
                     ]),
                     "role": .object([
@@ -647,7 +647,7 @@ final class ToolRegistry: @unchecked Sendable {
             inputSchema: schema(
                 properties: [
                     "pid": .object([
-                        "type": .string("integer")
+                        "type": .array([.string("integer"), .string("string")])
                     ]),
                     "role": .object([
                         "type": .string("string")

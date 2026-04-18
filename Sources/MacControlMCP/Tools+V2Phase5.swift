@@ -23,8 +23,8 @@ extension ToolRegistry {
             inputSchema: schema(
                 properties: [
                     "browser": .object(["type": .string("string")]),
-                    "window_index": .object(["type": .string("integer")]),
-                    "tab_index": .object(["type": .string("integer")])
+                    "window_index": .object(["type": .array([.string("integer"), .string("string")])]),
+                    "tab_index": .object(["type": .array([.string("integer"), .string("string")])])
                 ]
             )
         ),
@@ -33,7 +33,7 @@ extension ToolRegistry {
             description: "Screenshot a specific window of an app by PID (and optional title filter).",
             inputSchema: schema(
                 properties: [
-                    "pid": .object(["type": .string("integer")]),
+                    "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "title_contains": .object(["type": .string("string")]),
                     "output_path": .object(["type": .string("string")])
                 ],
@@ -45,7 +45,7 @@ extension ToolRegistry {
             description: "Screenshot a specific display by its index from list_displays.",
             inputSchema: schema(
                 properties: [
-                    "display_index": .object(["type": .string("integer")]),
+                    "display_index": .object(["type": .array([.string("integer"), .string("string")])]),
                     "output_path": .object(["type": .string("string")])
                 ],
                 required: ["display_index"]
@@ -56,8 +56,8 @@ extension ToolRegistry {
             description: "Enumerate every menu path in an app's menubar, up to max_depth.",
             inputSchema: schema(
                 properties: [
-                    "pid": .object(["type": .string("integer")]),
-                    "max_depth": .object(["type": .string("integer")])
+                    "pid": .object(["type": .array([.string("integer"), .string("string")])]),
+                    "max_depth": .object(["type": .array([.string("integer"), .string("string")])])
                 ],
                 required: ["pid"]
             )
@@ -78,7 +78,7 @@ extension ToolRegistry {
             inputSchema: schema(
                 properties: [
                     "index": .object([
-                        "type": .string("integer"),
+                        "type": .array([.string("integer"), .string("string")]),
                         "description": .string("1-based index. Default 1.")
                     ])
                 ]
@@ -89,7 +89,7 @@ extension ToolRegistry {
             description: "Set system output volume 0-100. Optional 'muted' toggles the output mute flag.",
             inputSchema: schema(
                 properties: [
-                    "volume": .object(["type": .string("integer")]),
+                    "volume": .object(["type": .array([.string("integer"), .string("string")])]),
                     "muted": .object(["type": .string("boolean")])
                 ],
                 required: ["volume"]
@@ -152,7 +152,7 @@ extension ToolRegistry {
                             "required": .array([.string("key")])
                         ])
                     ]),
-                    "delay_ms": .object(["type": .string("integer")])
+                    "delay_ms": .object(["type": .array([.string("integer"), .string("string")])])
                 ],
                 required: ["steps"]
             )
@@ -162,10 +162,10 @@ extension ToolRegistry {
             description: "Poll until a window (matching optional title_contains) exists for an app, or timeout.",
             inputSchema: schema(
                 properties: [
-                    "pid": .object(["type": .string("integer")]),
+                    "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "title_contains": .object(["type": .string("string")]),
                     "timeout_seconds": .object(["type": .string("number")]),
-                    "poll_interval_ms": .object(["type": .string("integer")])
+                    "poll_interval_ms": .object(["type": .array([.string("integer"), .string("string")])])
                 ],
                 required: ["pid"]
             )
@@ -178,7 +178,7 @@ extension ToolRegistry {
                     "bundle_id": .object(["type": .string("string")]),
                     "name": .object(["type": .string("string")]),
                     "timeout_seconds": .object(["type": .string("number")]),
-                    "poll_interval_ms": .object(["type": .string("integer")])
+                    "poll_interval_ms": .object(["type": .array([.string("integer"), .string("string")])])
                 ]
             )
         ),
@@ -188,7 +188,7 @@ extension ToolRegistry {
             inputSchema: schema(
                 properties: [
                     "timeout_seconds": .object(["type": .string("number")]),
-                    "poll_interval_ms": .object(["type": .string("integer")])
+                    "poll_interval_ms": .object(["type": .array([.string("integer"), .string("string")])])
                 ]
             )
         ),
@@ -197,9 +197,9 @@ extension ToolRegistry {
             description: "Move a window to the specified display (by display_index), preserving its size.",
             inputSchema: schema(
                 properties: [
-                    "pid": .object(["type": .string("integer")]),
-                    "index": .object(["type": .string("integer")]),
-                    "display_index": .object(["type": .string("integer")])
+                    "pid": .object(["type": .array([.string("integer"), .string("string")])]),
+                    "index": .object(["type": .array([.string("integer"), .string("string")])]),
+                    "display_index": .object(["type": .array([.string("integer"), .string("string")])])
                 ],
                 required: ["pid", "index", "display_index"]
             )
@@ -214,7 +214,7 @@ extension ToolRegistry {
             description: "Force-terminate an app by PID or bundle ID. Equivalent to quit_app with force=true.",
             inputSchema: schema(
                 properties: [
-                    "pid": .object(["type": .string("integer")]),
+                    "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "bundle_id": .object(["type": .string("string")])
                 ]
             )
@@ -234,10 +234,10 @@ extension ToolRegistry {
             description: "Scroll until an AX element matching role/title is visible. Returns its element_id.",
             inputSchema: schema(
                 properties: [
-                    "pid": .object(["type": .string("integer")]),
+                    "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "role": .object(["type": .string("string")]),
                     "title": .object(["type": .string("string")]),
-                    "max_scrolls": .object(["type": .string("integer")])
+                    "max_scrolls": .object(["type": .array([.string("integer"), .string("string")])])
                 ],
                 required: ["pid"]
             )

@@ -56,13 +56,25 @@ actor FileDialogController {
     }
 
     /// Select a file or folder in the dialog's list by matching its title.
-    /// Walks the focused window's AX tree looking for AXOutline/AXTable rows.
+    /// Walks the dialog's AX tree looking for AXOutline/AXTable rows.
+    ///
+    /// Previously only looked at `kAXFocusedWindowAttribute` on the
+    /// systemwide element, which fails whenever the MCP server's caller
+    /// (Claude Desktop / Terminal / Claude Code) has keyboard focus at
+    /// the moment the tool fires — the dialog is visible on screen but
+    /// the system-wide "focused window" is the caller's chat window, so
+    /// the lookup returns nil and users see "No focused window" even
+    /// though a dialog is plainly open. The fallback scans every
+    /// regular app for a visible AXSheet / modal window.
     func selectItem(named title: String) -> Result {
-        guard let window = focusedWindow() else {
-            return Result(success: false, detail: "No focused window.")
+        guard let window = dialogWindow() else {
+            return Result(
+                success: false,
+                detail: "No Open/Save dialog is currently visible. Open one first, then call file_dialog_select_item."
+            )
         }
         guard let row = findRow(in: window, titled: title) else {
-            return Result(success: false, detail: "Row '\(title)' not found.")
+            return Result(success: false, detail: "Row '\(title)' not found in the open dialog.")
         }
         let pressStatus = AXUIElementPerformAction(row, kAXPressAction as CFString)
         if pressStatus == .success {
@@ -93,12 +105,83 @@ actor FileDialogController {
         up.post(tap: .cghidEventTap)
     }
 
-    private func focusedWindow() -> AXUIElement? {
+    /// Best-effort locator for the currently visible Open/Save dialog.
+    ///
+    /// Tries three sources, in order of strictness:
+    ///   1. Systemwide focused window. Fastest when the dialog's owner
+    ///      app actually has keyboard focus.
+    ///   2. Frontmost regular app's AXFocusedWindow / AXMainWindow,
+    ///      looking for an attached AXSheet child or a modal/subrole
+    ///      dialog.
+    ///   3. All regular running apps scanned for a visible sheet or
+    ///      dialog subrole. This catches the common case where Claude
+    ///      Desktop / Terminal is frontmost and another app just opened
+    ///      a save panel.
+    ///
+    /// Returns the deepest AX element that represents the dialog itself
+    /// (the sheet if present, otherwise the hosting window) so
+    /// selectItem can walk its outline rows directly.
+    private func dialogWindow() -> AXUIElement? {
+        // 1. systemwide fast path
         let systemWide = AXUIElementCreateSystemWide()
         var focused: CFTypeRef?
-        let status = AXUIElementCopyAttributeValue(systemWide, kAXFocusedWindowAttribute as CFString, &focused)
-        guard status == .success, let raw = focused, CFGetTypeID(raw) == AXUIElementGetTypeID() else { return nil }
-        return unsafeDowncast(raw, to: AXUIElement.self)
+        if AXUIElementCopyAttributeValue(systemWide, kAXFocusedWindowAttribute as CFString, &focused) == .success,
+           let raw = focused,
+           CFGetTypeID(raw) == AXUIElementGetTypeID() {
+            let candidate = unsafeDowncast(raw, to: AXUIElement.self)
+            if let sheet = attachedSheet(of: candidate) { return sheet }
+            if isDialogWindow(candidate) { return candidate }
+        }
+
+        // 2 + 3. scan regular running apps for a visible sheet/dialog.
+        let apps = NSWorkspace.shared.runningApplications.filter {
+            $0.activationPolicy == .regular && $0.processIdentifier > 0
+        }
+        for app in apps {
+            let appElement = AXUIElementCreateApplication(app.processIdentifier)
+            if let hit = firstDialog(in: appElement) {
+                return hit
+            }
+        }
+        return nil
+    }
+
+    /// If `window` has an AXSheet child, return it. Sheets are where
+    /// Open/Save panels typically live (attached to the main window).
+    private func attachedSheet(of window: AXUIElement) -> AXUIElement? {
+        var childrenRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, kAXChildrenAttribute as CFString, &childrenRef) == .success,
+              let children = childrenRef as? [AXUIElement] else { return nil }
+        return children.first { roleOf($0) == "AXSheet" }
+    }
+
+    /// True if the element looks like an Open/Save dialog — role
+    /// AXSheet, AXWindow with subrole AXStandardWindow hosting a sheet,
+    /// or AXDialog subrole on a window.
+    private func isDialogWindow(_ element: AXUIElement) -> Bool {
+        let role = roleOf(element)
+        if role == "AXSheet" { return true }
+        var subroleRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &subroleRef)
+        let subrole = (subroleRef as? String) ?? ""
+        return subrole == "AXDialog" || subrole == "AXSystemDialog"
+    }
+
+    private func firstDialog(in appElement: AXUIElement) -> AXUIElement? {
+        var windowsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+              let windows = windowsRef as? [AXUIElement] else { return nil }
+        for window in windows {
+            if let sheet = attachedSheet(of: window) { return sheet }
+            if isDialogWindow(window) { return window }
+        }
+        return nil
+    }
+
+    private func roleOf(_ element: AXUIElement) -> String {
+        var ref: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &ref)
+        return (ref as? String) ?? ""
     }
 
     private func findRow(in root: AXUIElement, titled title: String) -> AXUIElement? {

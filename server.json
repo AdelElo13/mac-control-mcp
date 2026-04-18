@@ -1,19 +1,19 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.AdelElo13/mac-control-mcp",
-  "description": "Native Swift macOS automation MCP — 63 tools: AX, browser, capture, OCR, Spotlight, windows.",
+  "description": "Native Swift macOS automation MCP \u2014 63 tools: AX, browser, capture, OCR, Spotlight, windows.",
   "title": "mac-control-mcp",
   "websiteUrl": "https://github.com/AdelElo13/mac-control-mcp",
   "repository": {
     "url": "https://github.com/AdelElo13/mac-control-mcp",
     "source": "github"
   },
-  "version": "0.2.1",
+  "version": "0.2.2",
   "packages": [
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/AdelElo13/mac-control-mcp/releases/download/v0.2.1/mac-control-mcp-v0.2.1.mcpb",
-      "fileSha256": "5c0371c72c51d1f415c8150c9a4e1e30790c72cb9bb45ae94805fb3d2f9eaf7f",
+      "identifier": "https://github.com/AdelElo13/mac-control-mcp/releases/download/v0.2.2/mac-control-mcp-v0.2.2.mcpb",
+      "fileSha256": "d2cfa11bdcb2767f12a9197bbfc135222801a64fb53fce4043277a910a413785",
       "transport": {
         "type": "stdio"
       }

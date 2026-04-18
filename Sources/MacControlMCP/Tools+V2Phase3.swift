@@ -34,7 +34,7 @@ extension ToolRegistry {
                     "x2": .object(["type": .string("number")]),
                     "y2": .object(["type": .string("number")]),
                     "button": .object(["type": .string("string")]),
-                    "steps": .object(["type": .string("integer")])
+                    "steps": .object(["type": .array([.string("integer"), .string("string")])])
                 ],
                 required: ["x1", "y1", "x2", "y2"]
             )
@@ -44,8 +44,8 @@ extension ToolRegistry {
             description: "Scroll wheel event. Positive delta_y scrolls up, negative scrolls down. Optional x/y targets the cursor position.",
             inputSchema: schema(
                 properties: [
-                    "delta_x": .object(["type": .string("integer")]),
-                    "delta_y": .object(["type": .string("integer")]),
+                    "delta_x": .object(["type": .array([.string("integer"), .string("string")])]),
+                    "delta_y": .object(["type": .array([.string("integer"), .string("string")])]),
                     "x": .object(["type": .string("number")]),
                     "y": .object(["type": .string("number")])
                 ]
@@ -72,7 +72,7 @@ extension ToolRegistry {
             description: "Bring a running app to the front by PID or bundle ID.",
             inputSchema: schema(
                 properties: [
-                    "pid": .object(["type": .string("integer")]),
+                    "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "bundle_id": .object(["type": .string("string")])
                 ]
             )
@@ -82,7 +82,7 @@ extension ToolRegistry {
             description: "Quit an app by PID or bundle ID. Pass force=true for forceTerminate.",
             inputSchema: schema(
                 properties: [
-                    "pid": .object(["type": .string("integer")]),
+                    "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "bundle_id": .object(["type": .string("string")]),
                     "force": .object(["type": .string("boolean")])
                 ]
@@ -93,11 +93,11 @@ extension ToolRegistry {
             description: "Poll for an AX element matching role/title to appear (or disappear). Returns the element ID once found.",
             inputSchema: schema(
                 properties: [
-                    "pid": .object(["type": .string("integer")]),
+                    "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "role": .object(["type": .string("string")]),
                     "title": .object(["type": .string("string")]),
                     "timeout_seconds": .object(["type": .string("number"), "description": .string("Default 5.0, max 60.")]),
-                    "poll_interval_ms": .object(["type": .string("integer"), "description": .string("Default 200ms.")]),
+                    "poll_interval_ms": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Default 200ms.")]),
                     "expect_disappear": .object(["type": .string("boolean")])
                 ],
                 required: ["pid"]
