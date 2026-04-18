@@ -95,7 +95,7 @@ cat > "${APP_PATH}/Contents/Info.plist" <<EOF
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.2.2</string>
+    <string>0.2.3</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSUIElement</key>

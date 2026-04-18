@@ -33,7 +33,7 @@ Requires macOS 14.0+. Three options, in order of simplicity:
 
 The server is published as an [MCP Bundle](https://github.com/anthropics/mcpb) — a zip with a `manifest.json` that Claude Desktop reads directly:
 
-1. Download [**mac-control-mcp-v0.2.2.mcpb**](https://github.com/AdelElo13/mac-control-mcp/releases/download/v0.2.2/mac-control-mcp-v0.2.2.mcpb) from the release page.
+1. Download [**mac-control-mcp-v0.2.3.mcpb**](https://github.com/AdelElo13/mac-control-mcp/releases/download/v0.2.3/mac-control-mcp-v0.2.3.mcpb) from the release page.
 2. Double-click the `.mcpb` file. Claude Desktop opens an install dialog.
 3. Click Install. The server is registered under the name `mac-control-mcp` and available immediately in new chats.
 4. First tool call triggers the macOS TCC consent prompts (Screen Recording, Accessibility, Apple Events). Grant all three once — the bundle is Developer-ID signed and notarized, so grants persist across updates.
@@ -44,7 +44,7 @@ It's also listed on the [official MCP Registry](https://registry.modelcontextpro
 
 If you don't use Claude Desktop or want manual control:
 
-1. Download [**MacControlMCP-v0.2.2-macos-universal.tar.gz**](https://github.com/AdelElo13/mac-control-mcp/releases/download/v0.2.2/MacControlMCP-v0.2.2-macos-universal.tar.gz).
+1. Download [**MacControlMCP-v0.2.3-macos-universal.tar.gz**](https://github.com/AdelElo13/mac-control-mcp/releases/download/v0.2.3/MacControlMCP-v0.2.3-macos-universal.tar.gz).
 2. Extract and move `MacControlMCP.app` to `~/Applications/`.
 3. Point your MCP client at the binary inside:
 
@@ -64,8 +64,8 @@ Add that block to `~/Library/Application Support/Claude/claude_desktop_config.js
 Verify the download with the published SHA-256:
 
 ```bash
-shasum -a 256 MacControlMCP-v0.2.2-macos-universal.tar.gz
-# should match MacControlMCP-v0.2.2-macos-universal.sha256 on the release
+shasum -a 256 MacControlMCP-v0.2.3-macos-universal.tar.gz
+# should match MacControlMCP-v0.2.3-macos-universal.sha256 on the release
 ```
 
 ### 3. Build from source
@@ -126,7 +126,7 @@ Total: **63 tools**.
 | Code signing | Developer ID Application (A3W973JZ49) with hardened runtime |
 | Apple notarization | Accepted by Apple Notary Service, ticket stapled, `spctl` reports `source=Notarized Developer ID` |
 | Gatekeeper flow | Extracted + launched with the `com.apple.quarantine` xattr set; no right-click-open needed |
-| MCP Registry | Published as `io.github.AdelElo13/mac-control-mcp` v0.2.2 — distributed as an `.mcpb` bundle for one-click install |
+| MCP Registry | Published as `io.github.AdelElo13/mac-control-mcp` v0.2.3 — distributed as an `.mcpb` bundle for one-click install |
 | Architectures | Universal binary (arm64 + x86_64). Intel slice compiles cleanly but has not been runtime-verified on actual Intel hardware |
 | `move_window_to_display` | Skipped — requires a 2+ display setup |
 

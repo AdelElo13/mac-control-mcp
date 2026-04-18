@@ -113,7 +113,47 @@ actor AccessibilityController {
         return AXIsProcessTrustedWithOptions(options)
     }
 
+    /// PIDs for which we've already flipped AXManualAccessibility on.
+    /// Used to avoid paying the IPC cost on every AX call.
+    private var manualAccessibilityEnabled: Set<pid_t> = []
+
+    /// For Chromium/Electron apps (VS Code, Slack, Discord, Cursor,
+    /// 1Password, Obsidian, Postman, …) and iWork apps (Pages, Keynote,
+    /// Numbers, MS Word via Office) the AX tree is NOT populated by
+    /// default — you get a nearly-empty tree (just the window frame, no
+    /// widgets). Flipping the private `AXManualAccessibility` attribute
+    /// to true on the application element tells the renderer to expose
+    /// the full DOM/widget tree over AX.
+    ///
+    /// This is a known, widely-used trick (Fazm, Scoot, Hyperkey,
+    /// accessibility inspector, most serious macOS agents). Without it,
+    /// mac-control-mcp's find/query/walk functions return useless
+    /// results on any Electron app.
+    ///
+    /// Called automatically the first time any AX walk touches a given
+    /// pid. Cached so subsequent calls are a free HashSet lookup.
+    func enableManualAccessibility(pid: pid_t) {
+        guard !manualAccessibilityEnabled.contains(pid) else { return }
+        let app = AXUIElementCreateApplication(pid)
+        // Attribute name is private — pass as CFString literal. Setting
+        // CFBooleanTrue on a regular (non-Electron) app is a no-op, so
+        // it's safe to always call.
+        _ = AXUIElementSetAttributeValue(
+            app,
+            "AXManualAccessibility" as CFString,
+            kCFBooleanTrue
+        )
+        // Secondary attribute that some Chromium versions use instead.
+        _ = AXUIElementSetAttributeValue(
+            app,
+            "AXEnhancedUserInterface" as CFString,
+            kCFBooleanTrue
+        )
+        manualAccessibilityEnabled.insert(pid)
+    }
+
     func listElements(pid: pid_t, maxDepth: Int = 8) -> [ElementInfo] {
+        enableManualAccessibility(pid: pid)
         let root = AXUIElementCreateApplication(pid)
         var visited = Set<AXKey>()
         var output: [ElementInfo] = []
@@ -137,6 +177,7 @@ actor AccessibilityController {
         // thousands of nodes. Without a deadline the tool call just hangs
         // until the MCP client gives up — reported in v0.2.1 testing.
         let deadline = Date().addingTimeInterval(5.0)
+        enableManualAccessibility(pid: pid)
         let root = AXUIElementCreateApplication(pid)
         var visited = Set<AXKey>()
         var match: AXUIElement?
@@ -337,6 +378,7 @@ actor AccessibilityController {
     /// non-actionable containers) up to `maxDepth`. Each node's `childIndices`
     /// points into the returned array so the tree can be reconstructed.
     func treeWalk(pid: pid_t, maxDepth: Int) -> [TreeNode] {
+        enableManualAccessibility(pid: pid)
         let root = AXUIElementCreateApplication(pid)
         var visited = Set<AXKey>()
         var nodes: [TreeNode] = []
@@ -412,6 +454,7 @@ actor AccessibilityController {
         // against apps with massive AX trees (Finder, Logic Pro). See
         // queryElements / findElement for the same pattern.
         let deadline = Date().addingTimeInterval(5.0)
+        enableManualAccessibility(pid: pid)
         let root = AXUIElementCreateApplication(pid)
         var visited = Set<AXKey>()
         var matches: [(AXUIElement, ElementInfo)] = []
@@ -463,6 +506,7 @@ actor AccessibilityController {
         // so without a cap the query just hangs until the client
         // disconnects. Reported in v0.2.1 testing.
         let deadline = Date().addingTimeInterval(5.0)
+        enableManualAccessibility(pid: pid)
         let root = AXUIElementCreateApplication(pid)
         var visited = Set<AXKey>()
         var matches: [(AXUIElement, ElementInfo)] = []
