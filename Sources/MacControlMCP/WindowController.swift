@@ -1,6 +1,7 @@
 import Foundation
 import ApplicationServices
 import AppKit
+import CoreGraphics
 
 actor WindowController {
     struct WindowInfo: Codable, Sendable {
@@ -14,6 +15,107 @@ actor WindowController {
         let minimized: Bool
         let main: Bool
         let index: Int
+    }
+
+    /// PIDs for which we've already flipped the private Chromium/iWork AX
+    /// unlock attributes. Duplicated from AccessibilityController (each
+    /// actor keeps its own cache) because crossing actors just to set
+    /// two idempotent CF attributes would cost more than one extra IPC
+    /// call per first-touch.
+    private var manualAccessibilityEnabled: Set<pid_t> = []
+
+    /// Flip `AXManualAccessibility` + `AXEnhancedUserInterface` on the
+    /// application element. Without this, Chromium/Electron (Chrome,
+    /// Claude Desktop, VS Code, Slack, Discord, …) and iWork apps
+    /// expose *no windows at all* over `kAXWindowsAttribute`. The call
+    /// is idempotent — setting either attribute on a non-Electron app
+    /// is a no-op at the AX layer.
+    private func enableManualAccessibility(pid: pid_t) {
+        guard !manualAccessibilityEnabled.contains(pid) else { return }
+        let app = AXUIElementCreateApplication(pid)
+        _ = AXUIElementSetAttributeValue(
+            app, "AXManualAccessibility" as CFString, kCFBooleanTrue
+        )
+        _ = AXUIElementSetAttributeValue(
+            app, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue
+        )
+        manualAccessibilityEnabled.insert(pid)
+    }
+
+    /// Resolve an app's window list through a three-step AX fallback
+    /// chain: `kAXWindowsAttribute` → `kAXFocusedWindowAttribute` →
+    /// `kAXMainWindowAttribute`. Chromium/Electron apps sometimes
+    /// populate one but not the other, especially when the app has
+    /// only just finished AX wiring.
+    private func axWindows(pid: pid_t) -> [AXUIElement] {
+        enableManualAccessibility(pid: pid)
+        let app = AXUIElementCreateApplication(pid)
+
+        var ref: CFTypeRef?
+        if AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &ref) == .success,
+           let array = ref as? [AXUIElement], !array.isEmpty {
+            return array
+        }
+
+        if AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &ref) == .success,
+           let raw = ref, CFGetTypeID(raw) == AXUIElementGetTypeID() {
+            return [unsafeDowncast(raw, to: AXUIElement.self)]
+        }
+
+        if AXUIElementCopyAttributeValue(app, kAXMainWindowAttribute as CFString, &ref) == .success,
+           let raw = ref, CFGetTypeID(raw) == AXUIElementGetTypeID() {
+            return [unsafeDowncast(raw, to: AXUIElement.self)]
+        }
+
+        return []
+    }
+
+    /// Window Server fallback — for apps whose windows are NEVER
+    /// registered with Accessibility (Chrome's browser windows are
+    /// the canonical example; all AX attributes return nothing).
+    /// `CGWindowListCopyWindowInfo` lives one layer below AX and sees
+    /// every window the window server draws, but the result is a
+    /// dictionary — we lose the AXUIElement handle, so windows surfaced
+    /// only via CG cannot be mutated (`move_window` / `resize_window`
+    /// still need an AX handle). `list_windows` callers get honest
+    /// bounds + title instead of the previous `count: 0`.
+    private func cgWindows(pid: pid_t, appName: String) -> [WindowInfo] {
+        let options: CGWindowListOption = [.optionAll, .excludeDesktopElements]
+        guard let info = CGWindowListCopyWindowInfo(options, kCGNullWindowID)
+                as? [[String: Any]]
+        else { return [] }
+
+        var out: [WindowInfo] = []
+        for dict in info {
+            guard
+                let ownerPid = (dict[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
+                ownerPid == pid,
+                (dict[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
+                let bounds = dict[kCGWindowBounds as String] as? [String: Any]
+            else { continue }
+            let x = (bounds["X"] as? NSNumber)?.doubleValue ?? 0
+            let y = (bounds["Y"] as? NSNumber)?.doubleValue ?? 0
+            let w = (bounds["Width"] as? NSNumber)?.doubleValue ?? 0
+            let h = (bounds["Height"] as? NSNumber)?.doubleValue ?? 0
+            // Exclude zero-sized overlays and the menubar stripes that
+            // otherwise dominate Chrome's output (Chrome publishes
+            // per-monitor 1800×39 @ y=0 entries for its menubar even
+            // when no browser window is on that monitor).
+            guard w > 1, h > 1 else { continue }
+            if y < 1 && h < 60 { continue }
+            let title = dict[kCGWindowName as String] as? String
+            let onscreen = (dict[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue ?? false
+            out.append(WindowInfo(
+                app: appName,
+                pid: pid,
+                title: title,
+                x: x, y: y, width: w, height: h,
+                minimized: !onscreen,
+                main: out.isEmpty,  // treat first surfaced window as main
+                index: out.count
+            ))
+        }
+        return out
     }
 
     /// Enumerate all windows of all regular running apps. Windows are ordered
@@ -32,22 +134,34 @@ actor WindowController {
 
         var result: [WindowInfo] = []
         for app in apps {
-            let appElement = AXUIElementCreateApplication(app.pid)
-            var mainWindowRef: CFTypeRef?
-            AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute as CFString, &mainWindowRef)
-            let mainWindow = mainWindowRef.flatMap { raw -> AXUIElement? in
-                guard CFGetTypeID(raw) == AXUIElementGetTypeID() else { return nil }
-                return unsafeDowncast(raw, to: AXUIElement.self)
+            // Try AX first (cheaper, gives us a mutable handle) …
+            let axList = axWindows(pid: app.pid)
+            if !axList.isEmpty {
+                let appElement = AXUIElementCreateApplication(app.pid)
+                var mainWindowRef: CFTypeRef?
+                AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute as CFString, &mainWindowRef)
+                let mainWindow = mainWindowRef.flatMap { raw -> AXUIElement? in
+                    guard CFGetTypeID(raw) == AXUIElementGetTypeID() else { return nil }
+                    return unsafeDowncast(raw, to: AXUIElement.self)
+                }
+                for (index, window) in axList.enumerated() {
+                    let info = describe(
+                        window: window, index: index,
+                        appName: app.name, pid: app.pid,
+                        mainWindow: mainWindow
+                    )
+                    // Some Electron apps report AX windows with
+                    // `0×0` bounds — if that's all we got, fall
+                    // through to the CG fallback for real numbers.
+                    if info.width > 1 && info.height > 1 {
+                        result.append(info)
+                    }
+                }
+                if result.contains(where: { $0.pid == app.pid }) { continue }
             }
-
-            var windowsRef: CFTypeRef?
-            let status = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef)
-            guard status == .success, let array = windowsRef as? [AXUIElement] else { continue }
-
-            for (index, window) in array.enumerated() {
-                let info = describe(window: window, index: index, appName: app.name, pid: app.pid, mainWindow: mainWindow)
-                result.append(info)
-            }
+            // … otherwise (or if AX gave only zero-sized frames) fall
+            // back to the Window Server list.
+            result.append(contentsOf: cgWindows(pid: app.pid, appName: app.name))
         }
 
         return result
@@ -56,25 +170,27 @@ actor WindowController {
     /// List windows for a single app by PID. Faster than `listWindows()`
     /// when the caller already knows which app they want.
     func listAppWindows(pid: pid_t) async -> [WindowInfo] {
-        let appElement = AXUIElementCreateApplication(pid)
         let name: String = await MainActor.run {
             NSRunningApplication(processIdentifier: pid)?.localizedName ?? "Unknown"
         }
 
-        var mainWindowRef: CFTypeRef?
-        AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute as CFString, &mainWindowRef)
-        let mainWindow = mainWindowRef.flatMap { raw -> AXUIElement? in
-            guard CFGetTypeID(raw) == AXUIElementGetTypeID() else { return nil }
-            return unsafeDowncast(raw, to: AXUIElement.self)
+        let axList = axWindows(pid: pid)
+        if !axList.isEmpty {
+            let appElement = AXUIElementCreateApplication(pid)
+            var mainWindowRef: CFTypeRef?
+            AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute as CFString, &mainWindowRef)
+            let mainWindow = mainWindowRef.flatMap { raw -> AXUIElement? in
+                guard CFGetTypeID(raw) == AXUIElementGetTypeID() else { return nil }
+                return unsafeDowncast(raw, to: AXUIElement.self)
+            }
+            let described = axList.enumerated().map { index, window in
+                describe(window: window, index: index, appName: name, pid: pid, mainWindow: mainWindow)
+            }
+            let real = described.filter { $0.width > 1 && $0.height > 1 }
+            if !real.isEmpty { return real }
         }
-
-        var windowsRef: CFTypeRef?
-        let status = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef)
-        guard status == .success, let array = windowsRef as? [AXUIElement] else { return [] }
-
-        return array.enumerated().map { index, window in
-            describe(window: window, index: index, appName: name, pid: pid, mainWindow: mainWindow)
-        }
+        // Chrome / apps with no AX-exposed windows.
+        return cgWindows(pid: pid, appName: name)
     }
 
     /// Bring a window to the front. Raises the app first, then the window.
@@ -90,12 +206,8 @@ actor WindowController {
         }
         guard appActivated else { return false }
 
-        let appElement = AXUIElementCreateApplication(pid)
-        var windowsRef: CFTypeRef?
-        let status = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef)
-        guard status == .success, let array = windowsRef as? [AXUIElement], index < array.count else {
-            return false
-        }
+        let array = axWindows(pid: pid)
+        guard index < array.count else { return false }
 
         let window = array[index]
         let raise = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
@@ -192,12 +304,8 @@ actor WindowController {
 
     /// Return the window `(pid, index)` pointer or nil if out of bounds.
     func window(pid: pid_t, index: Int) -> AXUIElement? {
-        let appElement = AXUIElementCreateApplication(pid)
-        var windowsRef: CFTypeRef?
-        let status = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef)
-        guard status == .success, let array = windowsRef as? [AXUIElement], index < array.count else {
-            return nil
-        }
+        let array = axWindows(pid: pid)
+        guard index < array.count else { return nil }
         return array[index]
     }
 

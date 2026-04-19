@@ -95,7 +95,7 @@ cat > "${APP_PATH}/Contents/Info.plist" <<EOF
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.2.3</string>
+    <string>0.2.4</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSUIElement</key>
@@ -118,6 +118,20 @@ cat > "${APP_PATH}/Contents/Info.plist" <<EOF
     <string>mac-control-mcp automates other apps (menus, browser JS, volume, dark mode) via AppleScript.</string>
     <key>NSAccessibilityUsageDescription</key>
     <string>mac-control-mcp reads and controls UI elements across all apps to let an AI agent drive macOS.</string>
+    <!--
+    Desktop / Documents / Downloads Folder keys — required for
+    spotlight_search to return files the user actually cares about.
+    Without these, metadatad silently filters hits under ~/Desktop,
+    ~/Documents, and ~/Downloads from our mdfind subprocess because
+    the parent binary lacks the protected-directory TCC scope. See
+    SpotlightController.primeFilesystemAccess().
+    -->
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>mac-control-mcp searches your Desktop via Spotlight to help the AI agent find files you've just saved there.</string>
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>mac-control-mcp searches your Documents folder via Spotlight so the AI agent can locate files you've stored there.</string>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>mac-control-mcp searches your Downloads folder via Spotlight so the AI agent can locate files you've just downloaded.</string>
 </dict>
 </plist>
 EOF

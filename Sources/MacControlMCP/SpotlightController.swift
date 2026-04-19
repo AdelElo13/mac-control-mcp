@@ -59,6 +59,7 @@ actor SpotlightController {
             lastResults = []
             return .emptyQuery
         }
+        Self.primeFilesystemAccess()
         let outcome = await runMetadataQuery(query: trimmed, limit: limit)
         if case .ok(let results) = outcome {
             lastResults = results
@@ -66,6 +67,33 @@ actor SpotlightController {
             lastResults = []
         }
         return outcome
+    }
+
+    /// Touch the three protected folders (`~/Desktop`, `~/Documents`,
+    /// `~/Downloads`) so macOS either shows the TCC consent dialog (on
+    /// first ever touch) or silently confirms the grant (on subsequent
+    /// calls). Without this, our `mdfind` subprocess inherits the
+    /// parent's TCC scope and `metadatad` filters every hit under those
+    /// three folders out of the result set — so files the user just
+    /// saved to the Desktop appear to "not exist" in Spotlight.
+    ///
+    /// `contentsOfDirectory` is the cheapest TCC-probing call:
+    ///   - If denied, it throws and we swallow the error.
+    ///   - If granted, it returns quickly (<1 ms for typical folders).
+    ///   - On first call, macOS shows the system consent dialog.
+    ///
+    /// The usage-description strings in Info.plist
+    /// (NSDesktopFolderUsageDescription etc.) drive the prompt copy.
+    /// Without those keys the dialog never appears and the denial
+    /// persists silently — the exact failure mode reported in v0.2.4
+    /// testing.
+    private static func primeFilesystemAccess() {
+        let home = NSHomeDirectory()
+        for folder in ["Desktop", "Documents", "Downloads"] {
+            _ = try? FileManager.default.contentsOfDirectory(
+                atPath: home + "/" + folder
+            )
+        }
     }
 
     /// Peek at results collected by the last `search` call. Shape is
@@ -95,95 +123,104 @@ actor SpotlightController {
     /// timeout — Spotlight usually answers in < 200 ms, and a stale
     /// index shouldn't hang the MCP server.
     private func runMetadataQuery(query: String, limit: Int) async -> SearchOutcome {
-        // Use Swift-native NSPredicate format-string API (type-safe
-        // bound parameter) rather than NSPredicate(fromMetadataQueryString:).
-        // An earlier version tried the query-string syntax with
-        // `==[cdw]` flags and NSPredicate threw an
-        // NSInternalInconsistencyException that crashed the whole
-        // process — Spotlight's Metadata framework rejects the `w`
-        // (word-boundary) flag in its parser. LIKE[cd] via %@
-        // substitution is the documented, crash-safe path.
-        let pattern = "*\(query)*"
+        // v0.2.4: shell out to `/usr/bin/mdfind` instead of building an
+        // NSPredicate / NSMetadataQuery in-process.
+        //
+        // Why we stopped fighting NSPredicate:
+        //   Spotlight's query engine (`metadatad`) only reliably accepts
+        //   its own glob-equality syntax, e.g.
+        //       kMDItemDisplayName = '*Jarvis*'cd
+        //   NSPredicate's `LIKE[cd]` and `CONTAINS[cd]` go through
+        //   Foundation's wildcard parser, which has different semantics
+        //   and silently returns zero results for dotted / dashed
+        //   filenames (`Claude-Jarvis.command`, `cost_calculator.py`,
+        //   etc.). `NSPredicate(format: "= %@", "*Jarvis*")` is worse:
+        //   %@ substitution makes the asterisks literal, so Spotlight
+        //   matches only files whose name is exactly `*Jarvis*`, which
+        //   is nothing. Live verification via `mdfind` against the
+        //   user's real index showed a 60×+ gap between the two paths.
+        //
+        // Why mdfind as a subprocess is the honest fix:
+        //   - It is the CLI frontend for `metadatad`, so the result
+        //     set is byte-for-byte what `mdfind` / Finder's Spotlight
+        //     search / Siri show the user.
+        //   - Spawning `/usr/bin/mdfind` adds ~20–40 ms per search —
+        //     cheaper than the 2 s NSMetadataQuery timeout we kept
+        //     tripping.
+        //   - Escapes out of the main-runloop / notification / observer
+        //     dance entirely: stdout is line-per-path, read until EOF.
+        //   - Matches the same three identity fields we want
+        //     (DisplayName, FSName, Title).
+        //
+        // Single-quote escaping:
+        //   User input gets folded into a single-quoted literal inside
+        //   the query string, so any `'` in the query would close the
+        //   literal and change the predicate. Doubling `'` to `''`
+        //   (mdfind escape rule) or swapping to `\'` isn't reliably
+        //   parsed. Simplest correct fix: reject queries containing a
+        //   single quote outright — vanishingly rare for a Spotlight
+        //   search and removes the injection surface.
+        guard !query.contains("'") else {
+            return .ok(results: [])
+        }
+
+        let queryString =
+            "kMDItemDisplayName = '*\(query)*'cd"
+            + " || kMDItemFSName = '*\(query)*'cd"
+            + " || kMDItemTitle = '*\(query)*'cd"
 
         return await withCheckedContinuation { (continuation: CheckedContinuation<SearchOutcome, Never>) in
-            DispatchQueue.main.async {
-                let mq = NSMetadataQuery()
-                mq.predicate = NSPredicate(
-                    format: "kMDItemDisplayName LIKE[cd] %@ OR kMDItemFSName LIKE[cd] %@",
-                    pattern, pattern
-                )
-                // Sort: most recently used first.
-                // (kMDItemContentTypeTree is an array attribute and
-                // can't be used as a sort key — NSMetadataSortCompare
-                // crashes with unrecognized selector when it tries to
-                // -compare: two arrays. Seen during v0.2.0 probe.)
-                mq.sortDescriptors = [
-                    NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false),
-                ]
-                mq.searchScopes = [
-                    NSMetadataQueryLocalComputerScope,
-                    NSMetadataQueryUserHomeScope,
-                ]
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/mdfind")
+                process.arguments = [queryString]
 
-                // Why explicit outcome tracking: previously "startup
-                // refused" and "query answered with 0 hits" collapsed
-                // into the same return — a nil/empty array — so the
-                // tool layer couldn't distinguish "metadatad down" from
-                // "no results". Now each exit path tags itself.
-                enum ExitCause { case gathered, timedOut, startFailed }
-                var settled = false
-                var observer: NSObjectProtocol?
-                var timeoutWork: DispatchWorkItem?
+                let stdout = Pipe()
+                let stderr = Pipe()
+                process.standardOutput = stdout
+                process.standardError = stderr
 
-                let finish: (ExitCause) -> Void = { cause in
-                    guard !settled else { return }
-                    settled = true
-                    if let obs = observer {
-                        NotificationCenter.default.removeObserver(obs)
-                    }
-                    timeoutWork?.cancel()
-                    mq.stop()
-                    switch cause {
-                    case .startFailed:
-                        continuation.resume(returning: .backendUnavailable)
-                        return
-                    case .timedOut:
-                        continuation.resume(returning: .timedOut)
-                        return
-                    case .gathered:
-                        break
-                    }
-                    let items = (mq.results as? [NSMetadataItem]) ?? []
-                    var out: [ResultPreview] = []
-                    var seen = Set<String>()
-                    for item in items {
-                        let title =
-                            (item.value(forAttribute: "kMDItemDisplayName") as? String)
-                            ?? (item.value(forAttribute: "kMDItemFSName") as? String)
-                            ?? ""
-                        let path = (item.value(forAttribute: NSMetadataItemPathKey) as? String) ?? ""
-                        let clean = title.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !clean.isEmpty, !path.isEmpty, seen.insert(path).inserted else { continue }
-                        out.append(
-                            ResultPreview(index: out.count + 1, title: clean, path: path)
-                        )
-                        if out.count >= limit { break }
-                    }
-                    continuation.resume(returning: .ok(results: out))
+                do {
+                    try process.run()
+                } catch {
+                    continuation.resume(returning: .backendUnavailable)
+                    return
                 }
 
-                observer = NotificationCenter.default.addObserver(
-                    forName: .NSMetadataQueryDidFinishGathering,
-                    object: mq,
-                    queue: .main
-                ) { _ in finish(.gathered) }
-
-                timeoutWork = DispatchWorkItem { finish(.timedOut) }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: timeoutWork!)
-
-                if !mq.start() {
-                    finish(.startFailed)
+                // 2 s hard deadline — parity with the old NSMetadataQuery
+                // timeout. mdfind normally returns in < 200 ms on a
+                // warm index; anything slower is better surfaced as a
+                // timeout than blocking the MCP.
+                let deadline = DispatchWorkItem { [weak process] in
+                    guard let p = process, p.isRunning else { return }
+                    p.terminate()
                 }
+                DispatchQueue.global(qos: .userInitiated)
+                    .asyncAfter(deadline: .now() + 2.0, execute: deadline)
+
+                let data = stdout.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                deadline.cancel()
+
+                if process.terminationReason == .uncaughtSignal {
+                    continuation.resume(returning: .timedOut)
+                    return
+                }
+
+                let output = String(data: data, encoding: .utf8) ?? ""
+                var out: [ResultPreview] = []
+                var seen = Set<String>()
+                for line in output.split(separator: "\n", omittingEmptySubsequences: true) {
+                    let path = String(line)
+                    guard seen.insert(path).inserted else { continue }
+                    let title = (path as NSString).lastPathComponent
+                    guard !title.isEmpty else { continue }
+                    out.append(
+                        ResultPreview(index: out.count + 1, title: title, path: path)
+                    )
+                    if out.count >= limit { break }
+                }
+                continuation.resume(returning: .ok(results: out))
             }
         }
     }

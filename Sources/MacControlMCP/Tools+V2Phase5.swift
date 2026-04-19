@@ -710,9 +710,29 @@ extension ToolRegistry {
 
     func callRequestPermissions() async -> ToolCallResult {
         let granted = await accessibility.requestPermission()
+        // Also trigger the protected-folder TCC prompts up-front so the
+        // user grants everything in one visit to System Settings
+        // instead of getting a surprise prompt on the first Spotlight
+        // search. Each `contentsOfDirectory` call either succeeds
+        // silently (grant already given), throws silently (we ignore),
+        // or pops the system dialog the very first time.
+        let home = NSHomeDirectory()
+        var folderAccess: [String: Bool] = [:]
+        for folder in ["Desktop", "Documents", "Downloads"] {
+            let ok = (try? FileManager.default.contentsOfDirectory(
+                atPath: home + "/" + folder
+            )) != nil
+            folderAccess[folder.lowercased()] = ok
+        }
         return successResult(
             granted ? "Permission already granted." : "Permission dialog shown (user action required).",
-            ["ok": .bool(true), "accessibility": .bool(granted)]
+            [
+                "ok": .bool(true),
+                "accessibility": .bool(granted),
+                "desktop": .bool(folderAccess["desktop"] ?? false),
+                "documents": .bool(folderAccess["documents"] ?? false),
+                "downloads": .bool(folderAccess["downloads"] ?? false)
+            ]
         )
     }
 

@@ -8,12 +8,12 @@
     "url": "https://github.com/AdelElo13/mac-control-mcp",
     "source": "github"
   },
-  "version": "0.2.3",
+  "version": "0.2.4",
   "packages": [
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/AdelElo13/mac-control-mcp/releases/download/v0.2.3/mac-control-mcp-v0.2.3.mcpb",
-      "fileSha256": "f0add0218c59ea1264f43212a2322902e04ee950fa3cdc560fc472a5874b9751",
+      "identifier": "https://github.com/AdelElo13/mac-control-mcp/releases/download/v0.2.4/mac-control-mcp-v0.2.4.mcpb",
+      "fileSha256": "98ba2c2726b973d3594f0658000e6bdb8858afef491451e6634a6f47ee57ffc5",
       "transport": {
         "type": "stdio"
       }
