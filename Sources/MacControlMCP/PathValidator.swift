@@ -19,7 +19,10 @@ enum PathValidator {
         var description: String {
             switch self {
             case .outsideAllowedRoots(let p):
-                return "output_path '\(p)' is outside allowed roots (temp dir, Desktop, Documents, Downloads, Pictures)."
+                let tmp = NSTemporaryDirectory()
+                return "output_path '\(p)' is outside allowed roots. " +
+                    "Use one of: \(tmp) (user-scoped temp — prefer this for throwaway files), ~/Desktop, ~/Documents, ~/Downloads, ~/Pictures. " +
+                    "/tmp and /private/tmp are rejected on purpose (TOCTOU symlink risk)."
             case .unresolvable(let p):
                 return "output_path '\(p)' cannot be resolved."
             case .missingParent(let p):

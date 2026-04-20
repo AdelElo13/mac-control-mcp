@@ -382,8 +382,16 @@ actor AccessibilityController {
         let root = AXUIElementCreateApplication(pid)
         var visited = Set<AXKey>()
         var nodes: [TreeNode] = []
+        // Wall-clock deadline + node cap. Without these, large AX trees
+        // (Mail preview pane, Finder list view, Logic Pro with depth>=20)
+        // produce thousands of IPC round trips and the MCP client just
+        // hangs until it disconnects. Matches the 5 s / 5000-node budget
+        // used elsewhere in this controller.
+        let deadline = Date().addingTimeInterval(5.0)
+        let nodeCap = 5000
 
         func recurse(element: AXUIElement, depth: Int) -> Int {
+            guard Date() < deadline, nodes.count < nodeCap else { return -1 }
             // AXKey wraps CFHash + CFEqual — see its definition for why
             // the pointer address is wrong here.
             let key = AXKey(element: element)
@@ -409,6 +417,7 @@ actor AccessibilityController {
 
             var childIndices: [Int] = []
             for child in childElements(of: element) {
+                if Date() >= deadline || nodes.count >= nodeCap { break }
                 let idx = recurse(element: child, depth: depth + 1)
                 if idx >= 0 { childIndices.append(idx) }
             }
@@ -722,21 +731,31 @@ actor AccessibilityController {
     }
 
     private func childElements(of element: AXUIElement) -> [AXUIElement] {
-        guard let rawChildren = attributeValue(of: element, attribute: kAXChildrenAttribute as CFString) else {
-            return []
-        }
+        // Merge kAXChildrenAttribute with kAXSheetsAttribute. On macOS a
+        // presented sheet is attached to its host window via kAXSheets and
+        // is NOT always reflected in kAXChildren. Without this merge,
+        // find_elements(role: "AXSheet") returns 0 even when a sheet is
+        // visible (e.g. Mail's Add Attachments panel). Same for any
+        // subtree that lives under the sheet. Dedup happens upstream via
+        // AXKey visited-set, so listing a child here twice is safe.
+        var result: [AXUIElement] = []
+        result.append(contentsOf: axElementArray(of: element, attribute: kAXChildrenAttribute as CFString))
+        // kAXSheetsAttribute is not exported as a Swift constant — use the
+        // raw attribute name. Matches NSAccessibilitySheetsAttribute.
+        let sheets = axElementArray(of: element, attribute: "AXSheets" as CFString)
+        if !sheets.isEmpty { result.append(contentsOf: sheets) }
+        return result
+    }
 
-        if let children = rawChildren as? [AXUIElement] {
-            return children
-        }
-
-        if let children = rawChildren as? NSArray {
-            return children.compactMap { child in
+    private func axElementArray(of element: AXUIElement, attribute: CFString) -> [AXUIElement] {
+        guard let raw = attributeValue(of: element, attribute: attribute) else { return [] }
+        if let arr = raw as? [AXUIElement] { return arr }
+        if let arr = raw as? NSArray {
+            return arr.compactMap { child in
                 guard CFGetTypeID(child as CFTypeRef) == AXUIElementGetTypeID() else { return nil }
                 return unsafeDowncast(child as AnyObject, to: AXUIElement.self)
             }
         }
-
         return []
     }
 
