@@ -56,6 +56,12 @@ final class ToolRegistry: @unchecked Sendable {
     let power: PowerController
     let audio: AudioController
     let dock: DockController
+    // v0.6.0 Phase 9 — reliability + observability substrate
+    let audit: AuditLogController
+    let redaction: RedactionController
+    let memory: AgentMemoryController
+    let axSnapshot: AXSnapshotController
+    let grounding: GroundingController
 
     init(
         accessibility: AccessibilityController,
@@ -80,7 +86,12 @@ final class ToolRegistry: @unchecked Sendable {
         appleApps: AppleAppsController = AppleAppsController(),
         power: PowerController = PowerController(),
         audio: AudioController = AudioController(),
-        dock: DockController = DockController()
+        dock: DockController = DockController(),
+        audit: AuditLogController = AuditLogController(),
+        redaction: RedactionController = RedactionController(),
+        memory: AgentMemoryController = AgentMemoryController(),
+        axSnapshot: AXSnapshotController = AXSnapshotController(),
+        grounding: GroundingController? = nil
     ) {
         self.accessibility = accessibility
         self.elementCache = elementCache
@@ -105,12 +116,23 @@ final class ToolRegistry: @unchecked Sendable {
         self.power = power
         self.audio = audio
         self.dock = dock
+        self.audit = audit
+        self.redaction = redaction
+        self.memory = memory
+        self.axSnapshot = axSnapshot
+        // Grounding needs the existing AccessibilityController + ScreenController
+        // — if the caller didn't pass one, construct with the defaults so the
+        // registry is self-consistent.
+        self.grounding = grounding ?? GroundingController(
+            accessibility: accessibility, screen: screen
+        )
     }
 
     var toolDefinitions: [MCPToolDefinition] {
         Self.definitions + Self.definitionsV2 + Self.definitionsV2Phase2 +
             Self.definitionsV2Phase3 + Self.definitionsV2Phase4 + Self.definitionsV2Phase5 +
-            Self.definitionsV2Phase6 + Self.definitionsV2Phase7 + Self.definitionsV2Phase8
+            Self.definitionsV2Phase6 + Self.definitionsV2Phase7 + Self.definitionsV2Phase8 +
+            Self.definitionsV2Phase9
     }
 
     // MARK: - Tool dispatch
@@ -375,6 +397,27 @@ final class ToolRegistry: @unchecked Sendable {
             return await callListDockItems()
         case "click_dock_item":
             return await callClickDockItem(arguments)
+        // MARK: - v0.6.0 Phase 9 — reliability + observability substrate (10 tools)
+        case "ground":
+            return await callGround(arguments)
+        case "ax_tree_augmented":
+            return await callAXTreeAugmented(arguments)
+        case "ax_snapshot_capture":
+            return await callAXSnapshotCapture(arguments)
+        case "ax_snapshot_diff":
+            return await callAXSnapshotDiff(arguments)
+        case "audit_log_append":
+            return await callAuditLogAppend(arguments)
+        case "audit_log_read":
+            return await callAuditLogRead(arguments)
+        case "agent_memory_store":
+            return await callAgentMemoryStore(arguments)
+        case "agent_memory_recall":
+            return await callAgentMemoryRecall(arguments)
+        case "redact_pii_text":
+            return await callRedactPIIText(arguments)
+        case "redact_image_regions":
+            return await callRedactImageRegions(arguments)
         default:
             return errorResult("Unknown tool '\(name)'.")
         }

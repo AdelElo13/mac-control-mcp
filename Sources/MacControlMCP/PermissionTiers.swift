@@ -52,9 +52,47 @@ public struct PermissionGrant: Codable, Sendable {
     public let expiresAt: Date
     /// Optional human-readable note ("granted via /setup 2026-04-21").
     public let reason: String?
+    /// v0.6.0 A6 hierarchical permission scopes. When a tool hands off to
+    /// a sub-tool (e.g. `click_menu_path` internally calls `activate_app`
+    /// + `get_ui_tree` + `perform_element_action`), the sub-calls inherit
+    /// the caller's grant only if `allowSubDelegation == true`. Agents
+    /// that want to hand agents a narrow power without letting the agent
+    /// pass it onwards in internal chains can set this to `false`.
+    ///
+    /// Default `true` for backward compatibility with v0.5.x grants that
+    /// were written before this flag existed.
+    public let allowSubDelegation: Bool
+
+    public init(
+        bundleId: String,
+        tier: PermissionTier,
+        expiresAt: Date,
+        reason: String?,
+        allowSubDelegation: Bool = true
+    ) {
+        self.bundleId = bundleId
+        self.tier = tier
+        self.expiresAt = expiresAt
+        self.reason = reason
+        self.allowSubDelegation = allowSubDelegation
+    }
 
     public func isExpired(now: Date = Date()) -> Bool {
         expiresAt <= now
+    }
+
+    // Custom decoding so older JSON without `allowSubDelegation` loads
+    // cleanly with the back-compat default.
+    enum CodingKeys: String, CodingKey {
+        case bundleId, tier, expiresAt, reason, allowSubDelegation
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        bundleId = try c.decode(String.self, forKey: .bundleId)
+        tier = try c.decode(PermissionTier.self, forKey: .tier)
+        expiresAt = try c.decode(Date.self, forKey: .expiresAt)
+        reason = try c.decodeIfPresent(String.self, forKey: .reason)
+        allowSubDelegation = try c.decodeIfPresent(Bool.self, forKey: .allowSubDelegation) ?? true
     }
 }
 
@@ -122,7 +160,8 @@ public actor PermissionStore {
         bundleId: String,
         tier: PermissionTier,
         ttlSeconds: TimeInterval = defaultTTLSeconds,
-        reason: String? = nil
+        reason: String? = nil,
+        allowSubDelegation: Bool = true
     ) -> PermissionGrant? {
         loadIfNeeded()
         if let existing = grants[bundleId], existing.tier == .denied {
@@ -132,7 +171,8 @@ public actor PermissionStore {
             bundleId: bundleId,
             tier: tier,
             expiresAt: Date().addingTimeInterval(ttlSeconds),
-            reason: reason
+            reason: reason,
+            allowSubDelegation: allowSubDelegation
         )
         grants[bundleId] = grant
         persist()
@@ -150,7 +190,8 @@ public actor PermissionStore {
             // usually not what the user wants. 30 days is long enough
             // to be useful, short enough to self-heal.
             expiresAt: Date().addingTimeInterval(30 * 24 * 60 * 60),
-            reason: reason
+            reason: reason,
+            allowSubDelegation: false
         )
         persist()
     }

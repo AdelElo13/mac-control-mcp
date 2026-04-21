@@ -1,0 +1,81 @@
+{
+  "$schema": "https://modelcontextprotocol.io/schemas/well-known-server-card-v1",
+  "name": "mac-control-mcp",
+  "version": "0.6.0",
+  "description": "Native Swift macOS automation MCP. Reliability + observability substrate release. 125 tools covering AX, click/type, capture, Mission Control, Apple Apps (Messages/Mail/Calendar/Reminders/Contacts), power, audio, Dock, Wi-Fi, with tiered + hierarchical permission scopes, OTel 1.40.0 tracing, append-only audit log, snapshot-based undo, and PII redaction.",
+  "homepage": "https://github.com/AdelElo13/mac-control-mcp",
+  "license": "MIT",
+  "contact": {
+    "maintainer": "Adil El-Ouariachi",
+    "github": "AdelElo13"
+  },
+  "transport": "stdio",
+  "capabilities": {
+    "tools": {
+      "count": 125,
+      "phases": {
+        "v0.2.6_core": 64,
+        "v0.3.0_tiered_perms_axobserver": 6,
+        "v0.4.0_no_gap_surface": 25,
+        "v0.5.0_apple_apps": 22,
+        "v0.6.0_substrate": 8
+      }
+    },
+    "resources": true,
+    "prompts": false,
+    "logging": "otel-1.40-mcp-semconv"
+  },
+  "permission_model": {
+    "type": "tiered_hierarchical",
+    "tiers": ["denied", "none", "view", "click", "full"],
+    "features": {
+      "per_app_grants": true,
+      "ttl_bounded": true,
+      "hierarchical_scope": true,
+      "deny_list_self_healing": true,
+      "default_enforcement": "opt_in_via_env"
+    },
+    "env_flag": "MAC_CONTROL_MCP_ENFORCE_TIERS"
+  },
+  "observability": {
+    "tracing": {
+      "standard": "OpenTelemetry 1.40 MCP semantic conventions",
+      "exporter_env": "OTEL_EXPORTER_OTLP_ENDPOINT",
+      "fallback_file": "~/.mac-control-mcp/traces.jsonl"
+    },
+    "audit_log": {
+      "path": "~/.mac-control-mcp/audit.jsonl",
+      "format": "JSONL",
+      "append_only": true
+    },
+    "undo_queue": {
+      "depth": 20,
+      "scope": "snapshot_based_best_effort"
+    }
+  },
+  "safety": {
+    "pii_redaction": {
+      "text_categories": ["email", "phone", "ssn", "creditCard", "apiKey"],
+      "image_region_redaction": true
+    },
+    "path_sandbox": {
+      "trash_denylist_paths": 43,
+      "trash_denylist_extensions": 12,
+      "credential_protection": true
+    },
+    "url_scheme_policy": {
+      "allowlist_schemes": 19,
+      "blocklist_schemes": 13,
+      "enforced": true
+    }
+  },
+  "directory_submission_ready": false,
+  "directory_submission_blockers": [
+    "OAuth + DPoP not yet implemented (stdio transport only)",
+    "Public HTTPS reach not yet implemented",
+    "OpenAPI spec export not yet implemented"
+  ],
+  "roadmap": {
+    "v0.7.0": "OAuth + DPoP, HTTPS remote transport, scheduled_action, on_event, Foundation Models wrapper, App Intents, browser DOM layers, agent-safehouse sandbox profile — flips directory_submission_ready to true"
+  }
+}

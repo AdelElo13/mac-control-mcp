@@ -1,5 +1,8 @@
 import Foundation
 import CoreGraphics
+#if canImport(CoreWLAN)
+import CoreWLAN
+#endif
 
 /// Hardware-adjacent controls: display brightness, Wi-Fi, Bluetooth,
 /// Night Shift, AirPlay. macOS gates most of these behind system daemons
@@ -231,48 +234,67 @@ actor HardwareController {
         }
     }
 
-    /// Scan for visible Wi-Fi networks. Uses the airport utility (still
-    /// present on macOS 15 under
-    /// /System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport)
-    /// with the `-s` (scan) flag. This path is private API so we check for
-    /// its existence and degrade gracefully when it's gone (Apple has
-    /// talked about removing it since macOS 14).
+    /// Scan for visible Wi-Fi networks. v0.6.0 A5: switched from the
+    /// private `airport` utility (removed in Sonoma 14.4) to the
+    /// CoreWLAN framework's `CWWiFiClient.scanForNetworks` API.
+    ///
+    /// CoreWLAN works on macOS 10.6+, no private entitlement needed for
+    /// basic scan. Some managed-fleet devices have scan blocked; in
+    /// that case CoreWLAN returns an empty set and we surface a hint.
     func wifiScan() -> WifiScanResult {
-        let airportPath = "/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport"
-        guard ProcessRunner.exists(airportPath) else {
+        #if canImport(CoreWLAN)
+        guard let client = CWWiFiClient.shared().interface() else {
             return WifiScanResult(
                 ok: false, networks: [],
-                hint: "airport utility not found at \(airportPath) — macOS may have removed it in this release"
+                hint: "no Wi-Fi interface available via CoreWLAN (adapter disabled?)"
             )
         }
-        let r = ProcessRunner.run(airportPath, ["-s"], timeout: 10)
-        guard r.ok else {
+        do {
+            let scan = try client.scanForNetworks(withName: nil)
+            let nets = scan.map { network -> WifiScanResult.Network in
+                // Note: CWNetwork.rssiValue returns 0 when the device didn't
+                // capture a signal strength for that entry. We preserve nil
+                // semantics by treating 0 as "unknown", since real Wi-Fi
+                // RSSI is always negative (-30..-90 dBm range).
+                let rssi = network.rssiValue != 0 ? network.rssiValue : nil
+                let channel = network.wlanChannel?.channelNumber
+                let security: String?
+                if #available(macOS 10.15, *) {
+                    security = network.supportsSecurity(.wpa3Personal) ? "WPA3"
+                        : network.supportsSecurity(.wpa2Personal) ? "WPA2"
+                        : network.supportsSecurity(.wpaPersonal) ? "WPA"
+                        : network.supportsSecurity(.WEP) ? "WEP"
+                        : network.supportsSecurity(.none) ? "Open"
+                        : nil
+                } else {
+                    security = nil
+                }
+                return WifiScanResult.Network(
+                    ssid: network.ssid ?? "(hidden)",
+                    rssi: rssi,
+                    channel: channel,
+                    security: security
+                )
+            }
+            if nets.isEmpty {
+                return WifiScanResult(
+                    ok: false, networks: [],
+                    hint: "CoreWLAN scan returned empty — adapter may be blocked by MDM policy, or no networks visible"
+                )
+            }
+            return WifiScanResult(ok: true, networks: nets, hint: nil)
+        } catch {
             return WifiScanResult(
                 ok: false, networks: [],
-                hint: r.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+                hint: "CoreWLAN scan failed: \(error.localizedDescription)"
             )
         }
-        // airport -s output format:
-        //                             SSID BSSID             RSSI CHANNEL HT CC SECURITY (auth/unicast/group)
-        //                    MyNetwork aa:bb:cc:dd:ee:ff -50  11      Y  US WPA2(PSK/AES/AES)
-        let lines = r.stdout.split(separator: "\n").dropFirst() // skip header
-        var nets: [WifiScanResult.Network] = []
-        for line in lines {
-            let text = String(line)
-            // Columns are whitespace-separated, but SSID may contain spaces.
-            // The BSSID is always 17 chars (xx:xx:xx:xx:xx:xx), so we split
-            // at the BSSID to get SSID before + rest after.
-            guard let bssidMatch = text.range(of: #"([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}"#, options: .regularExpression) else { continue }
-            let ssid = String(text[..<bssidMatch.lowerBound]).trimmingCharacters(in: .whitespaces)
-            let rest = String(text[bssidMatch.upperBound...]).trimmingCharacters(in: .whitespaces)
-            let restCols = rest.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
-            guard restCols.count >= 4 else { continue }
-            let rssi = Int(restCols[0])
-            let channel = Int(restCols[1].split(separator: ",").first.map(String.init) ?? restCols[1])
-            let security = restCols.count > 4 ? restCols[4...].joined(separator: " ") : nil
-            nets.append(.init(ssid: ssid, rssi: rssi, channel: channel, security: security))
-        }
-        return WifiScanResult(ok: true, networks: nets, hint: nil)
+        #else
+        return WifiScanResult(
+            ok: false, networks: [],
+            hint: "CoreWLAN not available on this platform build"
+        )
+        #endif
     }
 
     /// Join a Wi-Fi network by SSID (+ optional password). macOS stores
