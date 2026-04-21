@@ -25,6 +25,11 @@ VERSION="${VERSION:?set VERSION=x.y.z}"
 NOTARIZE_PROFILE="${NOTARIZE_PROFILE:-mac-control-mcp}"
 OUT_DIR="${PROJECT_ROOT}/release-artifacts"
 
+# Optional opt-in flag. Set PUBLISH=1 to auto-create GitHub release and publish
+# to the MCP registry at the end. Default is off so the script stays safe to
+# re-run for local testing.
+PUBLISH="${PUBLISH:-0}"
+
 APP_NAME="MacControlMCP"
 APP_PATH="${HOME}/Applications/${APP_NAME}.app"
 
@@ -122,11 +127,87 @@ echo "[release] computing SHA256..."
 (cd "$OUT_DIR" && shasum -a 256 "$TARBALL_NAME" > "$SHA_NAME")
 
 echo ""
-echo "[release] DONE. Assets:"
+echo "[release] assets built:"
 ls -lh "$OUT_DIR"
-echo ""
-echo "Next step:"
-echo "  gh release create v${VERSION} -t \"v${VERSION}\" -F RELEASE_NOTES_v${VERSION}.md \\"
-echo "    ${OUT_DIR}/${MCPB_NAME} \\"
-echo "    ${OUT_DIR}/${TARBALL_NAME} \\"
-echo "    ${OUT_DIR}/${SHA_NAME}"
+
+# -----------------------------------------------------------------------------
+# 6. Auto-sync server.json (registry manifest) with the actual mcpb sha256.
+#
+# History lesson: v0.2.6 shipped with a stale placeholder sha256 in server.json
+# because the value was edited by hand and never re-checked. That silent drift
+# blocks MCP-registry installers from verifying the bundle. Now the build
+# computes the real hash and rewrites server.json, so sha is always correct.
+# -----------------------------------------------------------------------------
+SERVER_JSON="${PROJECT_ROOT}/server.json"
+if [ -f "$SERVER_JSON" ]; then
+    echo ""
+    echo "[release] syncing server.json sha256 to actual .mcpb..."
+    MCPB_SHA=$(shasum -a 256 "${OUT_DIR}/${MCPB_NAME}" | awk '{print $1}')
+    MCPB_URL="https://github.com/AdelElo13/mac-control-mcp/releases/download/v${VERSION}/${MCPB_NAME}"
+    # Use python to rewrite the JSON so we preserve formatting + escapes.
+    python3 - "$SERVER_JSON" "$VERSION" "$MCPB_URL" "$MCPB_SHA" <<'PY'
+import json, sys
+path, version, url, sha = sys.argv[1:]
+with open(path) as f: doc = json.load(f)
+doc["version"] = version
+pkg = doc.setdefault("packages", [{}])[0]
+pkg["registryType"] = "mcpb"
+pkg["identifier"] = url
+pkg["fileSha256"] = sha
+pkg.setdefault("transport", {"type": "stdio"})
+with open(path, "w") as f: json.dump(doc, f, indent=2); f.write("\n")
+print(f"  version={version}")
+print(f"  identifier={url}")
+print(f"  fileSha256={sha}")
+PY
+    echo "[release] validating server.json against MCP registry schema..."
+    mcp-publisher validate
+fi
+
+# -----------------------------------------------------------------------------
+# 7. Optional — when PUBLISH=1, create the GitHub release AND publish to the
+#     MCP registry so the distribution channels can never drift again.
+# -----------------------------------------------------------------------------
+if [ "$PUBLISH" = "1" ]; then
+    echo ""
+    echo "[release] PUBLISH=1 — creating GitHub release + publishing to MCP registry"
+
+    # Require RELEASE_NOTES file so the release body is human-reviewed prose,
+    # not auto-generated git log noise.
+    NOTES_FILE="${PROJECT_ROOT}/RELEASE_NOTES_v${VERSION}.md"
+    if [ ! -f "$NOTES_FILE" ]; then
+        echo "[release] ERROR: $NOTES_FILE missing. Write the release notes first."
+        exit 1
+    fi
+
+    # Create the GitHub release (idempotent-ish: if the tag exists gh will complain).
+    gh release create "v${VERSION}" \
+        --title "v${VERSION}" \
+        --notes-file "$NOTES_FILE" \
+        "${OUT_DIR}/${MCPB_NAME}" \
+        "${OUT_DIR}/${TARBALL_NAME}" \
+        "${OUT_DIR}/${SHA_NAME}"
+
+    # Publish to the MCP registry. If the token is expired the caller has to
+    # `mcp-publisher login github` first — we don't try to auto-login because
+    # device-code flow needs an interactive browser.
+    echo ""
+    echo "[release] publishing to MCP registry..."
+    mcp-publisher publish
+
+    echo ""
+    echo "[release] PUBLISHED."
+    echo "  GitHub release: https://github.com/AdelElo13/mac-control-mcp/releases/tag/v${VERSION}"
+    echo "  MCP registry:   https://registry.modelcontextprotocol.io/v0/servers?search=mac-control-mcp"
+else
+    echo ""
+    echo "[release] DONE (assets only; set PUBLISH=1 to also create the GitHub release and push to the MCP registry)."
+    echo ""
+    echo "Manual next steps:"
+    echo "  gh release create v${VERSION} -t \"v${VERSION}\" -F RELEASE_NOTES_v${VERSION}.md \\"
+    echo "    ${OUT_DIR}/${MCPB_NAME} \\"
+    echo "    ${OUT_DIR}/${TARBALL_NAME} \\"
+    echo "    ${OUT_DIR}/${SHA_NAME}"
+    echo ""
+    echo "  mcp-publisher publish   # assumes you already ran \`mcp-publisher login github\`"
+fi
