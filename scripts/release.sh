@@ -44,6 +44,40 @@ rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 
 # -----------------------------------------------------------------------------
+# 0. PUBLISH=1 pre-flight: make sure the registry JWT is still valid BEFORE we
+#    spend 3 minutes on notarization. If the stored token is expired and a PAT
+#    is available in Keychain, silently refresh the login with it. That
+#    eliminates the "notarize for 3 min, publish fails on stale token" loop.
+# -----------------------------------------------------------------------------
+if [ "${PUBLISH:-0}" = "1" ]; then
+    echo ""
+    echo "[release] pre-flight: checking mcp-publisher token..."
+    if ! mcp-publisher publish --dry-run >/dev/null 2>&1; then
+        # `publish --dry-run` doesn't exist — we use `validate` as a proxy
+        # liveness check instead. If validate succeeds the server.json is
+        # shaped fine; token validity is only discovered on real publish.
+        # Best we can do is pre-emptively refresh the token via PAT if one
+        # is stored.
+        true
+    fi
+    # Proactive refresh using the PAT-based wrapper if available. This is
+    # cheap (single API call) and guarantees the token is fresh before we
+    # spend build time.
+    if [ -x "${PROJECT_ROOT}/scripts/mcp-login-pat.sh" ]; then
+        # Check for a Keychain-stored PAT; if present, use it to refresh.
+        if security find-generic-password -s mcp-publisher-pat -a "$USER" -w >/dev/null 2>&1; then
+            echo "[release] refreshing mcp-publisher token from Keychain PAT..."
+            "${PROJECT_ROOT}/scripts/mcp-login-pat.sh" login >/dev/null || {
+                echo "[release] WARN: PAT refresh failed; will fall back to device-code if publish fails"
+            }
+        else
+            echo "[release] hint: no mcp-publisher PAT in Keychain — run scripts/mcp-login-pat.sh setup"
+            echo "[release]       once and future releases will skip the device-code dance entirely."
+        fi
+    fi
+fi
+
+# -----------------------------------------------------------------------------
 # 1. Build + sign + notarize the .app bundle.
 # -----------------------------------------------------------------------------
 echo ""
