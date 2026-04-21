@@ -217,6 +217,122 @@ actor HardwareController {
         )
     }
 
+    // MARK: - Wi-Fi scan + join (extended v0.5.0)
+
+    public struct WifiScanResult: Codable, Sendable {
+        public let ok: Bool
+        public let networks: [Network]
+        public let hint: String?
+        public struct Network: Codable, Sendable {
+            public let ssid: String
+            public let rssi: Int?       // signal strength in dBm, nil when unavailable
+            public let channel: Int?
+            public let security: String?
+        }
+    }
+
+    /// Scan for visible Wi-Fi networks. Uses the airport utility (still
+    /// present on macOS 15 under
+    /// /System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport)
+    /// with the `-s` (scan) flag. This path is private API so we check for
+    /// its existence and degrade gracefully when it's gone (Apple has
+    /// talked about removing it since macOS 14).
+    func wifiScan() -> WifiScanResult {
+        let airportPath = "/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport"
+        guard ProcessRunner.exists(airportPath) else {
+            return WifiScanResult(
+                ok: false, networks: [],
+                hint: "airport utility not found at \(airportPath) — macOS may have removed it in this release"
+            )
+        }
+        let r = ProcessRunner.run(airportPath, ["-s"], timeout: 10)
+        guard r.ok else {
+            return WifiScanResult(
+                ok: false, networks: [],
+                hint: r.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        }
+        // airport -s output format:
+        //                             SSID BSSID             RSSI CHANNEL HT CC SECURITY (auth/unicast/group)
+        //                    MyNetwork aa:bb:cc:dd:ee:ff -50  11      Y  US WPA2(PSK/AES/AES)
+        let lines = r.stdout.split(separator: "\n").dropFirst() // skip header
+        var nets: [WifiScanResult.Network] = []
+        for line in lines {
+            let text = String(line)
+            // Columns are whitespace-separated, but SSID may contain spaces.
+            // The BSSID is always 17 chars (xx:xx:xx:xx:xx:xx), so we split
+            // at the BSSID to get SSID before + rest after.
+            guard let bssidMatch = text.range(of: #"([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}"#, options: .regularExpression) else { continue }
+            let ssid = String(text[..<bssidMatch.lowerBound]).trimmingCharacters(in: .whitespaces)
+            let rest = String(text[bssidMatch.upperBound...]).trimmingCharacters(in: .whitespaces)
+            let restCols = rest.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+            guard restCols.count >= 4 else { continue }
+            let rssi = Int(restCols[0])
+            let channel = Int(restCols[1].split(separator: ",").first.map(String.init) ?? restCols[1])
+            let security = restCols.count > 4 ? restCols[4...].joined(separator: " ") : nil
+            nets.append(.init(ssid: ssid, rssi: rssi, channel: channel, security: security))
+        }
+        return WifiScanResult(ok: true, networks: nets, hint: nil)
+    }
+
+    /// Join a Wi-Fi network by SSID (+ optional password). macOS stores
+    /// the password in Keychain on success, so subsequent joins don't need
+    /// the password again.
+    func wifiJoin(ssid: String, password: String?) -> ToggleResult {
+        guard let iface = wifiInterface() else {
+            return ToggleResult(
+                ok: false, target: "wifi_join", newState: nil,
+                method: "networksetup",
+                hint: "no Wi-Fi interface found"
+            )
+        }
+        var args = ["-setairportnetwork", iface, ssid]
+        if let pw = password, !pw.isEmpty { args.append(pw) }
+        let r = ProcessRunner.run("/usr/sbin/networksetup", args, timeout: 15)
+        return ToggleResult(
+            ok: r.ok,
+            target: "wifi_join",
+            newState: r.ok ? "joined:\(ssid)" : nil,
+            method: "networksetup",
+            hint: r.ok ? nil : r.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    }
+
+    // MARK: - Focus Mode / Do Not Disturb
+
+    /// Toggle Do Not Disturb via shortcuts. macOS 13+ doesn't expose DND
+    /// via osascript in a reliable way; we invoke the user's named Shortcut
+    /// if they have one. If they don't, we return a hint with the URL to
+    /// install a Gallery shortcut.
+    func setFocusMode(mode: String, state: String) -> ToggleResult {
+        let cmd: String
+        switch mode.lowercased() {
+        case "dnd", "do_not_disturb", "do-not-disturb":
+            cmd = state.lowercased() == "on" ? "Turn Do Not Disturb On" : "Turn Do Not Disturb Off"
+        case "work":
+            cmd = state.lowercased() == "on" ? "Turn Work Focus On" : "Turn Work Focus Off"
+        case "personal":
+            cmd = state.lowercased() == "on" ? "Turn Personal Focus On" : "Turn Personal Focus Off"
+        case "sleep":
+            cmd = state.lowercased() == "on" ? "Turn Sleep Focus On" : "Turn Sleep Focus Off"
+        default:
+            cmd = "Turn \(mode) Focus \(state == "on" ? "On" : "Off")"
+        }
+        let r = ProcessRunner.run("/usr/bin/shortcuts", ["run", cmd], timeout: 8)
+        if r.ok {
+            return ToggleResult(
+                ok: true, target: "focus:\(mode)", newState: state,
+                method: "shortcuts_run",
+                hint: "user-seeded shortcut '\(cmd)' invoked"
+            )
+        }
+        return ToggleResult(
+            ok: false, target: "focus:\(mode)", newState: nil,
+            method: "shortcuts_run",
+            hint: "no shortcut named '\(cmd)' — install one from the Gallery or create it in Shortcuts.app. stderr: \(r.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
+        )
+    }
+
     // MARK: - AirPlay / Screen mirroring
 
     /// AirPlay mirroring has no sanctioned CLI. Best sanctioned surface is

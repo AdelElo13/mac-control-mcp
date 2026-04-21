@@ -51,6 +51,11 @@ final class ToolRegistry: @unchecked Sendable {
     let shortcuts: ShortcutsController
     let finder: FinderController
     let notificationCenter: NotificationCenterController
+    // v0.5.0 Phase 8 — Apple apps + power + audio + dock
+    let appleApps: AppleAppsController
+    let power: PowerController
+    let audio: AudioController
+    let dock: DockController
 
     init(
         accessibility: AccessibilityController,
@@ -71,7 +76,11 @@ final class ToolRegistry: @unchecked Sendable {
         hardware: HardwareController = HardwareController(),
         shortcuts: ShortcutsController = ShortcutsController(),
         finder: FinderController = FinderController(),
-        notificationCenter: NotificationCenterController = NotificationCenterController()
+        notificationCenter: NotificationCenterController = NotificationCenterController(),
+        appleApps: AppleAppsController = AppleAppsController(),
+        power: PowerController = PowerController(),
+        audio: AudioController = AudioController(),
+        dock: DockController = DockController()
     ) {
         self.accessibility = accessibility
         self.elementCache = elementCache
@@ -92,12 +101,16 @@ final class ToolRegistry: @unchecked Sendable {
         self.shortcuts = shortcuts
         self.finder = finder
         self.notificationCenter = notificationCenter
+        self.appleApps = appleApps
+        self.power = power
+        self.audio = audio
+        self.dock = dock
     }
 
     var toolDefinitions: [MCPToolDefinition] {
         Self.definitions + Self.definitionsV2 + Self.definitionsV2Phase2 +
             Self.definitionsV2Phase3 + Self.definitionsV2Phase4 + Self.definitionsV2Phase5 +
-            Self.definitionsV2Phase6 + Self.definitionsV2Phase7
+            Self.definitionsV2Phase6 + Self.definitionsV2Phase7 + Self.definitionsV2Phase8
     }
 
     // MARK: - Tool dispatch
@@ -317,6 +330,51 @@ final class ToolRegistry: @unchecked Sendable {
             return await callRightClick(arguments)
         case "double_click":
             return await callDoubleClick(arguments)
+        // MARK: - v0.5.0 Phase 8 — Apple apps + power + audio + dock + extended (20 tools)
+        case "imessage_send":
+            return await callIMessageSend(arguments)
+        case "imessage_list_recent":
+            return await callIMessageListRecent(arguments)
+        case "mail_send":
+            return await callMailSend(arguments)
+        case "calendar_create_event":
+            return await callCalendarCreateEvent(arguments)
+        case "calendar_list_events":
+            return await callCalendarListEvents(arguments)
+        case "reminders_create":
+            return await callRemindersCreate(arguments)
+        case "reminders_list":
+            return await callRemindersList(arguments)
+        case "contacts_search":
+            return await callContactsSearch(arguments)
+        case "system_sleep":
+            return await callSystemSleep()
+        case "lock_screen":
+            return await callLockScreen()
+        case "system_restart":
+            return await callSystemRestart(arguments)
+        case "system_shutdown":
+            return await callSystemShutdown(arguments)
+        case "system_logout":
+            return await callSystemLogout(arguments)
+        case "list_audio_devices":
+            return await callListAudioDevices()
+        case "set_audio_output":
+            return await callSetAudioOutput(arguments)
+        case "set_audio_input":
+            return await callSetAudioInput(arguments)
+        case "mic_mute":
+            return await callMicMute(arguments)
+        case "wifi_scan":
+            return await callWifiScan()
+        case "wifi_join":
+            return await callWifiJoin(arguments)
+        case "set_focus_mode":
+            return await callSetFocusMode(arguments)
+        case "list_dock_items":
+            return await callListDockItems()
+        case "click_dock_item":
+            return await callClickDockItem(arguments)
         default:
             return errorResult("Unknown tool '\(name)'.")
         }

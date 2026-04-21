@@ -258,50 +258,90 @@ extension ToolRegistry {
 
     // MARK: System info
 
+    // Each system-info handler surfaces the new `Result<T>` envelope. When
+    // the underlying subprocess fails we return `ok:false` with the stderr
+    // tail, so agents can distinguish "battery is empty" from "pmset is
+    // broken". v0.4.0's silent-success bug is closed here (Codex P0 #1).
+
     func callBatteryStatus() async -> ToolCallResult {
-        let b = await systemInfo.battery()
-        return successResult("battery snapshot", [
-            "ok": .bool(true),
-            "battery": encodeAsJSONValue(b)
+        let r = await systemInfo.battery()
+        if r.ok, let data = r.data {
+            return successResult("battery snapshot", [
+                "ok": .bool(true),
+                "battery": encodeAsJSONValue(data)
+            ])
+        }
+        return errorResult("battery_status: \(r.error ?? "unknown error")", [
+            "ok": .bool(false),
+            "error": .string(r.error ?? ""),
+            "exit_code": .number(Double(r.exitCode ?? -1))
         ])
     }
 
     func callSystemLoad() async -> ToolCallResult {
-        let l = await systemInfo.load()
-        return successResult("cpu/mem load", [
-            "ok": .bool(true),
-            "load": encodeAsJSONValue(l)
+        let r = await systemInfo.load()
+        if r.ok, let data = r.data {
+            return successResult("cpu/mem load", [
+                "ok": .bool(true),
+                "load": encodeAsJSONValue(data)
+            ])
+        }
+        return errorResult("system_load: \(r.error ?? "unknown error")", [
+            "ok": .bool(false),
+            "error": .string(r.error ?? ""),
+            "exit_code": .number(Double(r.exitCode ?? -1))
         ])
     }
 
     func callNetworkInfo() async -> ToolCallResult {
-        let n = await systemInfo.network()
-        return successResult("network snapshot", [
-            "ok": .bool(true),
-            "network": encodeAsJSONValue(n)
+        let r = await systemInfo.network()
+        if r.ok, let data = r.data {
+            return successResult("network snapshot", [
+                "ok": .bool(true),
+                "network": encodeAsJSONValue(data)
+            ])
+        }
+        return errorResult("network_info: \(r.error ?? "unknown error")", [
+            "ok": .bool(false),
+            "error": .string(r.error ?? ""),
+            "exit_code": .number(Double(r.exitCode ?? -1))
         ])
     }
 
     func callBluetoothDevices() async -> ToolCallResult {
-        let s = await systemInfo.bluetoothSummary()
-        return successResult(
-            "bluetooth: \(s.devices.count) device(s)",
-            [
-                "ok": .bool(true),
-                "summary": encodeAsJSONValue(s)
-            ]
-        )
+        let r = await systemInfo.bluetoothSummary()
+        if r.ok, let data = r.data {
+            return successResult(
+                "bluetooth: \(data.devices.count) device(s)",
+                [
+                    "ok": .bool(true),
+                    "summary": encodeAsJSONValue(data)
+                ]
+            )
+        }
+        return errorResult("bluetooth_devices: \(r.error ?? "unknown error")", [
+            "ok": .bool(false),
+            "error": .string(r.error ?? ""),
+            "exit_code": .number(Double(r.exitCode ?? -1))
+        ])
     }
 
     func callDiskUsage() async -> ToolCallResult {
-        let d = await systemInfo.diskUsage()
-        return successResult(
-            "disk usage: \(d.volumes.count) volume(s)",
-            [
-                "ok": .bool(true),
-                "usage": encodeAsJSONValue(d)
-            ]
-        )
+        let r = await systemInfo.diskUsage()
+        if r.ok, let data = r.data {
+            return successResult(
+                "disk usage: \(data.volumes.count) volume(s)",
+                [
+                    "ok": .bool(true),
+                    "usage": encodeAsJSONValue(data)
+                ]
+            )
+        }
+        return errorResult("disk_usage: \(r.error ?? "unknown error")", [
+            "ok": .bool(false),
+            "error": .string(r.error ?? ""),
+            "exit_code": .number(Double(r.exitCode ?? -1))
+        ])
     }
 
     // MARK: Mission Control
@@ -350,6 +390,13 @@ extension ToolRegistry {
         guard let state = arguments["state"]?.stringValue else {
             return invalidArgument("wifi_set requires 'state' (on|off|toggle).")
         }
+        // Codex v0.5.0 hardening (P1): wire tiered perms. Wi-Fi toggle is a
+        // system-wide side-effect — requires `full` tier when enforcement
+        // is on. Bundle ID "system:wifi" is a pseudo-bundle so the user
+        // can grant/deny this specific capability separately from apps.
+        if let gate = await enforceIfEnabled(bundleId: "system:wifi", required: .full) {
+            return gate
+        }
         let r = await hardware.wifiSet(state: state)
         return r.ok
             ? successResult("wifi → \(r.newState ?? "unknown")", ["ok": .bool(true), "result": encodeAsJSONValue(r)])
@@ -359,6 +406,9 @@ extension ToolRegistry {
     func callBluetoothSet(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         guard let state = arguments["state"]?.stringValue else {
             return invalidArgument("bluetooth_set requires 'state' (on|off|toggle).")
+        }
+        if let gate = await enforceIfEnabled(bundleId: "system:bluetooth", required: .full) {
+            return gate
         }
         let r = await hardware.bluetoothSet(state: state)
         return r.ok
@@ -414,6 +464,10 @@ extension ToolRegistry {
         guard let name = arguments["name"]?.stringValue, !name.isEmpty else {
             return invalidArgument("run_shortcut requires 'name'.")
         }
+        // Shortcuts are arbitrary user automations — treat as `full`.
+        if let gate = await enforceIfEnabled(bundleId: "system:shortcuts", required: .full) {
+            return gate
+        }
         let input = arguments["input"]?.stringValue
         let r = await shortcuts.run(name: name, input: input)
         return r.ok
@@ -427,10 +481,24 @@ extension ToolRegistry {
         guard let url = arguments["url"]?.stringValue, !url.isEmpty else {
             return invalidArgument("open_url_scheme requires 'url'.")
         }
+        if let gate = await enforceIfEnabled(bundleId: "system:url-scheme", required: .click) {
+            return gate
+        }
         let r = await shortcuts.openURL(url)
-        return r.ok
-            ? successResult("opened \(url)", ["ok": .bool(true), "result": encodeAsJSONValue(r)])
-            : errorResult("open_url_scheme failed", ["ok": .bool(false), "result": encodeAsJSONValue(r)])
+        if r.ok {
+            return successResult("opened \(url)", ["ok": .bool(true), "result": encodeAsJSONValue(r)])
+        }
+        // Distinguish "scheme blocked by policy" (security reject) from
+        // "open failed for other reasons" (runtime error) in the response
+        // text — both are isError but carry different hints.
+        let msg = r.blocked
+            ? "open_url_scheme blocked: \(r.blockReason ?? "policy")"
+            : "open_url_scheme failed"
+        return errorResult(msg, [
+            "ok": .bool(false),
+            "blocked": .bool(r.blocked),
+            "result": encodeAsJSONValue(r)
+        ])
     }
 
     // MARK: Finder
@@ -461,6 +529,9 @@ extension ToolRegistry {
     func callTrashFile(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         guard let path = arguments["path"]?.stringValue, !path.isEmpty else {
             return invalidArgument("trash_file requires 'path'.")
+        }
+        if let gate = await enforceIfEnabled(bundleId: "system:filesystem", required: .full) {
+            return gate
         }
         let r = await finder.trash(path: path)
         return r.ok

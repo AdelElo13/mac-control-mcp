@@ -238,9 +238,13 @@ struct Phase7ToolsTests {
 
     // MARK: - tool-count sanity: phase 5 test asserts 95 now
 
-    @Test("tool count is 95 after phase 7 (70 + 25)")
+    @Test("tool count >= 95 after phase 7 (may be higher with later phases)")
     func phase7CountCheck() {
+        // Phase 5's totalToolCount owns the exact-number assertion.
+        // Phase 7's test just guarantees we're at least at the v0.4.0 floor
+        // — that way adding Phase 8/9/10 tools doesn't ping-pong the
+        // assertion here.
         let registry = ToolRegistry(accessibility: AccessibilityController())
-        #expect(registry.toolDefinitions.count == 95)
+        #expect(registry.toolDefinitions.count >= 95)
     }
 }

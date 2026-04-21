@@ -83,37 +83,99 @@ actor FinderController {
         public let error: String?
     }
 
+    /// Directories inside `$HOME` that agents should NEVER be able to trash
+    /// via a simple path call. Even a "path is under $HOME" check leaves
+    /// these exposed (a malicious LLM could ask `trash_file` on
+    /// `~/.ssh/id_ed25519`). The denylist is matched AFTER symlink
+    /// resolution so `~/safe/link -> ~/.ssh` doesn't sneak through.
+    ///
+    /// Order matters — more specific before less specific. Matching is
+    /// prefix-based so the whole subtree is protected.
+    private static let trashDenylist: [String] = [
+        ".ssh",
+        "Library/Keychains",
+        "Library/Application Support/Google/Chrome",
+        "Library/Application Support/Firefox",
+        "Library/Application Support/com.apple.TCC",
+        "Library/Preferences/com.apple.security",
+        "Library/Cookies",
+        "Library/IdentityServices",
+        "Library/Mail",
+        "Library/Messages",
+        "Library/Calendars",
+        ".config/mcp-publisher",
+        ".mac-control-mcp",
+        ".gnupg",
+        ".aws",
+        ".kube"
+    ]
+
     /// Move a file to the Trash (reversible). We deliberately DON'T expose
     /// a permanent `rm` — that's the kind of destructive capability that
     /// should stay behind a named shell command the user owns, not an
     /// agent-callable primitive.
     ///
-    /// Safety rail: refuse paths outside the user's home directory. Agents
-    /// calling `trash` on `/Applications/Finder.app` should fail-closed.
+    /// Codex v0.5.0 hardening (P0 #2): previous version checked
+    /// `expanded.hasPrefix("$HOME/")` which is bypassable via `..` and
+    /// symlinks. Now we:
+    ///   1. Expand tilde + environment
+    ///   2. `resolvingSymlinksInPath().standardizedFileURL` → canonical path
+    ///   3. Re-check prefix AGAINST the resolved path
+    ///   4. Check canonical path against the denylist (~/.ssh, Keychains,
+    ///      Mail, Messages, browser profiles with saved passwords, …)
+    ///   5. Invoke Finder's `delete` which moves to Trash (reversible)
     func trash(path: String) -> TrashResult {
         let expanded = (path as NSString).expandingTildeInPath
-        let home = NSHomeDirectory()
-        guard expanded.hasPrefix(home + "/") else {
+
+        // Canonicalize — resolves symlinks AND normalizes `..`.
+        let canonical = URL(fileURLWithPath: expanded)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+            .path
+
+        let home = URL(fileURLWithPath: NSHomeDirectory())
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+            .path
+
+        // Reconfirm the canonical path sits under home — NOT the raw
+        // user-supplied string. This kills the `~/..` escape.
+        guard canonical == home || canonical.hasPrefix(home + "/") else {
             return TrashResult(
                 ok: false, path: path, method: "finder_tell",
-                error: "trash is restricted to paths under \(home) — refusing to trash system files"
+                error: "trash is restricted to paths under \(home) — resolved path '\(canonical)' is outside this root"
             )
         }
-        guard FileManager.default.fileExists(atPath: expanded) else {
+
+        // Denylist check — matched against the tail under $HOME so
+        // `~/.ssh/anything` matches `.ssh`.
+        let relative = canonical == home ? "" :
+            String(canonical.dropFirst(home.count + 1))
+        for blocked in Self.trashDenylist {
+            if relative == blocked || relative.hasPrefix(blocked + "/") {
+                return TrashResult(
+                    ok: false, path: path, method: "finder_tell",
+                    error: "trash refused: '\(relative)' is under protected directory '\(blocked)'"
+                )
+            }
+        }
+
+        guard FileManager.default.fileExists(atPath: canonical) else {
             return TrashResult(ok: false, path: path, method: "finder_tell",
                                error: "path does not exist")
         }
+
         // AppleScript's `tell application "Finder" to delete` moves to Trash.
         // It's the only sanctioned way; `mv ~/.Trash/` breaks Finder's
         // "Put Back" feature.
-        let escaped = expanded.replacingOccurrences(of: "\"", with: "\\\"")
+        let escaped = canonical.replacingOccurrences(of: "\"", with: "\\\"")
         let script = """
         tell application "Finder" to delete POSIX file "\(escaped)"
         """
         let r = OsascriptRunner.run(script)
         return TrashResult(
             ok: r.ok,
-            path: expanded,
+            path: canonical,
             method: "finder_tell",
             error: r.ok ? nil : r.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
         )
