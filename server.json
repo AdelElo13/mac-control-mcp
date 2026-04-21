@@ -12,7 +12,7 @@
   "packages": [
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/AdelElo13/mac-control-mcp/releases/download/v0.2.5/mac-control-mcp-v0.2.5.mcpb",
+      "identifier": "https://github.com/AdelElo13/mac-control-mcp/releases/download/v0.2.6/mac-control-mcp-v0.2.6.mcpb",
       "fileSha256": "b236d6d6aa8d5babc1932c9c848f99d6b50731aa15e4f427dd3e92ab3084007d",
       "transport": {
         "type": "stdio"
