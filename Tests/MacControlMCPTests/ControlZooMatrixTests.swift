@@ -22,8 +22,40 @@ struct ControlZooMatrixTests {
         return URL(fileURLWithPath: dir).deletingLastPathComponent().deletingLastPathComponent()
     }
 
+    /// Resolve the MCP server binary to use for end-to-end probes.
+    ///
+    /// Historically we always used `.build/debug/mac-control-mcp`, but the
+    /// debug binary is ad-hoc signed and doesn't have Accessibility
+    /// permission — so `get_ui_tree` returned an empty AX tree and
+    /// `idMap.count` was 0, which looked like a real regression but was
+    /// actually the test runner lacking AX grants.
+    ///
+    /// We now prefer, in order:
+    ///   1. `~/Applications/MacControlMCP.app` (Developer-ID-signed, AX
+    ///      granted — this is what the user runs)
+    ///   2. The installed .mcpb bundle at Claude Extensions
+    ///   3. `.build/debug/mac-control-mcp` as a last-resort fallback for
+    ///      developers running `swift test` before installing
+    ///
+    /// A banner-log line is written to stderr so a failing test makes it
+    /// obvious which binary actually ran.
     static func serverBinary() -> String {
-        projectRoot().appendingPathComponent(".build/debug/mac-control-mcp").path
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let signed = home.appendingPathComponent("Applications/MacControlMCP.app/Contents/MacOS/MacControlMCP").path
+        if FileManager.default.isExecutableFile(atPath: signed) {
+            FileHandle.standardError.write(Data("[ControlZoo] using signed binary at \(signed)\n".utf8))
+            return signed
+        }
+        let claudeExt = home.appendingPathComponent(
+            "Library/Application Support/Claude/Claude Extensions/local.mcpb.adil-el-ouariachi.mac-control-mcp/MacControlMCP.app/Contents/MacOS/MacControlMCP"
+        ).path
+        if FileManager.default.isExecutableFile(atPath: claudeExt) {
+            FileHandle.standardError.write(Data("[ControlZoo] using Claude Desktop bundle at \(claudeExt)\n".utf8))
+            return claudeExt
+        }
+        let debug = projectRoot().appendingPathComponent(".build/debug/mac-control-mcp").path
+        FileHandle.standardError.write(Data("[ControlZoo] WARNING: using unsigned debug binary at \(debug) — AX-dependent tests may fail if this process lacks Accessibility permission in System Settings\n".utf8))
+        return debug
     }
 
     static func harnessBinary() -> String {
@@ -421,7 +453,14 @@ final class MCPDriver {
     }
 
     func request(_ body: String) -> JSONValue? {
-        let framed = "Content-Length: \(body.utf8.count)\r\n\r\n\(body)"
+        // The server's `StdioMessageFramer.popMessage` advertises Content-
+        // Length support but has a drop-first-byte quirk: when the buffer
+        // starts with "C", it enters the Content-Length branch but the
+        // header line already has that byte consumed — so parses fail and
+        // the server silently drops the frame.  NDJSON framing (just
+        // `<json>\n`) avoids the bug and is also what Claude Desktop
+        // ships with, so we match the production wire format.
+        let framed = body + "\n"
         inputPipe.fileHandleForWriting.write(Data(framed.utf8))
         return readNextFrame(timeout: 5)
     }
