@@ -23,10 +23,10 @@ struct Phase5ToolsTests {
         #expect(expected.isSubset(of: names))
     }
 
-    @Test("total tool count is 63 after Phase 5")
+    @Test("total tool count is 64 after v0.2.6 (+probe_ax_tree)")
     func totalToolCount() {
         let registry = ToolRegistry(accessibility: AccessibilityController())
-        #expect(registry.toolDefinitions.count == 63)
+        #expect(registry.toolDefinitions.count == 64)
     }
 
     @Test("set_volume requires volume argument")

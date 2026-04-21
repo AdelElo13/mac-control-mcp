@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 // MARK: - Tool definitions (v0.2.0 Phase 2)
 
@@ -91,15 +92,33 @@ extension ToolRegistry {
     func callBrowserListTabs(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         let browserKind = BrowserController.Browser.detect(arguments["browser"]?.stringValue)
         let tabs = await browser.listTabs(browser: browserKind)
-        return successResult(
-            "Listed \(tabs.count) \(browserKind.rawValue) tab(s).",
-            [
-                "ok": .bool(true),
-                "browser": .string(browserKind.rawValue),
-                "count": .number(Double(tabs.count)),
-                "tabs": encodeAsJSONValue(tabs)
-            ]
-        )
+        var payload: [String: JSONValue] = [
+            "ok": .bool(true),
+            "browser": .string(browserKind.rawValue),
+            "count": .number(Double(tabs.count)),
+            "tabs": encodeAsJSONValue(tabs)
+        ]
+        // BUG-FIX v0.2.6 #1: AppleScript `tell application "Google Chrome"`
+        // targets a single Chrome scripting instance. When multiple Chrome
+        // processes share the bundle (main Chrome + detached Claude-in-
+        // Chrome window, or a hijacked AppleEvent path), the script can
+        // return zero tabs even with windows clearly on screen. Check the
+        // running-app table as a sanity signal and surface a concrete
+        // fallback pointer so callers don't conclude the browser is empty.
+        if tabs.isEmpty {
+            let bundleId = browserKind == .chrome ? "com.google.Chrome" : "com.apple.Safari"
+            let procCount = NSWorkspace.shared.runningApplications
+                .filter { $0.bundleIdentifier == bundleId }
+                .count
+            if procCount > 0 {
+                payload["multi_process_hint"] = .string(
+                    "AppleScript returned 0 tabs but \(procCount) process(es) with bundle \(bundleId) are running. "
+                    + "This is a known limitation: `tell application` only scripts the primary instance. "
+                    + "Fall back to `list_windows` (filter by app name) + AX-based tab detection, or close the detached process."
+                )
+            }
+        }
+        return successResult("Listed \(tabs.count) \(browserKind.rawValue) tab(s).", payload)
     }
 
     func callBrowserActiveTab(_ arguments: [String: JSONValue]) async -> ToolCallResult {

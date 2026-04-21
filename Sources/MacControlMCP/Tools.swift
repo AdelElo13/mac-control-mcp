@@ -135,6 +135,8 @@ final class ToolRegistry: @unchecked Sendable {
             return await callClipboardWrite(arguments)
         case "permissions_status":
             return await callPermissionsStatus()
+        case "probe_ax_tree":
+            return await callProbeAXTree(arguments)
         case "browser_list_tabs":
             return await callBrowserListTabs(arguments)
         case "browser_get_active_tab":
@@ -237,16 +239,17 @@ final class ToolRegistry: @unchecked Sendable {
         let maxDepth = max(1, min(arguments["max_depth"]?.intValue ?? 8, 32))
         let elements = await accessibility.listElements(pid: pid, maxDepth: maxDepth)
 
-        return successResult(
-            "Found \(elements.count) actionable elements.",
-            [
-                "ok": .bool(true),
-                "pid": .number(Double(pid)),
-                "max_depth": .number(Double(maxDepth)),
-                "count": .number(Double(elements.count)),
-                "elements": encodeAsJSONValue(elements)
-            ]
-        )
+        var payload: [String: JSONValue] = [
+            "ok": .bool(true),
+            "pid": .number(Double(pid)),
+            "max_depth": .number(Double(maxDepth)),
+            "count": .number(Double(elements.count)),
+            "elements": encodeAsJSONValue(elements)
+        ]
+        if let hint = await axEmptyHint(pid: pid, whenEmpty: elements.isEmpty) {
+            payload["ax_tree_hint"] = .string(hint)
+        }
+        return successResult("Found \(elements.count) actionable elements.", payload)
     }
 
     private func callFindElement(_ arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -258,15 +261,16 @@ final class ToolRegistry: @unchecked Sendable {
         let title = arguments["title"]?.stringValue
 
         guard let element = await accessibility.findElement(pid: pid, role: role, title: title) else {
-            return errorResult(
-                "No matching element found.",
-                [
-                    "ok": .bool(false),
-                    "pid": .number(Double(pid)),
-                    "role": role.map(JSONValue.string) ?? .null,
-                    "title": title.map(JSONValue.string) ?? .null
-                ]
-            )
+            var payload: [String: JSONValue] = [
+                "ok": .bool(false),
+                "pid": .number(Double(pid)),
+                "role": role.map(JSONValue.string) ?? .null,
+                "title": title.map(JSONValue.string) ?? .null
+            ]
+            if let hint = await axEmptyHint(pid: pid, whenEmpty: true) {
+                payload["ax_tree_hint"] = .string(hint)
+            }
+            return errorResult("No matching element found.", payload)
         }
 
         let info = await accessibility.getElementInfo(element: element)
@@ -278,6 +282,42 @@ final class ToolRegistry: @unchecked Sendable {
                 "element": encodeAsJSONValue(info)
             ]
         )
+    }
+
+    /// BUG-FIX v0.2.6 #8: when a find/query/list returned empty we used
+    /// to leave the caller guessing whether their filter was wrong or
+    /// the app itself is AX-headless. We now probe the root of the app
+    /// and surface a specific hint for Telegram-like apps (empty AX
+    /// tree entirely) so agents stop spinning on queries that cannot
+    /// succeed for the target bundle. Package-visible so `Tools+V2`
+    /// can reuse it for findElements / queryElements.
+    func axEmptyHint(pid: pid_t, whenEmpty: Bool) async -> String? {
+        guard whenEmpty else { return nil }
+        let health = await accessibility.probeAXTree(pid: pid)
+        guard !health.hasAXTree else { return nil }
+        return health.hint
+    }
+
+    /// Standalone probe tool — callers that want to check AX health
+    /// *before* firing queries can call `probe_ax_tree` to know up front
+    /// whether the app even has an accessibility surface.
+    private func callProbeAXTree(_ arguments: [String: JSONValue]) async -> ToolCallResult {
+        guard let pid = parsePID(arguments["pid"]) else {
+            return invalidArgument("probe_ax_tree requires a positive integer pid.")
+        }
+        let health = await accessibility.probeAXTree(pid: pid)
+        var payload: [String: JSONValue] = [
+            "ok": .bool(true),
+            "pid": .number(Double(pid)),
+            "has_ax_tree": .bool(health.hasAXTree),
+            "child_count": .number(Double(health.childCount)),
+            "window_count": .number(Double(health.windowCount))
+        ]
+        if let hint = health.hint { payload["hint"] = .string(hint) }
+        let msg = health.hasAXTree
+            ? "AX tree present (\(health.childCount) children, \(health.windowCount) windows)."
+            : "App exposes no AX tree — see hint."
+        return successResult(msg, payload)
     }
 
     private func callClick(_ arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -361,23 +401,36 @@ final class ToolRegistry: @unchecked Sendable {
             return invalidArgument("type_text requires text.")
         }
 
-        let result = await accessibility.typeText(text: text)
+        // BUG-FIX v0.2.6 #6: let callers pick the typing strategy.
+        // `auto` (default) now tries clipboard → keys → ax for event
+        // fidelity on React/Angular SPAs. See TypeStrategy docs in
+        // AccessibilityController.swift.
+        let strategyArg = arguments["strategy"]?.stringValue?.lowercased() ?? "auto"
+        guard let strategy = AccessibilityController.TypeStrategy(rawValue: strategyArg) else {
+            return invalidArgument(
+                "type_text strategy must be one of: auto, clipboard, keys, ax (got '\(strategyArg)')."
+            )
+        }
+
+        let result = await accessibility.typeText(text: text, strategy: strategy)
         if result.success {
             return successResult(
                 "Text typed using \(result.strategy).",
                 [
                     "ok": .bool(true),
                     "strategy": .string(result.strategy),
+                    "requested_strategy": .string(strategy.rawValue),
                     "text_length": .number(Double(text.count))
                 ]
             )
         }
 
         return errorResult(
-            "Failed to type text.",
+            "Failed to type text (requested strategy=\(strategy.rawValue)).",
             [
                 "ok": .bool(false),
                 "strategy": .string(result.strategy),
+                "requested_strategy": .string(strategy.rawValue),
                 "text_length": .number(Double(text.count))
             ]
         )
@@ -631,11 +684,23 @@ final class ToolRegistry: @unchecked Sendable {
         ),
         MCPToolDefinition(
             name: "type_text",
-            description: "Type text into the currently focused field.",
+            description: "Type text into the currently focused field. "
+                + "Strategies: auto (clipboard → keys → ax, default; best for React/Angular SPAs), "
+                + "clipboard (paste events), keys (CGEvent unicode), ax (AX set_value last-resort).",
             inputSchema: schema(
                 properties: [
                     "text": .object([
                         "type": .string("string")
+                    ]),
+                    "strategy": .object([
+                        "type": .string("string"),
+                        "enum": .array([
+                            .string("auto"),
+                            .string("clipboard"),
+                            .string("keys"),
+                            .string("ax")
+                        ]),
+                        "default": .string("auto")
                     ])
                 ],
                 required: ["text"]

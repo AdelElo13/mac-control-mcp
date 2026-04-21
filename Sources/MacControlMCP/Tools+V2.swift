@@ -146,6 +146,18 @@ extension ToolRegistry {
             name: "permissions_status",
             description: "Report the accessibility permission state for this process.",
             inputSchema: schema(properties: [:])
+        ),
+        MCPToolDefinition(
+            name: "probe_ax_tree",
+            description: "Check whether an app exposes an AX tree. "
+                + "Returns has_ax_tree=false + an actionable hint for apps that don't implement NSAccessibility "
+                + "(e.g. native Telegram) so callers can skip fruitless find/query loops.",
+            inputSchema: schema(
+                properties: [
+                    "pid": .object(["type": .array([.string("integer"), .string("string")])])
+                ],
+                required: ["pid"]
+            )
         )
     ]
 }
@@ -200,16 +212,17 @@ extension ToolRegistry {
             encoded.append(encodeElement(info: info, id: id))
         }
 
-        return successResult(
-            "Found \(matches.count) matching elements.",
-            [
-                "ok": .bool(true),
-                "pid": .number(Double(pid)),
-                "count": .number(Double(matches.count)),
-                "limit_reached": .bool(matches.count >= limit),
-                "elements": .array(encoded)
-            ]
-        )
+        var payload: [String: JSONValue] = [
+            "ok": .bool(true),
+            "pid": .number(Double(pid)),
+            "count": .number(Double(matches.count)),
+            "limit_reached": .bool(matches.count >= limit),
+            "elements": .array(encoded)
+        ]
+        if let hint = await axEmptyHint(pid: pid, whenEmpty: matches.isEmpty) {
+            payload["ax_tree_hint"] = .string(hint)
+        }
+        return successResult("Found \(matches.count) matching elements.", payload)
     }
 
     func callQueryElements(_ arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -237,15 +250,16 @@ extension ToolRegistry {
             encoded.append(encodeElement(info: info, id: id))
         }
 
-        return successResult(
-            "Query returned \(matches.count) elements.",
-            [
-                "ok": .bool(true),
-                "pid": .number(Double(pid)),
-                "count": .number(Double(matches.count)),
-                "elements": .array(encoded)
-            ]
-        )
+        var payload: [String: JSONValue] = [
+            "ok": .bool(true),
+            "pid": .number(Double(pid)),
+            "count": .number(Double(matches.count)),
+            "elements": .array(encoded)
+        ]
+        if let hint = await axEmptyHint(pid: pid, whenEmpty: matches.isEmpty) {
+            payload["ax_tree_hint"] = .string(hint)
+        }
+        return successResult("Query returned \(matches.count) elements.", payload)
     }
 
     func callGetElementAttributes(_ arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -350,17 +364,32 @@ extension ToolRegistry {
             )
         }
 
-        let status = await accessibility.performAction(element: element, action: action)
-        let success = (status == 0)
-        let payload: [String: JSONValue] = [
-            "ok": .bool(success),
+        let outcome = await accessibility.performAction(element: element, action: action)
+        var payload: [String: JSONValue] = [
+            "ok": .bool(outcome.ok),
             "element_id": .string(id),
             "action": .string(action),
-            "ax_status": .number(Double(status))
+            "ax_status": .number(Double(outcome.axStatus)),
+            "strategy": .string(outcome.strategy)
         ]
-        return success
-            ? successResult("Action performed.", payload)
-            : errorResult("AXUIElementPerformAction failed (AXError=\(status)).", payload)
+        if let reason = outcome.reason { payload["reason"] = .string(reason) }
+        if let hint = outcome.hint { payload["hint"] = .string(hint) }
+        if outcome.ok {
+            let message = outcome.strategy == "coord_fallback"
+                ? "Action performed via coord-click fallback (AXPress unsupported)."
+                : "Action performed."
+            return successResult(message, payload)
+        }
+        let errorMessage: String
+        switch outcome.strategy {
+        case "rejected_disabled":
+            errorMessage = "Refused to perform action — target is AXDisabled."
+        case "rejected_unsupported":
+            errorMessage = "AXPress unsupported and no geometry for coord-fallback."
+        default:
+            errorMessage = "AXUIElementPerformAction failed (AXError=\(outcome.axStatus), reason=\(outcome.reason ?? "unknown"))."
+        }
+        return errorResult(errorMessage, payload)
     }
 
     func callListWindows(_ arguments: [String: JSONValue]) async -> ToolCallResult {

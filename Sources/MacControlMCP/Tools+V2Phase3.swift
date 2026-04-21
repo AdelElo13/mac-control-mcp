@@ -7,12 +7,12 @@ extension ToolRegistry {
     static let definitionsV2Phase3: [MCPToolDefinition] = [
         MCPToolDefinition(
             name: "mouse_event",
-            description: "Low-level mouse event: move, click, double_click. Use for precise positional input when AX element-based click is not possible.",
+            description: "Low-level mouse event: move, click, double_click, triple_click. Use for precise positional input when AX element-based click is not possible.",
             inputSchema: schema(
                 properties: [
                     "action": .object([
                         "type": .string("string"),
-                        "description": .string("'move', 'click', 'double_click'.")
+                        "description": .string("'move', 'click', 'double_click', 'triple_click'.")
                     ]),
                     "x": .object(["type": .string("number")]),
                     "y": .object(["type": .string("number")]),
@@ -145,8 +145,11 @@ extension ToolRegistry {
             ok = await mouse.click(at: point, button: button)
         case "double_click", "doubleclick":
             ok = await mouse.doubleClick(at: point, button: button)
+        case "triple_click", "tripleclick":
+            // BUG-FIX v0.2.6 #10 — range-select on code blocks / lines.
+            ok = await mouse.tripleClick(at: point, button: button)
         default:
-            return invalidArgument("Unknown action '\(action)'. Use move, click, or double_click.")
+            return invalidArgument("Unknown action '\(action)'. Use move, click, double_click, or triple_click.")
         }
 
         let payload: [String: JSONValue] = [

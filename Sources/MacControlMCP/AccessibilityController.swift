@@ -212,7 +212,19 @@ actor AccessibilityController {
         return match
     }
 
+    // BUG-FIX v0.2.6 #3 (AXEnabled): previously clickElement forwarded
+    // the AXPress call even on disabled controls; AX reports .success
+    // for the action but nothing happens, so the caller believes the
+    // click landed. We now short-circuit when AXEnabled=false and let
+    // callers see an explicit failure. The coord-click fallback is still
+    // available for AX-press-unsupported controls (bug #5) but the
+    // disabled check is evaluated first — a disabled control shouldn't
+    // silently turn into a coord click either.
     func clickElement(element: AXUIElement) -> Bool {
+        if let enabled = stringAttribute(of: element, attribute: "AXEnabled" as CFString),
+           enabled == "0" || enabled.lowercased() == "false" {
+            return false
+        }
         if AXUIElementPerformAction(element, kAXPressAction as CFString) == .success {
             return true
         }
@@ -253,20 +265,63 @@ actor AccessibilityController {
         return true
     }
 
-    func typeText(text: String) async -> TypeTextResult {
-        if setFocusedElementValue(text) {
-            return TypeTextResult(success: true, strategy: "ax_set_value")
-        }
+    /// Strategy for `typeText`.
+    ///
+    /// BUG-FIX v0.2.6 #6: the previous implementation always tried
+    /// `ax_set_value` first. On React / Angular / Material inputs the
+    /// AX set_value "succeeds" — the field visually shows the text —
+    /// but the framework's `onChange` handler never fires, leaving
+    /// validators seeing an empty field, counters reading "0/100",
+    /// submit buttons disabled. Google Cloud Console's Add-test-users
+    /// dialog was the canonical repro.
+    ///
+    /// The default strategy is now `.auto` with the order
+    /// clipboard → unicode → ax. Clipboard-paste fires native paste
+    /// events and is the single most reliable path on modern SPAs;
+    /// unicode events are a good fallback for AppKit-only UIs where
+    /// clipboard is noisy; ax_set_value stays as a last resort so
+    /// pre-AppKit / test-harness surfaces still work.
+    ///
+    /// Callers that know their target can force a specific path via
+    /// `.clipboard`, `.keys`, or `.ax`.
+    enum TypeStrategy: String, Sendable {
+        case auto       // clipboard → keys → ax
+        case clipboard  // paste events only
+        case keys       // CGEvent unicode only
+        case ax         // AX set_value only
+    }
 
-        if typeWithUnicodeEvents(text) {
-            return TypeTextResult(success: true, strategy: "cg_unicode")
-        }
+    func typeText(text: String, strategy: TypeStrategy = .auto) async -> TypeTextResult {
+        switch strategy {
+        case .ax:
+            return setFocusedElementValue(text)
+                ? TypeTextResult(success: true, strategy: "ax_set_value")
+                : TypeTextResult(success: false, strategy: "none")
 
-        if await pasteTextViaClipboard(text) {
-            return TypeTextResult(success: true, strategy: "clipboard_paste")
-        }
+        case .keys:
+            return typeWithUnicodeEvents(text)
+                ? TypeTextResult(success: true, strategy: "cg_unicode")
+                : TypeTextResult(success: false, strategy: "none")
 
-        return TypeTextResult(success: false, strategy: "none")
+        case .clipboard:
+            return await pasteTextViaClipboard(text)
+                ? TypeTextResult(success: true, strategy: "clipboard_paste")
+                : TypeTextResult(success: false, strategy: "none")
+
+        case .auto:
+            // Events-first ordering — triggers real paste/input events
+            // so React / Angular state stays consistent with the DOM.
+            if await pasteTextViaClipboard(text) {
+                return TypeTextResult(success: true, strategy: "clipboard_paste")
+            }
+            if typeWithUnicodeEvents(text) {
+                return TypeTextResult(success: true, strategy: "cg_unicode")
+            }
+            if setFocusedElementValue(text) {
+                return TypeTextResult(success: true, strategy: "ax_set_value")
+            }
+            return TypeTextResult(success: false, strategy: "none")
+        }
     }
 
     func readValue(element: AXUIElement) -> String? {
@@ -557,6 +612,64 @@ actor AccessibilityController {
         return names
     }
 
+    /// Distinguish "the AX tree is genuinely empty for this pid" from
+    /// "the query didn't find anything". The native Telegram macOS app
+    /// is the canonical repro: ru.keepcoder.Telegram uses its own
+    /// TGModernGrowing toolkit instead of NSAccessibility, so find/
+    /// query/list all return zero even when the window is clearly on
+    /// screen. Previously the tool layer reported this as a normal
+    /// empty result — indistinguishable from "no match for your
+    /// filter" — and the agent would retry the same query forever.
+    ///
+    /// Heuristic: after enableManualAccessibility(), if the root app
+    /// element has zero AXChildren AND zero AXWindows exposed via AX,
+    /// the app is effectively headless to the accessibility API. We
+    /// return a hint so callers can surface "try a web alternative /
+    /// coord-based clicks / OCR" instead of spinning.
+    ///
+    /// BUG-FIX v0.2.6 #8.
+    struct AXTreeHealth: Codable, Sendable {
+        let pid: pid_t
+        let hasAXTree: Bool
+        let childCount: Int
+        let windowCount: Int
+        let hint: String?
+    }
+
+    func probeAXTree(pid: pid_t) -> AXTreeHealth {
+        enableManualAccessibility(pid: pid)
+        let app = AXUIElementCreateApplication(pid)
+        let children = axElementArray(of: app, attribute: kAXChildrenAttribute as CFString)
+        let windows = axElementArray(of: app, attribute: kAXWindowsAttribute as CFString)
+
+        if children.isEmpty && windows.isEmpty {
+            // Look up the bundle ID so we can surface an app-specific hint.
+            let bundle = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "unknown"
+            let hint: String
+            switch bundle {
+            case "ru.keepcoder.Telegram":
+                hint = "Telegram's native macOS app uses TGModernGrowing (not NSAccessibility) and exposes no AX tree. Use web.telegram.org in Chrome/Safari instead — Chromium's AX tree is fully populated."
+            default:
+                hint = "This app (\(bundle)) exposes no AX children or windows even after enabling AXManualAccessibility / AXEnhancedUserInterface. It likely does not implement NSAccessibility. Options: (a) use coord-based clicks via the `click` tool with x/y, (b) use `ocr_screen` to locate targets visually, (c) try a web alternative if one exists."
+            }
+            return AXTreeHealth(
+                pid: pid,
+                hasAXTree: false,
+                childCount: 0,
+                windowCount: 0,
+                hint: hint
+            )
+        }
+
+        return AXTreeHealth(
+            pid: pid,
+            hasAXTree: true,
+            childCount: children.count,
+            windowCount: windows.count,
+            hint: nil
+        )
+    }
+
     /// List every AX action name supported by this element (e.g. AXPress).
     func actionNames(element: AXUIElement) -> [String] {
         var names: CFArray?
@@ -602,11 +715,120 @@ actor AccessibilityController {
         return status.rawValue
     }
 
+    /// Outcome of `performAction`. The old Int32-only signature returned
+    /// 0 (success) even when AX silently no-op'd on a disabled element —
+    /// callers had to re-read state to detect the failure, which almost
+    /// nobody did. This structured return lets the tool surface the
+    /// specific failure class and, when relevant, the fallback that
+    /// kicked in.
+    struct ActionResult: Codable, Sendable {
+        let ok: Bool
+        /// Raw AXError code. 0 = .success; -25202 = kAXErrorActionUnsupported;
+        /// -25211 = kAXErrorCannotComplete; see AXError.h for the full list.
+        let axStatus: Int32
+        /// "ax" | "coord_fallback" | "rejected_disabled" | "rejected_unsupported"
+        let strategy: String
+        /// Machine-readable failure reason when ok=false. Stable across versions.
+        let reason: String?
+        /// Human-readable hint for operators when ok=false.
+        let hint: String?
+    }
+
     /// Perform an arbitrary AX action on an element (AXPress, AXShowMenu,
-    /// AXIncrement, AXDecrement, AXCancel, etc). Returns 0 on success.
-    func performAction(element: AXUIElement, action: String) -> Int32 {
+    /// AXIncrement, AXDecrement, AXCancel, etc).
+    ///
+    /// BUG-FIX v0.2.6 #3 (AXEnabled check): before the underlying
+    /// `AXUIElementPerformAction` call, read `AXEnabled`. AX happily
+    /// reports `.success` when the target is disabled (greyed out) —
+    /// the framework delivers the action, nothing consumes it, nothing
+    /// observable changes. That hid logic errors in agent code for
+    /// months. We now refuse the call outright when the target is
+    /// disabled and surface `rejected_disabled`.
+    ///
+    /// BUG-FIX v0.2.6 #5 (AXPress unsupported fallback): some Chromium-
+    /// rendered "buttons" expose role=AXButton but don't register AXPress
+    /// (e.g. the Enable button on Google Cloud API library pages). They
+    /// return -25202 kAXErrorActionUnsupported. We used to forward that
+    /// error untouched, which meant every caller had to hand-roll a
+    /// coordinate-click fallback. `clickElement` already did this for
+    /// the dedicated "click" tool; parity with `perform_element_action`
+    /// was missing. We now transparently fall back to a synthesized
+    /// click at the element's bounding-box center when the action is
+    /// AXPress and AXPress is unsupported. Other AX actions (AXShowMenu,
+    /// AXIncrement, …) don't have a natural coord-based equivalent, so
+    /// they still surface the original error.
+    func performAction(element: AXUIElement, action: String) -> ActionResult {
+        // #3 — refuse actions on disabled controls.
+        if let enabled = stringAttribute(of: element, attribute: "AXEnabled" as CFString),
+           enabled == "0" || enabled.lowercased() == "false" {
+            return ActionResult(
+                ok: false,
+                axStatus: AXError.cannotComplete.rawValue,
+                strategy: "rejected_disabled",
+                reason: "target_disabled",
+                hint: "AXEnabled=false on this element. Check whether the surrounding form/selection makes the control actionable before retrying."
+            )
+        }
+
         let status = AXUIElementPerformAction(element, action as CFString)
-        return status.rawValue
+        if status == .success {
+            return ActionResult(
+                ok: true,
+                axStatus: status.rawValue,
+                strategy: "ax",
+                reason: nil,
+                hint: nil
+            )
+        }
+
+        // #5 — AXPress not supported → coord-click fallback.
+        if action == (kAXPressAction as String),
+           status == .actionUnsupported {
+            if let pos = pointAttribute(of: element, attribute: kAXPositionAttribute as CFString),
+               let size = sizeAttribute(of: element, attribute: kAXSizeAttribute as CFString) {
+                let center = CGPoint(x: pos.x + size.width / 2.0, y: pos.y + size.height / 2.0)
+                if click(at: center) {
+                    return ActionResult(
+                        ok: true,
+                        axStatus: status.rawValue,
+                        strategy: "coord_fallback",
+                        reason: nil,
+                        hint: "Target did not implement AXPress (−25202); fell back to a synthesized click at the element's bounding-box center."
+                    )
+                }
+            }
+            return ActionResult(
+                ok: false,
+                axStatus: status.rawValue,
+                strategy: "rejected_unsupported",
+                reason: "action_unsupported_no_geometry",
+                hint: "AXPress is unsupported on this element and no AXPosition/AXSize attributes were available for a coord-click fallback."
+            )
+        }
+
+        return ActionResult(
+            ok: false,
+            axStatus: status.rawValue,
+            strategy: "ax",
+            reason: axStatusReason(status),
+            hint: "AX action \(action) returned \(status.rawValue). See AXError.h for the code meaning."
+        )
+    }
+
+    /// Human-stable short strings for the AXError codes we surface most.
+    /// Full mapping lives in AXError.h; we only translate the ones that
+    /// actually ship through performAction.
+    private func axStatusReason(_ status: AXError) -> String {
+        switch status {
+        case .success: return "ok"
+        case .actionUnsupported: return "action_unsupported"
+        case .attributeUnsupported: return "attribute_unsupported"
+        case .cannotComplete: return "cannot_complete"
+        case .invalidUIElement: return "invalid_ui_element"
+        case .notImplemented: return "not_implemented"
+        case .notificationUnsupported: return "notification_unsupported"
+        default: return "ax_error_\(status.rawValue)"
+        }
     }
 
     // MARK: - helpers for v0.2.0
@@ -724,10 +946,27 @@ actor AccessibilityController {
         return false
     }
 
+    // BUG-FIX v0.2.6 #4: Modern web apps (React/Angular/Shadcn) label
+    // buttons via `aria-label` → AXDescription, leaving AXTitle as the
+    // empty string ("") rather than nil. The old `??` chain preferred
+    // AXTitle even when empty, so `title_regex: "^Save$"` matched zero
+    // elements on Google Cloud Console, Linear, Notion — every modern
+    // SPA. The fallback now rejects empty / whitespace-only strings
+    // before falling through, so an aria-labelled button's description
+    // is reachable via the same `title` filter callers already use.
+    //
+    // Sources priority order (unchanged): AXTitle → AXDescription →
+    // AXIdentifier. Only the "present but empty" handling changed.
     private func title(for element: AXUIElement) -> String? {
-        stringAttribute(of: element, attribute: kAXTitleAttribute as CFString)
-            ?? stringAttribute(of: element, attribute: kAXDescriptionAttribute as CFString)
-            ?? stringAttribute(of: element, attribute: "AXIdentifier" as CFString)
+        func nonEmpty(_ attribute: CFString) -> String? {
+            guard let s = stringAttribute(of: element, attribute: attribute),
+                  !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { return nil }
+            return s
+        }
+        return nonEmpty(kAXTitleAttribute as CFString)
+            ?? nonEmpty(kAXDescriptionAttribute as CFString)
+            ?? nonEmpty("AXIdentifier" as CFString)
     }
 
     private func childElements(of element: AXUIElement) -> [AXUIElement] {

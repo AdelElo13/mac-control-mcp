@@ -61,22 +61,43 @@ actor MouseController {
         return true
     }
 
-    /// Double-click at a point. Uses the CGEvent click count mechanism so
-    /// macOS recognises the pair as a genuine double-click.
-    func doubleClick(at point: CGPoint, button: Button = .left) -> Bool {
+    /// Multi-click at a point. `count` = 2 is a standard double-click
+    /// ("select word" in text surfaces); `count` = 3 is a triple-click
+    /// ("select line / paragraph"). Uses the CGEvent click-count field
+    /// so macOS recognises the clicks as a single gesture rather than
+    /// three independent clicks.
+    ///
+    /// BUG-FIX v0.2.6 #10: we previously only exposed `doubleClick`,
+    /// which Telegram-style "select word" uses but which fails for
+    /// range-select on code-block tokens that span >1 visual line or
+    /// cross a word boundary. Adding triple-click covers those cases.
+    func multiClick(at point: CGPoint, count: Int, button: Button = .left) -> Bool {
+        let clicks = max(1, min(count, 5))
         guard let source = CGEventSource(stateID: .hidSystemState) else { return false }
 
-        for count in 1...2 {
+        for i in 1...clicks {
             guard let down = CGEvent(mouseEventSource: source, mouseType: button.downType, mouseCursorPosition: point, mouseButton: button.cgButton),
                   let up = CGEvent(mouseEventSource: source, mouseType: button.upType, mouseCursorPosition: point, mouseButton: button.cgButton)
             else { return false }
-            down.setIntegerValueField(.mouseEventClickState, value: Int64(count))
-            up.setIntegerValueField(.mouseEventClickState, value: Int64(count))
+            down.setIntegerValueField(.mouseEventClickState, value: Int64(i))
+            up.setIntegerValueField(.mouseEventClickState, value: Int64(i))
             down.post(tap: .cghidEventTap)
             up.post(tap: .cghidEventTap)
             Thread.sleep(forTimeInterval: 0.02)
         }
         return true
+    }
+
+    /// Double-click at a point. Uses the CGEvent click count mechanism so
+    /// macOS recognises the pair as a genuine double-click.
+    func doubleClick(at point: CGPoint, button: Button = .left) -> Bool {
+        multiClick(at: point, count: 2, button: button)
+    }
+
+    /// Triple-click at a point. Selects the line/paragraph in most text
+    /// surfaces. Public in v0.2.6 (#10).
+    func tripleClick(at point: CGPoint, button: Button = .left) -> Bool {
+        multiClick(at: point, count: 3, button: button)
     }
 
     /// Click-and-drag from one point to another with the given button held.
