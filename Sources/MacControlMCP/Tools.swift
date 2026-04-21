@@ -44,6 +44,13 @@ final class ToolRegistry: @unchecked Sendable {
     let fileDialog: FileDialogController
     let system: SystemController
     let spotlight: SpotlightController
+    // v0.4.0 Phase 7 — no-gap Mac control surface
+    let systemInfo: SystemInfoController
+    let missionControl: MissionControlController
+    let hardware: HardwareController
+    let shortcuts: ShortcutsController
+    let finder: FinderController
+    let notificationCenter: NotificationCenterController
 
     init(
         accessibility: AccessibilityController,
@@ -58,7 +65,13 @@ final class ToolRegistry: @unchecked Sendable {
         displays: DisplayController = DisplayController(),
         fileDialog: FileDialogController = FileDialogController(),
         system: SystemController = SystemController(),
-        spotlight: SpotlightController = SpotlightController()
+        spotlight: SpotlightController = SpotlightController(),
+        systemInfo: SystemInfoController = SystemInfoController(),
+        missionControl: MissionControlController = MissionControlController(),
+        hardware: HardwareController = HardwareController(),
+        shortcuts: ShortcutsController = ShortcutsController(),
+        finder: FinderController = FinderController(),
+        notificationCenter: NotificationCenterController = NotificationCenterController()
     ) {
         self.accessibility = accessibility
         self.elementCache = elementCache
@@ -73,12 +86,18 @@ final class ToolRegistry: @unchecked Sendable {
         self.fileDialog = fileDialog
         self.system = system
         self.spotlight = spotlight
+        self.systemInfo = systemInfo
+        self.missionControl = missionControl
+        self.hardware = hardware
+        self.shortcuts = shortcuts
+        self.finder = finder
+        self.notificationCenter = notificationCenter
     }
 
     var toolDefinitions: [MCPToolDefinition] {
         Self.definitions + Self.definitionsV2 + Self.definitionsV2Phase2 +
             Self.definitionsV2Phase3 + Self.definitionsV2Phase4 + Self.definitionsV2Phase5 +
-            Self.definitionsV2Phase6
+            Self.definitionsV2Phase6 + Self.definitionsV2Phase7
     }
 
     // MARK: - Tool dispatch
@@ -240,6 +259,64 @@ final class ToolRegistry: @unchecked Sendable {
             return await callWaitForAXNotification(arguments)
         case "wait_for_window_state_change":
             return await callWaitForWindowStateChange(arguments)
+        // MARK: - v0.4.0 Phase 7 — no-gap surface (25 tools)
+        // System info
+        case "battery_status":
+            return await callBatteryStatus()
+        case "system_load":
+            return await callSystemLoad()
+        case "network_info":
+            return await callNetworkInfo()
+        case "bluetooth_devices":
+            return await callBluetoothDevices()
+        case "disk_usage":
+            return await callDiskUsage()
+        // Mission Control + Spaces
+        case "mission_control":
+            return await callMissionControl()
+        case "app_expose":
+            return await callAppExpose()
+        case "launchpad":
+            return await callLaunchpad()
+        case "show_desktop":
+            return await callShowDesktop()
+        case "switch_to_space":
+            return await callSwitchToSpace(arguments)
+        // Hardware
+        case "wifi_set":
+            return await callWifiSet(arguments)
+        case "bluetooth_set":
+            return await callBluetoothSet(arguments)
+        case "set_brightness":
+            return await callSetBrightness(arguments)
+        case "night_shift_set":
+            return await callNightShiftSet(arguments)
+        case "open_airplay_preferences":
+            return await callOpenAirPlayPreferences()
+        // Shortcuts + URL schemes
+        case "list_shortcuts":
+            return await callListShortcuts()
+        case "run_shortcut":
+            return await callRunShortcut(arguments)
+        case "open_url_scheme":
+            return await callOpenURLScheme(arguments)
+        // Finder
+        case "reveal_in_finder":
+            return await callRevealInFinder(arguments)
+        case "quick_look":
+            return await callQuickLook(arguments)
+        case "trash_file":
+            return await callTrashFile(arguments)
+        // Notification / Control Center
+        case "notification_center_toggle":
+            return await callNotificationCenterToggle()
+        case "control_center_toggle":
+            return await callControlCenterToggle()
+        // Ergonomic input wrappers
+        case "right_click":
+            return await callRightClick(arguments)
+        case "double_click":
+            return await callDoubleClick(arguments)
         default:
             return errorResult("Unknown tool '\(name)'.")
         }
