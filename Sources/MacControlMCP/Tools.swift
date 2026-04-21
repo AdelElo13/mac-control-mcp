@@ -77,7 +77,8 @@ final class ToolRegistry: @unchecked Sendable {
 
     var toolDefinitions: [MCPToolDefinition] {
         Self.definitions + Self.definitionsV2 + Self.definitionsV2Phase2 +
-            Self.definitionsV2Phase3 + Self.definitionsV2Phase4 + Self.definitionsV2Phase5
+            Self.definitionsV2Phase3 + Self.definitionsV2Phase4 + Self.definitionsV2Phase5 +
+            Self.definitionsV2Phase6
     }
 
     // MARK: - Tool dispatch
@@ -226,6 +227,19 @@ final class ToolRegistry: @unchecked Sendable {
         case "clipboard_clear":
             await clipboard.clear()
             return successResult("Clipboard cleared.", ["ok": .bool(true)])
+        // MARK: - v0.3.0 Phase 6 — tiered permissions + event waits
+        case "request_access":
+            return await callRequestAccess(arguments)
+        case "list_granted_applications":
+            return await callListGrantedApplications()
+        case "revoke_access":
+            return await callRevokeAccess(arguments)
+        case "deny_access":
+            return await callDenyAccess(arguments)
+        case "wait_for_ax_notification":
+            return await callWaitForAXNotification(arguments)
+        case "wait_for_window_state_change":
+            return await callWaitForWindowStateChange(arguments)
         default:
             return errorResult("Unknown tool '\(name)'.")
         }

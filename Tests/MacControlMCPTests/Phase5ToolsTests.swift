@@ -23,10 +23,15 @@ struct Phase5ToolsTests {
         #expect(expected.isSubset(of: names))
     }
 
-    @Test("total tool count is 64 after v0.2.6 (+probe_ax_tree)")
+    @Test("total tool count is 70 after v0.3.0 (+6 Phase 6 tools)")
     func totalToolCount() {
+        // v0.2.6 baseline: 64
+        // v0.3.0 Phase 6 adds:
+        //   request_access, list_granted_applications, revoke_access, deny_access
+        //   wait_for_ax_notification, wait_for_window_state_change
+        // = 64 + 6 = 70.
         let registry = ToolRegistry(accessibility: AccessibilityController())
-        #expect(registry.toolDefinitions.count == 64)
+        #expect(registry.toolDefinitions.count == 70)
     }
 
     @Test("set_volume requires volume argument")
