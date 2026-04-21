@@ -417,6 +417,12 @@ extension ToolRegistry {
     }
 
     func callSetBrightness(_ arguments: [String: JSONValue]) async -> ToolCallResult {
+        // Codex v0.5.1 hardening (blocker #4): brightness is a system-wide
+        // side effect that affects every display. Wire it through the same
+        // permission gate as wifi/bluetooth/audio.
+        if let gate = await enforceIfEnabled(bundleId: "system:display", required: .full) {
+            return gate
+        }
         let level = arguments["level"]?.doubleValue
         let dir = arguments["direction"]?.stringValue
         let r = await hardware.brightnessSet(level: level, direction: dir)
@@ -429,6 +435,11 @@ extension ToolRegistry {
         guard let state = arguments["state"]?.stringValue else {
             return invalidArgument("night_shift_set requires 'state' (on|off|toggle).")
         }
+        // Codex v0.5.1 hardening (blocker #4): Night Shift changes display
+        // output for every app; requires `full` like other display tools.
+        if let gate = await enforceIfEnabled(bundleId: "system:display", required: .full) {
+            return gate
+        }
         let r = await hardware.nightShiftSet(state: state)
         return r.ok
             ? successResult("night_shift → \(r.newState ?? "unknown")", ["ok": .bool(true), "result": encodeAsJSONValue(r)])
@@ -436,6 +447,11 @@ extension ToolRegistry {
     }
 
     func callOpenAirPlayPreferences() async -> ToolCallResult {
+        // Codex v0.5.1 hardening (blocker #4): opens a system preference
+        // pane; treated same tier as other system UI interactions.
+        if let gate = await enforceIfEnabled(bundleId: "system:preferences", required: .click) {
+            return gate
+        }
         let r = await hardware.airplayOpenPreferences()
         return r.ok
             ? successResult("displays preferences opened", ["ok": .bool(true), "result": encodeAsJSONValue(r)])

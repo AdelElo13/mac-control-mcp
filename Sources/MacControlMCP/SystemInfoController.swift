@@ -269,6 +269,19 @@ actor SystemInfoController {
         }
         flush()
 
+        // Codex v0.5.1 hardening (blocker #3): if ifconfig succeeded but
+        // the parser produced ZERO interfaces, that's a parser drift bug
+        // (macOS always has at least `lo0`). Flip to ok:false so agents
+        // know the data is untrusted, instead of handing them an empty
+        // list that looks like "no interfaces" (which would be wrong).
+        guard !interfaces.isEmpty else {
+            return Result(
+                ok: false, data: nil,
+                error: "ifconfig parser produced 0 interfaces — format drift? first 200 chars: \(ifRes.stdout.prefix(200))",
+                exitCode: 0
+            )
+        }
+
         let network = Network(
             wifiSSID: wifiSSID,
             wifiInterface: wifiIFace,
@@ -390,6 +403,18 @@ actor SystemInfoController {
                 usedPercent: usedPct
             ))
         }
+
+        // Codex v0.5.1 hardening (blocker #3): df always has at least the
+        // root volume `/`. Zero volumes means the parser is broken, not
+        // that the disk is empty. Return ok:false.
+        guard !volumes.isEmpty else {
+            return Result(
+                ok: false, data: nil,
+                error: "df parser produced 0 volumes — format drift? first 200 chars: \(r.stdout.prefix(200))",
+                exitCode: 0
+            )
+        }
+
         return Result(
             ok: true,
             data: DiskUsage(volumes: volumes),

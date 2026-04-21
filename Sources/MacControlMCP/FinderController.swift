@@ -83,31 +83,81 @@ actor FinderController {
         public let error: String?
     }
 
-    /// Directories inside `$HOME` that agents should NEVER be able to trash
-    /// via a simple path call. Even a "path is under $HOME" check leaves
-    /// these exposed (a malicious LLM could ask `trash_file` on
-    /// `~/.ssh/id_ed25519`). The denylist is matched AFTER symlink
-    /// resolution so `~/safe/link -> ~/.ssh` doesn't sneak through.
+    /// Directories + filename patterns inside `$HOME` that agents should
+    /// NEVER be able to trash. Codex v0.5.0 → v0.5.1 hardening (blocker #2):
+    /// the v0.5.0 list was missing several credential stores that a
+    /// malicious LLM could plausibly target (.netrc for network creds,
+    /// .docker/config.json for registry tokens, .npmrc for npm auth,
+    /// 1Password/Bitwarden vault files, wildcard `*.pem`/`*.key`/`*.env`
+    /// files).  The list below is a superset that covers the top 25 known
+    /// credential-storing paths as of macOS 16.
     ///
-    /// Order matters — more specific before less specific. Matching is
-    /// prefix-based so the whole subtree is protected.
+    /// Matching is done post-symlink-resolution against the HOME-relative
+    /// path, so `~/safe/link -> ~/.ssh` cannot sneak through.
     private static let trashDenylist: [String] = [
+        // SSH + TLS
         ".ssh",
+        // GPG / PGP
+        ".gnupg",
+        // Cloud provider creds
+        ".aws",
+        ".gcp",
+        ".azure",
+        ".kube",
+        // Source-control + package-manager tokens
+        ".netrc",
+        ".gitconfig",
+        ".git-credentials",
+        ".docker",
+        ".docker/config.json",
+        ".npmrc",
+        ".yarnrc",
+        ".yarnrc.yml",
+        ".pip/pip.conf",
+        ".cargo/credentials",
+        ".cargo/credentials.toml",
+        ".config/gh",
+        ".config/pip",
+        ".config/mcp-publisher",
+        ".gem/credentials",
+        // macOS system credential stores
         "Library/Keychains",
-        "Library/Application Support/Google/Chrome",
-        "Library/Application Support/Firefox",
         "Library/Application Support/com.apple.TCC",
         "Library/Preferences/com.apple.security",
         "Library/Cookies",
         "Library/IdentityServices",
+        // Mail + messaging user data
         "Library/Mail",
         "Library/Messages",
         "Library/Calendars",
-        ".config/mcp-publisher",
-        ".mac-control-mcp",
-        ".gnupg",
-        ".aws",
-        ".kube"
+        "Library/Containers/com.apple.Safari",
+        // Password managers
+        "Library/Application Support/1Password",
+        "Library/Application Support/1Password 7",
+        "Library/Group Containers/2BUA8C4S2C.com.agilebits",
+        "Library/Application Support/Bitwarden",
+        "Library/Application Support/Dashlane",
+        "Library/Application Support/LastPass",
+        "Library/Application Support/KeePassXC",
+        // Browser profiles with saved passwords / cookies / session
+        "Library/Application Support/Google/Chrome",
+        "Library/Application Support/BraveSoftware",
+        "Library/Application Support/Firefox",
+        "Library/Application Support/Microsoft Edge",
+        "Library/Application Support/Arc",
+        // Our own state
+        ".mac-control-mcp"
+    ]
+
+    /// Filename suffixes we refuse to trash regardless of their path,
+    /// because they overwhelmingly contain credentials or private keys.
+    /// Matching is case-insensitive on the last path component.
+    private static let trashDenyExtensions: [String] = [
+        ".pem", ".key", ".p12", ".pfx", ".cer", ".crt",
+        ".env", ".env.local", ".env.production",
+        ".kdbx",          // KeePass database
+        ".agilekeychain", // 1Password 4
+        ".opvault"        // 1Password 6
     ]
 
     /// Move a file to the Trash (reversible). We deliberately DON'T expose
@@ -138,9 +188,20 @@ actor FinderController {
             .standardizedFileURL
             .path
 
+        // Codex v0.5.1 hardening (blocker #1): refuse trash of the home
+        // root itself. v0.5.0 accepted `canonical == home` which would let
+        // an agent nuke the entire home dir with `trash_file("~")`. The
+        // home dir can only be deleted from inside, not AS-a-whole.
+        if canonical == home {
+            return TrashResult(
+                ok: false, path: path, method: "finder_tell",
+                error: "trash refused: cannot trash the entire home directory (\(home))"
+            )
+        }
+
         // Reconfirm the canonical path sits under home — NOT the raw
         // user-supplied string. This kills the `~/..` escape.
-        guard canonical == home || canonical.hasPrefix(home + "/") else {
+        guard canonical.hasPrefix(home + "/") else {
             return TrashResult(
                 ok: false, path: path, method: "finder_tell",
                 error: "trash is restricted to paths under \(home) — resolved path '\(canonical)' is outside this root"
@@ -149,13 +210,25 @@ actor FinderController {
 
         // Denylist check — matched against the tail under $HOME so
         // `~/.ssh/anything` matches `.ssh`.
-        let relative = canonical == home ? "" :
-            String(canonical.dropFirst(home.count + 1))
+        let relative = String(canonical.dropFirst(home.count + 1))
         for blocked in Self.trashDenylist {
             if relative == blocked || relative.hasPrefix(blocked + "/") {
                 return TrashResult(
                     ok: false, path: path, method: "finder_tell",
                     error: "trash refused: '\(relative)' is under protected directory '\(blocked)'"
+                )
+            }
+        }
+
+        // Codex v0.5.1 hardening (blocker #2, ext check): refuse
+        // credential-bearing file types regardless of directory. An agent
+        // asked to trash `~/Desktop/prod.pem` should fail-closed.
+        let filename = (canonical as NSString).lastPathComponent.lowercased()
+        for ext in Self.trashDenyExtensions {
+            if filename.hasSuffix(ext) {
+                return TrashResult(
+                    ok: false, path: path, method: "finder_tell",
+                    error: "trash refused: filename ends in '\(ext)' which typically holds credentials or private keys"
                 )
             }
         }
