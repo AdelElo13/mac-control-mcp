@@ -109,7 +109,7 @@ actor MCPServer {
                 ]),
                 "serverInfo": .object([
                     "name": .string("mac-control-mcp"),
-                    "version": .string("0.7.2")
+                    "version": .string("0.8.0")
                 ]),
                 "accessibilityPermission": .bool(permission)
             ])
@@ -276,6 +276,28 @@ if let exitCode = handleScreenRecordingCommand(arguments: CommandLine.arguments)
 // into a plain EPIPE return, which our existing write loop handles.
 #if canImport(Darwin)
 signal(SIGPIPE, SIG_IGN)
+
+// v0.8.0: install explicit SIGTERM + SIGINT handlers that exit cleanly.
+// Claude Desktop restarts the MCP extension on each app-launch by
+// sending SIGTERM to the old child and spawning a new one. Without
+// handlers, Swift's default behaviour on SIGTERM is immediate exit
+// WITHOUT running deferred actor cleanup, which can leave the old
+// process sticking around as a zombie if there are outstanding async
+// tasks (e.g. an in-flight osascript subprocess). The handler below
+// sets a flag, flushes stdout, then exits 0 — that's enough for the
+// macOS kernel to reap us immediately and lets Claude Desktop see a
+// clean teardown. Zombies observed on 2026-04-22 with 3 leftover
+// processes motivated this fix.
+signal(SIGTERM) { _ in
+    // Flush stdout so any in-flight JSON-RPC reply hits the client
+    // before we exit. fflush is async-signal-safe.
+    _ = fflush(stdout)
+    _exit(0)
+}
+signal(SIGINT) { _ in
+    _ = fflush(stdout)
+    _exit(0)
+}
 #endif
 
 Task {

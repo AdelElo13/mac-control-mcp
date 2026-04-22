@@ -507,15 +507,49 @@ extension ToolRegistry {
     }
 
     func callPermissionsStatus() async -> ToolCallResult {
-        let granted = await accessibility.checkPermission()
+        // v0.8.0: report all TCC categories mac-control-mcp touches, not
+        // just Accessibility. Agent now gets an actionable picture of what's
+        // missing instead of a single boolean.
+        let ax = await accessibility.checkPermission()
+        let screen = Self.screenPermissionStatusString()
+        let calendar = Self.calendarPermissionStatusString()
+        let reminders = Self.remindersPermissionStatusString()
+        let contacts = Self.contactsPermissionStatusString()
+        let location = Self.locationPermissionStatusString()
+        let microphone = Self.microphonePermissionStatusString()
+
+        let axStr = ax ? "granted" : "not_granted"
+        let missing: [String] = [
+            ("accessibility", axStr),
+            ("screen_recording", screen),
+            ("calendar", calendar),
+            ("reminders", reminders),
+            ("contacts", contacts),
+            ("location", location),
+            ("microphone", microphone)
+        ]
+        .filter { !["granted", "granted_when_in_use", "granted_always", "granted_legacy", "write_only", "authorized_legacy", "limited"].contains($0.1) }
+        .map { $0.0 }
+
+        let summary = missing.isEmpty
+            ? "All 7 monitored permissions granted."
+            : "Missing: \(missing.joined(separator: ", ")). Use open_permission_pane to jump to the right System Settings page."
+
         return successResult(
-            granted ? "Accessibility permission granted." : "Accessibility permission NOT granted.",
+            summary,
             [
                 "ok": .bool(true),
-                "accessibility": .bool(granted),
-                "hint": .string(granted
-                    ? "Process is trusted for AX."
-                    : "Grant access in System Settings > Privacy & Security > Accessibility.")
+                "accessibility": .string(axStr),
+                "screen_recording": .string(screen),
+                "calendar": .string(calendar),
+                "reminders": .string(reminders),
+                "contacts": .string(contacts),
+                "location": .string(location),
+                "microphone": .string(microphone),
+                "missing": .array(missing.map { .string($0) }),
+                "hint": .string(missing.isEmpty
+                    ? "All monitored categories are ready to use."
+                    : "For each item in 'missing', call `open_permission_pane` with pane=<that item>. Toggle mac-control-mcp ON in the System Settings list, then restart the MCP server for the grant to take effect.")
             ]
         )
     }

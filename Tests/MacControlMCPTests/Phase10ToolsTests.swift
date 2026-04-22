@@ -110,9 +110,11 @@ struct Phase10ToolsTests {
 
     // MARK: - tool count sanity
 
-    @Test("tool count is 141 after phase 10 (127 + 14)")
+    @Test("tool count >= 141 after phase 10 (Phase 5 owns the exact count after future phases)")
     func phase10CountCheck() {
+        // v0.8.0 (+2 Phase 11) would otherwise drift this; keep as lower
+        // bound. The authoritative exact count lives in Phase5ToolsTests.
         let registry = ToolRegistry(accessibility: AccessibilityController())
-        #expect(registry.toolDefinitions.count == 141)
+        #expect(registry.toolDefinitions.count >= 141)
     }
 }

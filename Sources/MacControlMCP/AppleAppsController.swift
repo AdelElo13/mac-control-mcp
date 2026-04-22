@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(EventKit)
+import EventKit
+#endif
 
 /// Native Apple-app automation: Messages, Mail, Calendar, Reminders, Contacts.
 ///
@@ -25,6 +28,17 @@ actor AppleAppsController {
         public let data: T?
         public let error: String?
     }
+
+    // v0.8.0: lazy EKEventStore for calendar/reminders access.
+    //
+    // Lazy so that the XCTest bundle (which has no Info.plist with
+    // NSCalendarsUsageDescription) doesn't trigger a TCC crash at actor
+    // init — only when a calendar tool is actually called. Reusing one
+    // instance across calls means we pay the permission-dialog cost
+    // ONCE (first call). EKEventStore is thread-safe per Apple docs.
+    #if canImport(EventKit)
+    private lazy var eventStore = EKEventStore()
+    #endif
 
     // MARK: - iMessage
 
@@ -217,63 +231,88 @@ actor AppleAppsController {
     }
 
     /// List upcoming events in the next `horizonDays` days across all
-    /// calendars. Summary-only; no location/participants (those fields
-    /// require EventKit which we skip for v0.5.0).
-    func listCalendarEvents(horizonDays: Int) -> Result<[CalendarEvent]> {
+    /// calendars.
+    ///
+    /// v0.8.0: migrated from AppleScript (`every event of c whose ...`
+    /// which took 15+ seconds for a 2-day horizon because it loops each
+    /// event in every calendar with a whose-clause filter) to direct
+    /// EventKit (EKEventStore.predicateForEvents + events(matching:)
+    /// which is an indexed query against the calendar SQLite store and
+    /// typically returns in <100ms for 30-day horizons).
+    ///
+    /// First call triggers the macOS Calendar TCC prompt. Subsequent
+    /// calls return immediately if granted. If denied, returns a
+    /// structured ok:false with an actionable hint.
+    func listCalendarEvents(horizonDays: Int) async -> Result<[CalendarEvent]> {
         let days = max(1, min(horizonDays, 90))
-        let script = """
-        tell application "Calendar"
-            set out to {}
-            set endDate to (current date) + (\(days) * days)
-            set cals to calendars
-            repeat with c in cals
-                try
-                    set evs to (every event of c whose start date > (current date) and start date < endDate)
-                    repeat with e in evs
-                        set end of out to (summary of e as string) & "||" & ((start date of e as «class isot» as string)) & "||" & ((end date of e as «class isot» as string))
-                    end repeat
-                end try
-            end repeat
-            return out
-        end tell
-        """
-        let r = OsascriptRunner.run(script)
-        guard r.ok else {
-            return Result(ok: false, data: nil,
-                          error: r.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+
+        #if canImport(EventKit)
+        // Request full-access to events (macOS 14+ API). On prior
+        // grants this is effectively a no-op; on first call it shows
+        // the system TCC prompt.
+        let granted = await requestCalendarAccess()
+        guard granted else {
+            return Result(
+                ok: false,
+                data: nil,
+                error: "Calendar access denied. Grant in System Settings → Privacy & Security → Calendars (enable mac-control-mcp), then restart the MCP server."
+            )
         }
-        // Split on either ", " (AppleScript list separator) OR newline —
-        // empirically the raw osascript stdout may embed \n between
-        // records under certain timezone/locale paths even though the
-        // primary list separator is ", ".
-        let lines = r.stdout
-            .components(separatedBy: CharacterSet(charactersIn: "\n"))
-            .flatMap { $0.components(separatedBy: ", ") }
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        // v0.7.2 fix (BUG 3 re-fix): belt+suspenders — trim AND
-        // explicitly strip \n/\r/\t inside each field. The v0.7.1 trim
-        // alone didn't always catch newlines that end up embedded in
-        // the middle of parts[2] when AppleScript formats a UTC timezone
-        // event with trailing whitespace on certain Calendar databases.
-        let events: [CalendarEvent] = lines.compactMap { line in
-            let parts = line.split(separator: "|", omittingEmptySubsequences: true)
-                .map { (raw: Substring) -> String in
-                    raw.trimmingCharacters(in: .whitespacesAndNewlines)
-                        .replacingOccurrences(of: "\n", with: "")
-                        .replacingOccurrences(of: "\r", with: "")
-                        .replacingOccurrences(of: "\t", with: "")
-                }
-                .filter { !$0.isEmpty }
-            guard parts.count >= 3 else { return nil }
-            return CalendarEvent(
-                summary: parts[0],
-                startISO: parts[1],
-                endISO: parts[2]
+
+        let start = Date()
+        guard let end = Calendar.current.date(byAdding: .day, value: days, to: start) else {
+            return Result(ok: false, data: nil, error: "Failed to compute end date")
+        }
+
+        let predicate = eventStore.predicateForEvents(
+            withStart: start,
+            end: end,
+            calendars: nil  // all granted calendars
+        )
+        let ekEvents = eventStore.events(matching: predicate)
+
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime]
+
+        let events = ekEvents.map { event in
+            CalendarEvent(
+                summary: event.title ?? "(no title)",
+                startISO: iso.string(from: event.startDate),
+                endISO: iso.string(from: event.endDate)
             )
         }
         return Result(ok: true, data: events, error: nil)
+        #else
+        return Result(ok: false, data: nil, error: "EventKit not available on this platform")
+        #endif
     }
+
+    #if canImport(EventKit)
+    /// Request full-access to events via the macOS 14+ API.
+    /// Returns true iff the store currently has full-access granted.
+    private func requestCalendarAccess() async -> Bool {
+        if #available(macOS 14.0, *) {
+            // Fast path: already granted
+            let status = EKEventStore.authorizationStatus(for: .event)
+            if status == .fullAccess { return true }
+            if status == .denied || status == .restricted { return false }
+
+            // Slow path: show prompt / wait for user decision.
+            // Bridge the completion handler to async with a continuation.
+            let eventStoreRef = eventStore
+            return await withCheckedContinuation { continuation in
+                eventStoreRef.requestFullAccessToEvents { granted, _ in
+                    continuation.resume(returning: granted)
+                }
+            }
+        } else {
+            // macOS 13 and earlier — we target 14+ so this path is dead,
+            // but the compiler still needs a branch. Old API was
+            // requestAccess(to:completion:).
+            return false
+        }
+    }
+    #endif
 
     private func parseISO(_ s: String) -> Date? {
         let f1 = ISO8601DateFormatter()

@@ -1,19 +1,19 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.AdelElo13/mac-control-mcp",
-  "description": "Native Swift macOS automation \u2014 141 tools: AX, voice, browser DOM, Foundation Models, undo.",
+  "description": "Native Swift macOS automation \u2014 143 tools: EventKit calendar, AX, voice, browser DOM, Foundation Models, undo, permission helpers.",
   "title": "mac-control-mcp",
   "websiteUrl": "https://github.com/AdelElo13/mac-control-mcp",
   "repository": {
     "url": "https://github.com/AdelElo13/mac-control-mcp",
     "source": "github"
   },
-  "version": "0.7.2",
+  "version": "0.8.0",
   "packages": [
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/AdelElo13/mac-control-mcp/releases/download/v0.7.2/mac-control-mcp-v0.7.2.mcpb",
-      "fileSha256": "eb95dfde0d96488814d46b58a79c787ff314debc1095800c198f102ae75f6fdc",
+      "identifier": "https://github.com/AdelElo13/mac-control-mcp/releases/download/v0.8.0/mac-control-mcp-v0.8.0.mcpb",
+      "fileSha256": "PLACEHOLDER_BUMP_AFTER_RELEASE",
       "transport": {
         "type": "stdio"
       }

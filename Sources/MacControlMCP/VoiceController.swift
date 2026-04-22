@@ -51,6 +51,15 @@ actor VoiceController {
     /// pass the output path here.
     func speechToText(audioPath: String, language: String = "en-US") async -> SpeechResult {
         #if canImport(Speech)
+        // v0.8.0: guard against bundles without NSSpeechRecognitionUsageDescription
+        // in Info.plist. Without this key, SFSpeechRecognizer.authorizationStatus()
+        // raises SIGABRT (TCC violation), which crashes XCTest runners whose
+        // bundle has no Info.plist. The production .app gets the key via
+        // build-bundle.sh; tests get a clean structured refusal.
+        guard Bundle.main.infoDictionary?["NSSpeechRecognitionUsageDescription"] != nil else {
+            return SpeechResult(ok: false, text: nil, language: language,
+                                error: "NSSpeechRecognitionUsageDescription missing from Info.plist")
+        }
         guard SFSpeechRecognizer.authorizationStatus() != .denied else {
             return SpeechResult(ok: false, text: nil, language: language,
                                 error: "Speech Recognition TCC denied — grant in System Settings → Privacy & Security → Speech Recognition")

@@ -14,7 +14,13 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "MacControlMCP"
+            name: "MacControlMCP",
+            // v0.8.0: link EventKit for direct Calendar/Reminders access
+            // (replaces slow AppleScript `every event of c whose ...` path
+            // in listCalendarEvents which took 15s for a 2-day horizon).
+            linkerSettings: [
+                .linkedFramework("EventKit")
+            ]
         ),
         .testTarget(
             name: "MacControlMCPTests",

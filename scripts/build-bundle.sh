@@ -95,7 +95,7 @@ cat > "${APP_PATH}/Contents/Info.plist" <<EOF
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.7.1</string>
+    <string>${VERSION:-0.8.0}</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSUIElement</key>
@@ -132,6 +132,28 @@ cat > "${APP_PATH}/Contents/Info.plist" <<EOF
     <string>mac-control-mcp searches your Documents folder via Spotlight so the AI agent can locate files you've stored there.</string>
     <key>NSDownloadsFolderUsageDescription</key>
     <string>mac-control-mcp searches your Downloads folder via Spotlight so the AI agent can locate files you've just downloaded.</string>
+    <!--
+    v0.8.0: EventKit + Contacts + Location access. Without these TCC keys,
+    EKEventStore.requestFullAccessToEvents silently returns `denied` and
+    CNContactStore.requestAccess does the same. The strings appear in
+    the macOS prompt and in System Settings → Privacy entries.
+    -->
+    <key>NSCalendarsUsageDescription</key>
+    <string>mac-control-mcp reads and creates Calendar events on your behalf so the AI agent can answer "what's on my schedule" and schedule new meetings.</string>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>mac-control-mcp reads and creates Calendar events on your behalf so the AI agent can answer "what's on my schedule" and schedule new meetings.</string>
+    <key>NSRemindersUsageDescription</key>
+    <string>mac-control-mcp reads and creates reminders so the AI agent can capture tasks on your behalf.</string>
+    <key>NSRemindersFullAccessUsageDescription</key>
+    <string>mac-control-mcp reads and creates reminders so the AI agent can capture tasks on your behalf.</string>
+    <key>NSContactsUsageDescription</key>
+    <string>mac-control-mcp looks up phone numbers and emails from Contacts so the AI agent can send messages or emails to people you know.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>mac-control-mcp reads Location to include Wi-Fi SSIDs in wifi_scan results — macOS requires Location Services to reveal SSIDs since Ventura.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>mac-control-mcp records audio for speech-to-text and audio capture tools.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>mac-control-mcp transcribes recorded audio to text via Apple Speech.</string>
 </dict>
 </plist>
 EOF
