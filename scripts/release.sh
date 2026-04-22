@@ -44,7 +44,22 @@ rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 
 # -----------------------------------------------------------------------------
-# 0. PUBLISH=1 pre-flight: make sure the registry JWT is still valid BEFORE we
+# 0a. PUBLISH=1 pre-flight: release notes MUST exist before we spend 3 minutes
+#     on notarization. Previously this check was gated inside the PUBLISH block
+#     after notarize+GitHub release upload — which meant a missing file would
+#     burn a full build without a single error surfacing to the CI indicator
+#     (the script `exit 1` got swallowed by the `tee`-pipeline caller, leaving
+#     the notification with exit code 0). Check up-front now.
+# -----------------------------------------------------------------------------
+NOTES_FILE="${PROJECT_ROOT}/RELEASE_NOTES_v${VERSION}.md"
+if [ "${PUBLISH:-0}" = "1" ] && [ ! -f "$NOTES_FILE" ]; then
+    echo "[release] ERROR: $NOTES_FILE missing — required before PUBLISH=1."
+    echo "[release]        Write the release notes first OR set PUBLISH=0 to skip the GitHub release step."
+    exit 1
+fi
+
+# -----------------------------------------------------------------------------
+# 0b. PUBLISH=1 pre-flight: make sure the registry JWT is still valid BEFORE we
 #    spend 3 minutes on notarization. If the stored token is expired and a PAT
 #    is available in Keychain, silently refresh the login with it. That
 #    eliminates the "notarize for 3 min, publish fails on stale token" loop.
