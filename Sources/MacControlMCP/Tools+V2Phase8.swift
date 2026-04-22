@@ -490,11 +490,18 @@ extension ToolRegistry {
 
     func callWifiScan() async -> ToolCallResult {
         let r = await hardware.wifiScan()
+        // v0.7.2 (BUG 1 re-fix): the handler previously dropped the hint on
+        // the ok:true path. That hid Location-Services diagnostics from the
+        // caller even when HardwareController.wifiScan set it. Always
+        // include hint when present, regardless of ok/error path.
+        var payload: [String: JSONValue] = [
+            "ok": .bool(r.ok),
+            "networks": encodeAsJSONValue(r.networks)
+        ]
+        if let h = r.hint { payload["hint"] = .string(h) }
         return r.ok
-            ? successResult("found \(r.networks.count) network(s)",
-                            ["ok": .bool(true), "networks": encodeAsJSONValue(r.networks)])
-            : errorResult(r.hint ?? "wifi_scan failed",
-                          ["ok": .bool(false), "hint": .string(r.hint ?? "")])
+            ? successResult("found \(r.networks.count) network(s)", payload)
+            : errorResult(r.hint ?? "wifi_scan failed", payload)
     }
 
     func callWifiJoin(_ arguments: [String: JSONValue]) async -> ToolCallResult {

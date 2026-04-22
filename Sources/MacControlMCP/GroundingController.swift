@@ -312,8 +312,13 @@ actor GroundingController {
             if let ocr = bestOCR {
                 inferredCount += 1
                 let conf = ocr.overlapping ? 0.5 : 0.8
+                // v0.7.2 (BUG 6 re-fix): also cap OCR-sourced labels,
+                // not just AX strings from walk(). An OCR pass over a
+                // dense document can produce multi-thousand-char blocks.
                 out.append(box.node.withLabel(
-                    inferred: ocr.text, source: "ocr_geometric", confidence: conf
+                    inferred: truncateAXString(ocr.text, max: 200),
+                    source: "ocr_geometric",
+                    confidence: conf
                 ))
             } else {
                 out.append(box.node.withLabel(
@@ -356,8 +361,14 @@ actor GroundingController {
     ) {
         if depth > maxDepth { return }
         let role = stringAttr(element, kAXRoleAttribute)
-        let title = stringAttr(element, kAXTitleAttribute)
-        let value = stringAttr(element, kAXValueAttribute)
+        // v0.7.2 fix (BUG 6 re-fix): truncate per-node strings at capture
+        // time so a single AXValue carrying a Terminal scrollback buffer
+        // (measured at 707K chars in the wild) can't blow past the 20MB
+        // MCP context limit even though `maxNodes` already caps the
+        // array length. Title/inferredLabel cap to 200 chars (display
+        // text); value caps to 1000 chars (free-form content).
+        let title = truncateAXString(stringAttr(element, kAXTitleAttribute), max: 200)
+        let value = truncateAXString(stringAttr(element, kAXValueAttribute), max: 1000)
         let pos = pointAttr(element, kAXPositionAttribute)
         let size = sizeAttr(element, kAXSizeAttribute)
 
@@ -419,4 +430,16 @@ extension GroundingController.AugmentedNode {
             labelConfidence: confidence
         )
     }
+}
+
+/// v0.7.2 (BUG 6): truncate large AX strings with an explicit marker so
+/// callers can tell the value was clipped. Nil in → nil out; strings
+/// within `max` pass through unchanged. Any longer string is chopped to
+/// `max` Unicode scalars plus a `…[truncated N chars]` suffix so the
+/// downstream JSON stays legible.
+fileprivate func truncateAXString(_ s: String?, max: Int) -> String? {
+    guard let s else { return nil }
+    if s.count <= max { return s }
+    let dropped = s.count - max
+    return String(s.prefix(max)) + "…[truncated \(dropped) chars]"
 }

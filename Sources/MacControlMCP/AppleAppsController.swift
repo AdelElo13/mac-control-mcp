@@ -242,15 +242,29 @@ actor AppleAppsController {
             return Result(ok: false, data: nil,
                           error: r.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
         }
+        // Split on either ", " (AppleScript list separator) OR newline —
+        // empirically the raw osascript stdout may embed \n between
+        // records under certain timezone/locale paths even though the
+        // primary list separator is ", ".
         let lines = r.stdout
-            .components(separatedBy: ", ")
+            .components(separatedBy: CharacterSet(charactersIn: "\n"))
+            .flatMap { $0.components(separatedBy: ", ") }
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
-        // v0.7.1 fix (BUG 3): AppleScript appends trailing newlines to
-        // record separators, which leaked into `endISO`. Trim every part.
+        // v0.7.2 fix (BUG 3 re-fix): belt+suspenders — trim AND
+        // explicitly strip \n/\r/\t inside each field. The v0.7.1 trim
+        // alone didn't always catch newlines that end up embedded in
+        // the middle of parts[2] when AppleScript formats a UTC timezone
+        // event with trailing whitespace on certain Calendar databases.
         let events: [CalendarEvent] = lines.compactMap { line in
             let parts = line.split(separator: "|", omittingEmptySubsequences: true)
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .map { (raw: Substring) -> String in
+                    raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                        .replacingOccurrences(of: "\n", with: "")
+                        .replacingOccurrences(of: "\r", with: "")
+                        .replacingOccurrences(of: "\t", with: "")
+                }
+                .filter { !$0.isEmpty }
             guard parts.count >= 3 else { return nil }
             return CalendarEvent(
                 summary: parts[0],
