@@ -49,12 +49,18 @@ extension ToolRegistry {
             description: """
                 AX tree walk augmented with OCR-derived labels for unlabeled \
                 elements. ONE OCR pass + geometric join (not per-node OCR). \
-                Useful for Electron/Chromium/Canvas apps where native AX is sparse.
+                Useful for Electron/Chromium/Canvas apps where native AX is sparse. \
+                Trimmed to max_nodes (default 300, range 50-1000) with labelled \
+                elements preferred over unlabelled when truncating.
                 """,
             inputSchema: schema(
                 properties: [
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
-                    "max_depth": .object(["type": .array([.string("integer"), .string("string")])])
+                    "max_depth": .object(["type": .array([.string("integer"), .string("string")])]),
+                    "max_nodes": .object([
+                        "type": .array([.string("integer"), .string("string")]),
+                        "description": .string("Output cap. Default 300, clamped 50-1000.")
+                    ])
                 ],
                 required: ["pid"]
             )
@@ -238,7 +244,9 @@ extension ToolRegistry {
             return invalidArgument("ax_tree_augmented requires a positive integer 'pid'.")
         }
         let maxDepth = max(1, min(arguments["max_depth"]?.intValue ?? 12, 32))
-        let r = await grounding.axTreeAugmented(pid: pid, maxDepth: maxDepth)
+        // v0.7.1: expose the maxNodes cap to callers; clamp 50..1000.
+        let maxNodes = max(50, min(arguments["max_nodes"]?.intValue ?? 300, 1000))
+        let r = await grounding.axTreeAugmented(pid: pid, maxDepth: maxDepth, maxNodes: maxNodes)
         return r.ok
             ? successResult("augmented tree: \(r.nodeCount) nodes, \(r.inferredCount) inferred in \(r.elapsedMs)ms",
                             ["ok": .bool(true), "result": encodeAsJSONValue(r)])

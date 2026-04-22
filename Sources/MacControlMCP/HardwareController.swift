@@ -282,6 +282,20 @@ actor HardwareController {
                     hint: "CoreWLAN scan returned empty — adapter may be blocked by MDM policy, or no networks visible"
                 )
             }
+            // v0.7.1 fix (BUG 1): macOS 14+ hides SSIDs unless Location
+            // Services is granted to the calling process. If CoreWLAN
+            // returns a full network list but EVERY ssid is nil, that is
+            // always this TCC case — not "17 access points all hidden".
+            // Return the network list for channel/RSSI/security visibility
+            // but flag the TCC issue loud and clear.
+            let anyNamed = nets.contains(where: { $0.ssid != "(hidden)" })
+            if !anyNamed && nets.count >= 3 {
+                return WifiScanResult(
+                    ok: true,
+                    networks: nets,
+                    hint: "Found \(nets.count) networks but all SSIDs are hidden — mac-control-mcp needs Location Services permission to read SSIDs. Grant in System Settings → Privacy & Security → Location Services and restart the MCP server."
+                )
+            }
             return WifiScanResult(ok: true, networks: nets, hint: nil)
         } catch {
             return WifiScanResult(

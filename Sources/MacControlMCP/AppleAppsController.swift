@@ -246,13 +246,16 @@ actor AppleAppsController {
             .components(separatedBy: ", ")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
+        // v0.7.1 fix (BUG 3): AppleScript appends trailing newlines to
+        // record separators, which leaked into `endISO`. Trim every part.
         let events: [CalendarEvent] = lines.compactMap { line in
             let parts = line.split(separator: "|", omittingEmptySubsequences: true)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             guard parts.count >= 3 else { return nil }
             return CalendarEvent(
-                summary: String(parts[0]),
-                startISO: String(parts[1]),
-                endISO: String(parts[2])
+                summary: parts[0],
+                startISO: parts[1],
+                endISO: parts[2]
             )
         }
         return Result(ok: true, data: events, error: nil)
@@ -402,12 +405,32 @@ actor AppleAppsController {
             .components(separatedBy: ", ")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
+        // v0.7.1 fix (BUG 4): AppleScript's `phones of p` values can
+        // contain embedded newlines (mobile numbers formatted by
+        // Contacts.app) and stray left-parens when the phone field is
+        // free-text. Strip whitespace + newlines, drop empties, clean
+        // leading punctuation that isn't a `+` or digit.
+        func cleanPhone(_ raw: String) -> String? {
+            var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Strip a single leading `(` when it's immediately followed by
+            // a `+` — seen in contacts stored as `(+31 (6) ...`.
+            if s.hasPrefix("(+") { s.removeFirst() }
+            return s.isEmpty ? nil : s
+        }
+        func cleanEmail(_ raw: String) -> String? {
+            let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !s.isEmpty, s.contains("@") else { return nil }
+            return s
+        }
         let contacts: [Contact] = lines.compactMap { line in
             let parts = line.components(separatedBy: "||")
             guard parts.count >= 3 else { return nil }
-            let phones = parts[1].split(separator: ";").map { String($0) }.filter { !$0.isEmpty }
-            let emails = parts[2].split(separator: ";").map { String($0) }.filter { !$0.isEmpty }
-            return Contact(name: parts[0], phones: phones, emails: emails)
+            let name = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+            let phones = parts[1].split(separator: ";")
+                .compactMap { cleanPhone(String($0)) }
+            let emails = parts[2].split(separator: ";")
+                .compactMap { cleanEmail(String($0)) }
+            return Contact(name: name, phones: phones, emails: emails)
         }
         return Result(ok: true, data: contacts, error: nil)
     }

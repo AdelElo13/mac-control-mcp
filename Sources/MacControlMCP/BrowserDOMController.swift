@@ -147,6 +147,20 @@ actor BrowserDOMController {
 
     func visibleText(browser browserName: String) async -> VisibleTextResult {
         let b = BrowserController.Browser.detect(browserName)
+
+        // v0.7.1 fix (BUG 7): pre-check the browser has at least one tab.
+        // Previously we would run the eval unconditionally; a closed
+        // browser or zero-tab state returned `ok:true charCount:0 text:""`
+        // which silently looked identical to "the page is really empty".
+        // Now we distinguish those cases.
+        let tabs = await browser.listTabs(browser: b)
+        guard !tabs.isEmpty else {
+            return VisibleTextResult(
+                ok: false, browser: browserName, text: nil, charCount: 0,
+                error: "\(browserName) is not running or has no open tab — open one first"
+            )
+        }
+
         let r = await browser.evalJS(browser: b, code: Self.visibleTextScript)
         guard r.success, let text = r.value else {
             return VisibleTextResult(

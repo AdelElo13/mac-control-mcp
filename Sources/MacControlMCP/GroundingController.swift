@@ -70,8 +70,35 @@ actor GroundingController {
                 maxDepth: 16,
                 limit: 20
             )
+            // v0.7.1 fix (BUG 5): pull main display bounds to filter
+            // off-screen AX candidates. macOS parks hidden menu items at
+            // (0, screen_height) with size (0,0) — those are technically
+            // "AX-matched" but cannot be clicked.
+            let mainBounds = CGDisplayBounds(CGMainDisplayID())
             for (_, info) in results {
                 guard let pos = info.position, let size = info.size else { continue }
+
+                // Filter: AXApplication is a container, not a clickable
+                // target. Clicking the app root is meaningless.
+                if info.role == "AXApplication" { continue }
+
+                // Filter: zero-size elements are off-screen / hidden.
+                if size.width < 1 || size.height < 1 { continue }
+
+                // Filter: parked-off-screen default (x≈0, y≈screen_height).
+                // This is the classic "hidden menu item position" signature.
+                if abs(pos.x) < 1 && abs(pos.y - Double(mainBounds.height)) < 1 {
+                    continue
+                }
+
+                // Filter: outside visible display entirely (multi-monitor
+                // agents may still want these, but for the common case we
+                // drop them; caller can pass strategy=ocr to bypass).
+                if pos.x + size.width < 0 || pos.y + size.height < 0 ||
+                   pos.x > Double(mainBounds.width) * 2 {
+                    continue
+                }
+
                 let centerX = pos.x + size.width / 2
                 let centerY = pos.y + size.height / 2
                 let titleLower = info.title?.lowercased() ?? ""
@@ -194,7 +221,14 @@ actor GroundingController {
     /// per-node OCR. Latency: <500ms for typical app windows.
     /// Overlapping-frame risk: innermost-match wins, confidence reduced
     /// to ≤0.5 when multiple AX frames contain the same OCR bbox.
-    func axTreeAugmented(pid: pid_t, maxDepth: Int = 12) async -> AugmentedTreeResult {
+    ///
+    /// v0.7.1 fix (BUG 6): added `maxNodes` cap (default 300). Without it
+    /// a mid-size app like Terminal (~370 nodes) blows past the Claude
+    /// Code 20MB context limit because each node is a fat JSON object.
+    /// The cap trims child arrays after the top-N elements in
+    /// breadth-first order, preserving structural integrity of the tree
+    /// rather than chopping the serialization mid-way.
+    func axTreeAugmented(pid: pid_t, maxDepth: Int = 12, maxNodes: Int = 300) async -> AugmentedTreeResult {
         let start = Date()
 
         // 1. Walk the AX tree, collect nodes with frames
@@ -288,15 +322,29 @@ actor GroundingController {
             }
         }
 
+        // v0.7.1 (BUG 6): apply maxNodes cap. Prefer nodes with a
+        // resolved label (ax or ocr_geometric) so the truncated output
+        // stays useful — unlabeled placeholders get dropped first.
+        let capped: [AugmentedNode]
+        if out.count > maxNodes {
+            let labelled = out.filter { $0.labelSource != "none" }
+            let unlabelled = out.filter { $0.labelSource == "none" }
+            capped = Array((labelled + unlabelled).prefix(maxNodes))
+        } else {
+            capped = out
+        }
+
         let ms = Int(Date().timeIntervalSince(start) * 1000)
         return AugmentedTreeResult(
             ok: true,
             pid: Int32(pid),
-            nodeCount: out.count,
+            nodeCount: capped.count,
             inferredCount: inferredCount,
-            nodes: out,
+            nodes: capped,
             elapsedMs: ms,
-            error: nil
+            error: capped.count < out.count
+                ? "truncated to \(maxNodes) nodes of \(out.count) total (labelled first)"
+                : nil
         )
     }
 

@@ -156,7 +156,8 @@ actor AppleNativeController {
         for root in roots {
             guard let entries = try? fm.contentsOfDirectory(atPath: root) else { continue }
             for entry in entries where entry.hasSuffix(".app") {
-                let plistPath = "\(root)/\(entry)/Contents/Info.plist"
+                let appPath = "\(root)/\(entry)"
+                let plistPath = "\(appPath)/Contents/Info.plist"
                 guard fm.fileExists(atPath: plistPath),
                       let data = try? Data(contentsOf: URL(fileURLWithPath: plistPath)),
                       let plist = try? PropertyListSerialization.propertyList(
@@ -169,18 +170,30 @@ actor AppleNativeController {
                     ?? plist["CFBundleDisplayName"] as? String
                     ?? entry.replacingOccurrences(of: ".app", with: "")
 
-                // Heuristic: any of these keys suggest the app ships Intents
-                let hasIntents =
+                // v0.7.1 fix (BUG 2): Apple's first-party apps (Calendar,
+                // Reminders, Notes, Messages, Safari etc) don't expose
+                // Info.plist intent-keys but DO ship a compiled
+                // `Contents/Resources/Metadata.appintents/` bundle. Check
+                // for that directory first — it's the authoritative signal.
+                let metadataAppintents = "\(appPath)/Contents/Resources/Metadata.appintents"
+                let hasCompiledIntents = fm.fileExists(atPath: metadataAppintents)
+
+                let hasInfoPlistHint =
                     plist["NSAppShortcuts"] != nil ||
                     plist["INIntentsRestrictedWhileLocked"] != nil ||
                     plist["INSupportsMultipleAppSemantic"] != nil ||
                     plist["IntentsSupported"] != nil ||
                     (plist["NSExtension"] as? [String: Any])?["NSExtensionPointIdentifier"] as? String == "com.apple.intents-service"
 
-                if hasIntents {
-                    // We can't count intents without parsing Metadata.appintents;
-                    // report 1+ as a discoverability signal.
-                    apps.append(.init(bundleId: bundleID, appName: name, intentCount: 1))
+                if hasCompiledIntents || hasInfoPlistHint {
+                    // If we have the compiled bundle, count the files under
+                    // it as a rough upper bound on intent count.
+                    var count = 1
+                    if hasCompiledIntents,
+                       let subEntries = try? fm.contentsOfDirectory(atPath: metadataAppintents) {
+                        count = max(1, subEntries.count)
+                    }
+                    apps.append(.init(bundleId: bundleID, appName: name, intentCount: count))
                 }
             }
         }
