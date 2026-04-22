@@ -90,6 +90,14 @@ struct ControlZooMatrixTests {
 
     /// Query NSWorkspace via the MCP list_apps tool — lets the test
     /// target the same PID discovery mechanism the MCP uses at runtime.
+    ///
+    /// v0.8.0 fix: when a zombie ControlZoo is still running from a
+    /// previous crashed test run, picking the FIRST ControlZoo entry
+    /// (as the v0.7.2 logic did) can return the zombie PID, which has
+    /// no live window and therefore 0 AX children — manifesting as the
+    /// infamous "idMap.count == 0" failure pattern seen locally on
+    /// 2026-04-22. Now we pick the `isActive:true` instance if any,
+    /// else fall back to the HIGHEST PID (last launched).
     static func runningHarnessPID() -> Int32? {
         guard let driver = MCPDriver.start() else { return nil }
         defer { driver.close() }
@@ -98,14 +106,19 @@ struct ControlZooMatrixTests {
               case .object(let payload) = apps,
               case .array(let list) = payload["apps"] ?? .null else { return nil }
 
+        var candidates: [(pid: Int32, isActive: Bool)] = []
         for entry in list {
             guard case .object(let obj) = entry,
                   case .string(let name) = obj["name"] ?? .null,
                   name == harnessIdentifier,
                   case .number(let pid) = obj["pid"] ?? .null else { continue }
-            return Int32(pid)
+            let active: Bool
+            if case .bool(let b) = obj["isActive"] ?? .null { active = b } else { active = false }
+            candidates.append((pid: Int32(pid), isActive: active))
         }
-        return nil
+        // Prefer active, else highest PID (most recently launched).
+        if let active = candidates.first(where: { $0.isActive }) { return active.pid }
+        return candidates.max(by: { $0.pid < $1.pid })?.pid
     }
 
     /// Resolve the ControlZoo element identifiers → element IDs the MCP
