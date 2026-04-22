@@ -112,7 +112,7 @@ extension ToolRegistry {
 
     func callMcpServerInfo() async -> ToolCallResult {
         let pid = ProcessInfo.processInfo.processIdentifier
-        let version = "0.8.0"
+        let version = "0.8.1"
         let executablePath = Bundle.main.executablePath ?? ProcessInfo.processInfo.arguments.first ?? "unknown"
         let uptime = ProcessInfo.processInfo.systemUptime  // not process uptime, but close enough for diagnosis
 
@@ -286,16 +286,27 @@ extension ToolRegistry {
         process.launchPath = "/bin/ps"
         // Use args that we can parse deterministically: pid + lstart + command
         process.arguments = ["-eo", "pid,lstart,command"]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle(forWritingAtPath: "/dev/null")
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
         do {
             try process.run()
-            process.waitUntilExit()
         } catch {
             return []
         }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        // v0.8.1 fix: read BEFORE waitUntilExit. The previous order
+        // deadlocked when `ps -eo pid,lstart,command` output exceeded
+        // the default 16KB pipe buffer — ps blocked on write, we
+        // blocked on waitUntilExit, and nothing moved. readDataToEndOfFile
+        // reads until EOF which only happens when the child closes
+        // its write side (i.e., exits), so we no longer need the
+        // separate waitUntilExit to prevent zombies. Drain stderr
+        // concurrently via a discard pipe so it can't back-pressure
+        // either. On a busy machine `ps` can easily produce 30-50KB.
+        let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+        _ = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
         guard let text = String(data: data, encoding: .utf8) else { return [] }
 
         var out: [OtherMcpProcessInfo] = []

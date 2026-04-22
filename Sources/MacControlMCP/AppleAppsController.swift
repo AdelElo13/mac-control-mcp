@@ -247,16 +247,24 @@ actor AppleAppsController {
         let days = max(1, min(horizonDays, 90))
 
         #if canImport(EventKit)
-        // Request full-access to events (macOS 14+ API). On prior
-        // grants this is effectively a no-op; on first call it shows
-        // the system TCC prompt.
-        let granted = await requestCalendarAccess()
-        guard granted else {
-            return Result(
-                ok: false,
-                data: nil,
-                error: "Calendar access denied. Grant in System Settings → Privacy & Security → Calendars (enable mac-control-mcp), then restart the MCP server."
-            )
+        // v0.8.1: structured status so writeOnly vs denied vs restricted
+        // each get an actionable, distinct error. The previous single
+        // "denied" message sent users on a wild goose chase when they
+        // had actually granted write-only access in an earlier session.
+        let access = await requestCalendarAccess()
+        guard access.granted else {
+            let message: String
+            switch access.status {
+            case "writeOnly":
+                message = "Calendar access is write-only. listCalendarEvents needs FULL access to read events. In System Settings → Privacy & Security → Calendars, toggle mac-control-mcp to 'Full Access' (not 'Add Events Only'), then restart the MCP server."
+            case "denied", "denied_after_prompt":
+                message = "Calendar access denied. Grant in System Settings → Privacy & Security → Calendars (enable mac-control-mcp), then restart the MCP server."
+            case "restricted":
+                message = "Calendar access restricted by MDM / parental controls. An administrator must unblock Calendar access for this user account."
+            default:
+                message = "Calendar access not available (status=\(access.status)). Grant in System Settings → Privacy & Security → Calendars."
+            }
+            return Result(ok: false, data: nil, error: message)
         }
 
         let start = Date()
@@ -289,27 +297,35 @@ actor AppleAppsController {
 
     #if canImport(EventKit)
     /// Request full-access to events via the macOS 14+ API.
-    /// Returns true iff the store currently has full-access granted.
-    private func requestCalendarAccess() async -> Bool {
+    /// Returns (granted, statusString) so the caller can emit a precise
+    /// error message rather than a bland "denied".
+    ///
+    /// v0.8.1: previously returned just Bool, which conflated
+    /// `.denied` (user said no), `.restricted` (MDM blocked),
+    /// `.writeOnly` (partial grant — can add events, cannot read) and
+    /// the success of requesting the missing upgrade. `.writeOnly` in
+    /// particular surfaces in practice when a prior app version asked
+    /// only for write scope, and the upgrade-to-full request in a
+    /// background MCP process never shows the UI. We now surface the
+    /// exact state so listCalendarEvents can tell the user what to do.
+    private func requestCalendarAccess() async -> (granted: Bool, status: String) {
         if #available(macOS 14.0, *) {
-            // Fast path: already granted
             let status = EKEventStore.authorizationStatus(for: .event)
-            if status == .fullAccess { return true }
-            if status == .denied || status == .restricted { return false }
+            if status == .fullAccess { return (true, "fullAccess") }
+            if status == .denied { return (false, "denied") }
+            if status == .restricted { return (false, "restricted") }
+            if status == .writeOnly { return (false, "writeOnly") }
 
             // Slow path: show prompt / wait for user decision.
-            // Bridge the completion handler to async with a continuation.
             let eventStoreRef = eventStore
-            return await withCheckedContinuation { continuation in
+            let granted: Bool = await withCheckedContinuation { continuation in
                 eventStoreRef.requestFullAccessToEvents { granted, _ in
                     continuation.resume(returning: granted)
                 }
             }
+            return (granted, granted ? "fullAccess" : "denied_after_prompt")
         } else {
-            // macOS 13 and earlier — we target 14+ so this path is dead,
-            // but the compiler still needs a branch. Old API was
-            // requestAccess(to:completion:).
-            return false
+            return (false, "macos_pre_14")
         }
     }
     #endif
