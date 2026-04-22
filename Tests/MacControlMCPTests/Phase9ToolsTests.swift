@@ -209,17 +209,30 @@ struct Phase9ToolsTests {
 
     @Test("PermissionGrant has allowSubDelegation with default true")
     func permissionGrantSubDelegation() async {
-        await PermissionStore.shared._resetForTesting()
+        // v0.7.1 fix: removed _resetForTesting() call here. It was
+        // wiping Phase 6 Suite's grants mid-test when the two suites
+        // ran in parallel on CI (Phase 6's `expired grants are
+        // rejected` sleeps 1.2s which is plenty of time for a cross-
+        // suite reset to land). This test uses UNIQUE bundle IDs so
+        // reset isn't needed — we only care about the allowSubDelegation
+        // field of the grants we create here.
+        let uniq = UUID().uuidString.prefix(8)
         let g = await PermissionStore.shared.grant(
-            bundleId: "com.test.sub-delegate", tier: .click, ttlSeconds: 60, reason: nil
+            bundleId: "com.test.sub-delegate-\(uniq)",
+            tier: .click, ttlSeconds: 60, reason: nil
         )
         #expect(g?.allowSubDelegation == true, "default must be true for v0.5.x back-compat")
 
         let g2 = await PermissionStore.shared.grant(
-            bundleId: "com.test.no-sub", tier: .click, ttlSeconds: 60,
+            bundleId: "com.test.no-sub-\(uniq)",
+            tier: .click, ttlSeconds: 60,
             reason: nil, allowSubDelegation: false
         )
         #expect(g2?.allowSubDelegation == false)
+
+        // Clean up our own entries; don't touch other suites' state.
+        await PermissionStore.shared.revoke(bundleId: "com.test.sub-delegate-\(uniq)")
+        await PermissionStore.shared.revoke(bundleId: "com.test.no-sub-\(uniq)")
     }
 
     // MARK: - tool count sanity
