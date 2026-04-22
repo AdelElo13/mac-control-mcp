@@ -13,7 +13,7 @@
     {
       "registryType": "mcpb",
       "identifier": "https://github.com/AdelElo13/mac-control-mcp/releases/download/v0.7.0/mac-control-mcp-v0.7.0.mcpb",
-      "fileSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "fileSha256": "2b876652629a261e6b00a1728a24b7f0afd1e0e07438d91bf7e14ba9688af4b7",
       "transport": {
         "type": "stdio"
       }
