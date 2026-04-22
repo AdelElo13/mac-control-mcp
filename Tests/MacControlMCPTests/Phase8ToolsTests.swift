@@ -175,11 +175,17 @@ struct Phase8ToolsTests {
         _ = r  // just ensure no crash
     }
 
-    // MARK: - tool count sanity (Phase 5 now asserts 117)
+    // MARK: - tool count sanity (Phase 5 owns the exact assertion)
 
-    @Test("tool count is 117 after phase 8 (95 + 22)")
+    @Test("tool count >= 117 after phase 8 (Phase 5 tests own the exact count)")
     func phase8CountCheck() {
+        // Phase 5's totalToolCount test holds the authoritative exact
+        // number; Phase 8 just guarantees we haven't dropped below the
+        // v0.5.0 floor. This prevents the cascade-failure pattern we
+        // hit at v0.7.0 where Phase 8/9/10 all asserted their own
+        // exact count and each CI run flagged 3 "failures" for what
+        // was really one tool count drift.
         let registry = ToolRegistry(accessibility: AccessibilityController())
-        #expect(registry.toolDefinitions.count == 117)
+        #expect(registry.toolDefinitions.count >= 117)
     }
 }
