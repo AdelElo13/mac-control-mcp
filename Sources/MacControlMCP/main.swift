@@ -109,7 +109,7 @@ actor MCPServer {
                 ]),
                 "serverInfo": .object([
                     "name": .string("mac-control-mcp"),
-                    "version": .string("0.6.0")
+                    "version": .string("0.7.0")
                 ]),
                 "accessibilityPermission": .bool(permission)
             ])

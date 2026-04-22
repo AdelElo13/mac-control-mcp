@@ -62,6 +62,12 @@ final class ToolRegistry: @unchecked Sendable {
     let memory: AgentMemoryController
     let axSnapshot: AXSnapshotController
     let grounding: GroundingController
+    // v0.7.0 Phase 10 — complete Mac surface
+    let voice: VoiceController
+    let browserDOM: BrowserDOMController
+    let appleNative: AppleNativeController
+    let undo: UndoController
+    let artifactStore: ArtifactStore
 
     init(
         accessibility: AccessibilityController,
@@ -91,7 +97,12 @@ final class ToolRegistry: @unchecked Sendable {
         redaction: RedactionController = RedactionController(),
         memory: AgentMemoryController = AgentMemoryController(),
         axSnapshot: AXSnapshotController = AXSnapshotController(),
-        grounding: GroundingController? = nil
+        grounding: GroundingController? = nil,
+        voice: VoiceController = VoiceController(),
+        browserDOM: BrowserDOMController? = nil,
+        appleNative: AppleNativeController = AppleNativeController(),
+        undoCtrl: UndoController = UndoController(),
+        artifactStore: ArtifactStore = ArtifactStore()
     ) {
         self.accessibility = accessibility
         self.elementCache = elementCache
@@ -126,13 +137,18 @@ final class ToolRegistry: @unchecked Sendable {
         self.grounding = grounding ?? GroundingController(
             accessibility: accessibility, screen: screen
         )
+        self.voice = voice
+        self.browserDOM = browserDOM ?? BrowserDOMController(browser: browser)
+        self.appleNative = appleNative
+        self.undo = undoCtrl
+        self.artifactStore = artifactStore
     }
 
     var toolDefinitions: [MCPToolDefinition] {
         Self.definitions + Self.definitionsV2 + Self.definitionsV2Phase2 +
             Self.definitionsV2Phase3 + Self.definitionsV2Phase4 + Self.definitionsV2Phase5 +
             Self.definitionsV2Phase6 + Self.definitionsV2Phase7 + Self.definitionsV2Phase8 +
-            Self.definitionsV2Phase9
+            Self.definitionsV2Phase9 + Self.definitionsV2Phase10
     }
 
     // MARK: - Tool dispatch
@@ -418,6 +434,35 @@ final class ToolRegistry: @unchecked Sendable {
             return await callRedactPIIText(arguments)
         case "redact_image_regions":
             return await callRedactImageRegions(arguments)
+        // MARK: - v0.7.0 Phase 10 — complete surface (13 tools)
+        case "capture_screen_v2":
+            return await callCaptureScreenV2(arguments)
+        case "artifact_gc":
+            return await callArtifactGC()
+        case "undo_last_action":
+            return await callUndoLastAction(arguments)
+        case "undo_peek":
+            return await callUndoPeek()
+        case "speech_to_text":
+            return await callSpeechToText(arguments)
+        case "text_to_speech":
+            return await callTextToSpeech(arguments)
+        case "audio_record":
+            return await callAudioRecord(arguments)
+        case "record_screen":
+            return await callRecordScreen(arguments)
+        case "browser_dom_tree":
+            return await callBrowserDOMTree(arguments)
+        case "browser_visible_text":
+            return await callBrowserVisibleText(arguments)
+        case "browser_iframes":
+            return await callBrowserIframes(arguments)
+        case "foundation_models_generate":
+            return await callFoundationModelsGenerate(arguments)
+        case "list_app_intents":
+            return await callListAppIntents()
+        case "invoke_app_intent":
+            return await callInvokeAppIntent(arguments)
         default:
             return errorResult("Unknown tool '\(name)'.")
         }
