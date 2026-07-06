@@ -241,7 +241,9 @@ actor FinderController {
         // AppleScript's `tell application "Finder" to delete` moves to Trash.
         // It's the only sanctioned way; `mv ~/.Trash/` breaks Finder's
         // "Put Back" feature.
-        let escaped = canonical.replacingOccurrences(of: "\"", with: "\\\"")
+        // Escape backslash + quote; the old code omitted the backslash pass,
+        // so a path containing "\" targeted the wrong file or failed.
+        let escaped = AppleScriptString.escape(canonical)
         let script = """
         tell application "Finder" to delete POSIX file "\(escaped)"
         """
