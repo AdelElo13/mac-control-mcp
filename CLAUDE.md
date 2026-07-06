@@ -45,6 +45,7 @@ swift test            # run test suite
 - AppleScript `tell application "Contacts"` fails with -600 when Contacts.app isn't running — use `CNContactStore` instead
 - `parsePID(nil)` returns `nil` same as an invalid pid — check `arguments["pid"] == nil` to distinguish "not provided" from "invalid"
 - Always wrap framework imports in `#if canImport(...)` guards (EventKit, Contacts, CoreLocation not available on all platforms)
+- `list_windows` is NOT a reliable process-liveness probe: its CG fallback can report a residual window-server entry (`count:1`, `minimized:true`, empty title) for a window that is already closed. To detect a windowless zombie, walk the AX tree (`get_ui_tree`) and require an `AXWindow` node — a zombie exposes only a childless `AXApplication` root (2026-07-06, ControlZoo pid 19604/38320)
 
 ## Signing & distribution
 
