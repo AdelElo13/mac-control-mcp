@@ -71,7 +71,15 @@ struct ControlZooMatrixTests {
             return nil
         }
 
-        if let existing = runningHarnessPID() { return existing }
+        let candidates = harnessCandidates()
+        if let existing = selectHarnessPID(from: candidates) { return existing }
+
+        // No reusable instance. Reap windowless zombies from crashed runs
+        // before launching fresh — left alive they linger indefinitely and
+        // keep paying a liveness probe on every discovery pass.
+        for zombie in candidates where !zombie.hasLiveWindow {
+            kill(zombie.pid, SIGKILL)
+        }
 
         let p = Process()
         p.executableURL = URL(fileURLWithPath: binary)
@@ -88,6 +96,30 @@ struct ControlZooMatrixTests {
         return nil
     }
 
+    /// A ControlZoo process discovered via list_apps, annotated with
+    /// whether it still owns a live window. A crashed test run can leave
+    /// the process alive after its window is gone; such a zombie yields
+    /// 0 AX children from get_ui_tree, so reusing it fails every matrix
+    /// check (seen 2026-07-06 with pid 19604).
+    struct HarnessCandidate: Equatable, Sendable {
+        let pid: Int32
+        let isActive: Bool
+        let hasLiveWindow: Bool
+    }
+
+    /// Pure selection logic over discovered candidates — unit-tested by
+    /// `ControlZooDiscoveryTests` as the stale-zombie regression guard.
+    ///
+    /// Candidates without a live window are excluded outright: a zombie
+    /// can be `isActive` or hold the highest pid and would still produce
+    /// an empty AX tree. Among windowed candidates, prefer active, else
+    /// highest PID (most recently launched).
+    static func selectHarnessPID(from candidates: [HarnessCandidate]) -> Int32? {
+        let live = candidates.filter { $0.hasLiveWindow }
+        if let active = live.first(where: { $0.isActive }) { return active.pid }
+        return live.max(by: { $0.pid < $1.pid })?.pid
+    }
+
     /// Query NSWorkspace via the MCP list_apps tool — lets the test
     /// target the same PID discovery mechanism the MCP uses at runtime.
     ///
@@ -96,17 +128,27 @@ struct ControlZooMatrixTests {
     /// (as the v0.7.2 logic did) can return the zombie PID, which has
     /// no live window and therefore 0 AX children — manifesting as the
     /// infamous "idMap.count == 0" failure pattern seen locally on
-    /// 2026-04-22. Now we pick the `isActive:true` instance if any,
-    /// else fall back to the HIGHEST PID (last launched).
+    /// 2026-04-22. Picking active/highest-pid was not enough either:
+    /// on 2026-07-06 a windowless zombie (pid 19604) was the only or
+    /// highest instance and got reused, failing all 12 matrix checks.
+    /// Discovery now also probes each candidate for a live window and
+    /// never returns a windowless one.
     static func runningHarnessPID() -> Int32? {
-        guard let driver = MCPDriver.start() else { return nil }
+        selectHarnessPID(from: harnessCandidates())
+    }
+
+    /// Enumerate every running ControlZoo instance and probe each for a
+    /// live window via the AX tree — the same walk the matrix test's
+    /// identifierMap depends on.
+    static func harnessCandidates() -> [HarnessCandidate] {
+        guard let driver = MCPDriver.start() else { return [] }
         defer { driver.close() }
         _ = driver.request(#"{"jsonrpc":"2.0","id":0,"method":"initialize","params":{}}"#)
         guard let apps = driver.toolResult(name: "list_apps", arguments: "{}"),
               case .object(let payload) = apps,
-              case .array(let list) = payload["apps"] ?? .null else { return nil }
+              case .array(let list) = payload["apps"] ?? .null else { return [] }
 
-        var candidates: [(pid: Int32, isActive: Bool)] = []
+        var candidates: [HarnessCandidate] = []
         for entry in list {
             guard case .object(let obj) = entry,
                   case .string(let name) = obj["name"] ?? .null,
@@ -114,11 +156,37 @@ struct ControlZooMatrixTests {
                   case .number(let pid) = obj["pid"] ?? .null else { continue }
             let active: Bool
             if case .bool(let b) = obj["isActive"] ?? .null { active = b } else { active = false }
-            candidates.append((pid: Int32(pid), isActive: active))
+            candidates.append(HarnessCandidate(
+                pid: Int32(pid),
+                isActive: active,
+                hasLiveWindow: hasLiveWindow(driver: driver, pid: Int32(pid))
+            ))
         }
-        // Prefer active, else highest PID (most recently launched).
-        if let active = candidates.first(where: { $0.isActive }) { return active.pid }
-        return candidates.max(by: { $0.pid < $1.pid })?.pid
+        return candidates
+    }
+
+    /// True when the pid exposes at least one AXWindow node in its
+    /// accessibility tree.
+    ///
+    /// Deliberately NOT list_windows: its CG fallback can surface a
+    /// residual window-server entry for an already-closed window
+    /// (observed 2026-07-06 on a real zombie — list_windows said
+    /// count:1/minimized while AX had zero windows and get_ui_tree
+    /// walked only a childless AXApplication root). The AXWindow probe
+    /// mirrors exactly what identifierMap needs, so a candidate that
+    /// passes it can actually serve the matrix.
+    static func hasLiveWindow(driver: MCPDriver, pid: Int32) -> Bool {
+        guard let tree = driver.toolResult(
+            name: "get_ui_tree",
+            arguments: #"{"pid":\#(pid),"max_depth":2}"#
+        ),
+              case .object(let payload) = tree,
+              case .array(let nodes) = payload["nodes"] ?? .null else { return false }
+        return nodes.contains { node in
+            guard case .object(let obj) = node,
+                  case .string(let role) = obj["role"] ?? .null else { return false }
+            return role == "AXWindow"
+        }
     }
 
     /// Resolve the ControlZoo element identifiers → element IDs the MCP
@@ -423,6 +491,64 @@ struct ControlZooMatrixTests {
 
         #expect(before == "0", "\(label): row was not deselected before the test (got \(before))")
         #expect(after == "1", "\(label): row should be selected after set, got \(after ?? "nil")")
+    }
+}
+
+// MARK: - PID-discovery regression guard (pure, no GUI required)
+
+/// Regression guard for the 2026-07-06 incident: a windowless ControlZoo
+/// zombie (pid 19604) left over from a crashed run was reused by the pid
+/// discovery, get_ui_tree returned 0 nodes, and all matrix checks failed.
+/// The selection logic must never pick a candidate without a live window.
+@Suite("ControlZoo PID discovery — stale-zombie guard")
+struct ControlZooDiscoveryTests {
+    typealias Candidate = ControlZooMatrixTests.HarnessCandidate
+
+    @Test("windowless zombie with highest pid is never selected")
+    func zombieWithHighestPidLoses() {
+        let picked = ControlZooMatrixTests.selectHarnessPID(from: [
+            Candidate(pid: 500, isActive: false, hasLiveWindow: true),
+            Candidate(pid: 19604, isActive: false, hasLiveWindow: false),
+        ])
+        #expect(picked == 500)
+    }
+
+    @Test("active but windowless zombie loses to inactive windowed instance")
+    func activeZombieLoses() {
+        let picked = ControlZooMatrixTests.selectHarnessPID(from: [
+            Candidate(pid: 700, isActive: true, hasLiveWindow: false),
+            Candidate(pid: 300, isActive: false, hasLiveWindow: true),
+        ])
+        #expect(picked == 300)
+    }
+
+    @Test("only windowless candidates yields nil, forcing a fresh launch")
+    func allZombiesYieldNil() {
+        let picked = ControlZooMatrixTests.selectHarnessPID(from: [
+            Candidate(pid: 100, isActive: true, hasLiveWindow: false),
+            Candidate(pid: 200, isActive: false, hasLiveWindow: false),
+        ])
+        #expect(picked == nil)
+    }
+
+    @Test("no candidates yields nil")
+    func emptyYieldsNil() {
+        #expect(ControlZooMatrixTests.selectHarnessPID(from: []) == nil)
+    }
+
+    @Test("among live-window candidates: active wins, else highest pid")
+    func liveSelectionOrder() {
+        let activeWins = ControlZooMatrixTests.selectHarnessPID(from: [
+            Candidate(pid: 900, isActive: false, hasLiveWindow: true),
+            Candidate(pid: 400, isActive: true, hasLiveWindow: true),
+        ])
+        #expect(activeWins == 400)
+
+        let highestWins = ControlZooMatrixTests.selectHarnessPID(from: [
+            Candidate(pid: 900, isActive: false, hasLiveWindow: true),
+            Candidate(pid: 400, isActive: false, hasLiveWindow: true),
+        ])
+        #expect(highestWins == 900)
     }
 }
 
