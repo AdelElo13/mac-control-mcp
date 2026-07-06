@@ -134,9 +134,13 @@ actor FileDialogController {
         }
 
         // 2 + 3. scan regular running apps for a visible sheet/dialog.
-        let apps = NSWorkspace.shared.runningApplications.filter {
-            $0.activationPolicy == .regular && $0.processIdentifier > 0
-        }
+        // Check the frontmost app first. Scanning all apps in arbitrary order
+        // could return a background app's dialog instead of the one the user
+        // is actually interacting with.
+        let frontPid = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let apps = NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular && $0.processIdentifier > 0 }
+            .sorted { a, _ in a.processIdentifier == frontPid }
         for app in apps {
             let appElement = AXUIElementCreateApplication(app.processIdentifier)
             if let hit = firstDialog(in: appElement) {

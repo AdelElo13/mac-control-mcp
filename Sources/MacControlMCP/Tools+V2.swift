@@ -471,15 +471,19 @@ extension ToolRegistry {
 
     func callListMenuTitles(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         let pid: pid_t
-        if let provided = parsePID(arguments["pid"]) {
+        let pidArg = arguments["pid"]
+        if let pidArg, pidArg != .null {
+            // A real value was supplied — it must be a valid positive integer.
+            guard let provided = parsePID(pidArg) else {
+                return invalidArgument("list_menu_titles: pid must be a positive integer.")
+            }
             pid = provided
-        } else if arguments["pid"] == nil {
+        } else {
+            // Omitted OR explicit null → frontmost app, matching list_windows.
             guard let app = NSWorkspace.shared.frontmostApplication else {
                 return errorResult("No frontmost application found.", ["ok": .bool(false)])
             }
             pid = app.processIdentifier
-        } else {
-            return invalidArgument("list_menu_titles: pid must be a positive integer.")
         }
         let titles = await menus.topLevelTitles(pid: pid)
         return successResult(
@@ -536,7 +540,13 @@ extension ToolRegistry {
             ("location", location),
             ("microphone", microphone)
         ]
-        .filter { !["granted", "granted_when_in_use", "granted_always", "granted_legacy", "write_only", "authorized_legacy", "limited"].contains($0.1) }
+        .filter { (_, status) in
+            let granted: Set<String> = ["granted", "granted_when_in_use", "granted_always", "granted_legacy", "write_only", "authorized_legacy", "limited"]
+            // `location` can only report system-wide services state
+            // ("system_enabled …"); the old exact-match whitelist had no such
+            // string, so location was always listed as missing even when on.
+            return !(granted.contains(status) || status.hasPrefix("granted") || status.hasPrefix("system_enabled"))
+        }
         .map { $0.0 }
 
         let summary = missing.isEmpty
