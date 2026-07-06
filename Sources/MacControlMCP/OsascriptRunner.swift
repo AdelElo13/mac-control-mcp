@@ -13,25 +13,21 @@ enum OsascriptRunner {
         var ok: Bool { exitCode == 0 }
     }
 
-    static func run(_ script: String) -> Result {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", script]
-
-        let outPipe = Pipe()
-        let errPipe = Pipe()
-        process.standardOutput = outPipe
-        process.standardError = errPipe
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return Result(stdout: "", stderr: "Failed to launch osascript: \(error)", exitCode: -1)
-        }
-
-        let out = String(data: outPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let err = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        return Result(stdout: out, stderr: err, exitCode: process.terminationStatus)
+    /// Run an AppleScript via `osascript -e`. Delegates to `Subprocess`,
+    /// which drains stdout/stderr concurrently (so a script producing a large
+    /// result — e.g. a full DOM/AX dump — cannot deadlock on a full pipe
+    /// buffer) and enforces `timeout` so a hung script cannot wedge the tool
+    /// call, and with it the calling actor, forever. On timeout the runner
+    /// returns a non-zero exit with an explanatory stderr.
+    static func run(_ script: String, timeout: TimeInterval = 30) -> Result {
+        let r = Subprocess.run(
+            executable: "/usr/bin/osascript",
+            arguments: ["-e", script],
+            timeout: timeout
+        )
+        let stderr = r.timedOut
+            ? "osascript exceeded the \(Int(timeout))s timeout and was terminated."
+            : r.stderr
+        return Result(stdout: r.stdout, stderr: stderr, exitCode: r.exitCode)
     }
 }

@@ -137,8 +137,8 @@ actor MouseController {
                 scrollWheelEvent2Source: source,
                 units: .pixel,
                 wheelCount: 2,
-                wheel1: Int32(deltaY),
-                wheel2: Int32(deltaX),
+                wheel1: Int32(clamping: deltaY),
+                wheel2: Int32(clamping: deltaX),
                 wheel3: 0
               )
         else { return false }

@@ -89,8 +89,12 @@ enum JSONValue: Codable, Equatable, Sendable {
     var intValue: Int? {
         switch self {
         case .number(let value):
+            // `Int(exactly:)` rejects non-integral values AND magnitudes
+            // outside Int's range. The old `Int(value)` trapped (SIGTRAP,
+            // whole-process abort) on any large client-supplied number such
+            // as 1e20 or 1e300, which pass the integrality check.
             guard value.rounded() == value else { return nil }
-            return Int(value)
+            return Int(exactly: value)
         case .string(let value):
             return Int(value)
         default:
@@ -177,6 +181,8 @@ struct MCPToolDefinition: Codable, Sendable {
 enum StdioMessageFramer {
     private static let crlfHeaderTerminator = Data("\r\n\r\n".utf8)
     private static let lfHeaderTerminator = Data("\n\n".utf8)
+    /// Upper bound on an accepted Content-Length header (256 MB).
+    static let maxContentLength = 256 * 1024 * 1024
 
     struct HeaderParseError: Error, CustomStringConvertible {
         let description: String
@@ -241,7 +247,14 @@ enum StdioMessageFramer {
             return .malformed(error.description)
         case .success(let contentLength):
             let bodyStart = headerBoundary.bodyStart
-            let bodyEnd = bodyStart + contentLength
+            // Overflow-safe: a near-Int.max Content-Length made `bodyStart +
+            // contentLength` trap (arithmetic overflow, whole-process abort)
+            // before the buffer bounds check could reject it.
+            let (bodyEnd, overflowed) = bodyStart.addingReportingOverflow(contentLength)
+            if overflowed {
+                buffer.removeSubrange(buffer.startIndex..<bodyStart)
+                return .malformed("Content-Length overflows the addressable buffer range.")
+            }
             guard buffer.count >= bodyEnd else { return .needMoreData }
 
             let body = buffer.subdata(in: bodyStart..<bodyEnd)
@@ -311,6 +324,12 @@ enum StdioMessageFramer {
             let value = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
             guard let length = Int(value), length >= 0 else {
                 return .failure(HeaderParseError(description: "Invalid Content-Length header value: '\(value)'."))
+            }
+            // Reject absurd sizes up front so a huge header can't make the
+            // framer buffer unboundedly (memory DoS) while waiting for bytes
+            // that will never arrive. 256 MB is far above any real MCP frame.
+            guard length <= maxContentLength else {
+                return .failure(HeaderParseError(description: "Content-Length \(length) exceeds the \(maxContentLength)-byte limit."))
             }
 
             guard contentLength == nil else {

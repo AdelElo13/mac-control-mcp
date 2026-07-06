@@ -18,43 +18,14 @@ enum ProcessRunner {
     /// `Result.exitCode == -1` means the binary wasn't found / couldn't launch.
     /// Callers switch on `ok` and report `stderr` as the human-readable reason.
     static func run(_ path: String, _ args: [String], timeout: TimeInterval = 10.0) -> Result {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: path)
-        process.arguments = args
-
-        let outPipe = Pipe()
-        let errPipe = Pipe()
-        process.standardOutput = outPipe
-        process.standardError = errPipe
-
-        do {
-            try process.run()
-        } catch {
-            return Result(stdout: "", stderr: "Failed to launch \(path): \(error)", exitCode: -1)
-        }
-
-        // `waitUntilExit` has no timeout variant, so we attach a watchdog that
-        // terminates runaway children. 10s default is generous for CLI tools
-        // but short enough that a hanging `pmset` can't wedge a tool call.
-        let deadline = Date().addingTimeInterval(timeout)
-        let checkQueue = DispatchQueue.global(qos: .utility)
-        let watchdog = DispatchWorkItem {
-            while process.isRunning {
-                if Date() >= deadline {
-                    process.terminate()
-                    return
-                }
-                Thread.sleep(forTimeInterval: 0.05)
-            }
-        }
-        checkQueue.async(execute: watchdog)
-
-        process.waitUntilExit()
-        watchdog.cancel()
-
-        let out = String(data: outPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let err = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        return Result(stdout: out, stderr: err, exitCode: process.terminationStatus)
+        // Delegates to `Subprocess`, which drains stdout/stderr concurrently
+        // (the previous watchdog killed a child that filled the pipe buffer,
+        // but the reads still happened only after exit, truncating legitimate
+        // large output) and enforces `timeout` with a SIGTERM→SIGKILL
+        // escalation. 10s default is generous for CLI tools but short enough
+        // that a hanging `pmset` can't wedge a tool call.
+        let r = Subprocess.run(executable: path, arguments: args, timeout: timeout)
+        return Result(stdout: r.stdout, stderr: r.stderr, exitCode: r.exitCode)
     }
 
     /// Check whether an absolute path exists and is executable. Used by
