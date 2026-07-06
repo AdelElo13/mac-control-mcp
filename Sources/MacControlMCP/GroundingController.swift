@@ -161,17 +161,49 @@ actor GroundingController {
         )
     }
 
+    /// Convert an OCR block's center from image-pixel space to global
+    /// screen POINTS.
+    ///
+    /// `ScreenController.ocr` emits block coordinates in **image pixels**:
+    /// a full-screen capture on a 2× Retina display is 3024×1964px for a
+    /// 1512×982pt display, so a block center at pixel (300,240) sits at
+    /// point (150,120). AX frames and click targets are in points, so OCR
+    /// centers MUST be scaled down by the backing factor before they are
+    /// used as click coordinates (`ground`) or compared against AX rects
+    /// (`axTreeAugmented`) — otherwise every OCR hit is 2× off on Retina.
+    ///
+    /// The scale is derived from the actual captured image dimensions vs
+    /// the display's point dimensions, so it is exact for any backing
+    /// factor (2.0 or a fractional scaled mode) and collapses to identity
+    /// on a 1× display. Zero/missing dimensions fall back to identity so
+    /// the conversion can never divide by zero.
+    static func ocrPixelCenterToPoints(
+        blockX: Double, blockY: Double, blockW: Double, blockH: Double,
+        imagePixelWidth: Int, imagePixelHeight: Int,
+        displayPointWidth: Double, displayPointHeight: Double
+    ) -> CGPoint {
+        let centerX = blockX + blockW / 2
+        let centerY = blockY + blockH / 2
+        let sx = imagePixelWidth > 0 ? displayPointWidth / Double(imagePixelWidth) : 1
+        let sy = imagePixelHeight > 0 ? displayPointHeight / Double(imagePixelHeight) : 1
+        return CGPoint(x: centerX * sx, y: centerY * sy)
+    }
+
     private func ocrLookup(target: String) async -> [Candidate] {
         // Use the screen controller's OCR pass. The OCR result contains
-        // blocks with bounding boxes; we find the block whose text best
-        // matches the target.
+        // blocks with bounding boxes in image PIXELS; we find the block
+        // whose text best matches the target and convert its center to
+        // global screen points so the caller can click it directly.
+        let capture: ScreenController.CaptureResult
         let ocrBlocks: [ScreenController.OCRBlock]
         do {
-            let (_, result) = try await screen.captureAndOCR(keepImage: false)
+            let (cap, result) = try await screen.captureAndOCR(keepImage: false)
+            capture = cap
             ocrBlocks = result.blocks
         } catch {
             return []
         }
+        let bounds = CGDisplayBounds(CGMainDisplayID())
         let needle = target.lowercased()
         var out: [Candidate] = []
         for block in ocrBlocks {
@@ -179,12 +211,17 @@ actor GroundingController {
             let exact = text == needle
             let contains = text.contains(needle)
             if !exact && !contains { continue }
-            let centerX = block.x + block.width / 2
-            let centerY = block.y + block.height / 2
+            let center = Self.ocrPixelCenterToPoints(
+                blockX: block.x, blockY: block.y,
+                blockW: block.width, blockH: block.height,
+                imagePixelWidth: capture.width, imagePixelHeight: capture.height,
+                displayPointWidth: Double(bounds.width),
+                displayPointHeight: Double(bounds.height)
+            )
             out.append(.init(
                 role: nil,
                 title: block.text,
-                x: centerX, y: centerY,
+                x: center.x, y: center.y,
                 source: "ocr",
                 confidence: exact ? 0.9 : (contains ? 0.6 : 0.3)
             ))
@@ -245,10 +282,18 @@ actor GroundingController {
             )
         }
 
-        // 2. Single OCR pass over the visible region
+        // 2. Single OCR pass over the visible region. Block coordinates
+        // come back in image PIXELS; convert their centers to global
+        // screen POINTS so the geometric join below compares like with
+        // like against AX frames (which are in points). Without this the
+        // join silently fails on Retina — pixel centers are 2× too large
+        // and fall outside every small AX rect, so only oversized
+        // containers ever match and no useful label is inferred.
+        let capture: ScreenController.CaptureResult
         let ocrBlocks: [ScreenController.OCRBlock]
         do {
-            let (_, result) = try await screen.captureAndOCR(keepImage: false)
+            let (cap, result) = try await screen.captureAndOCR(keepImage: false)
+            capture = cap
             ocrBlocks = result.blocks
         } catch {
             let ms = Int(Date().timeIntervalSince(start) * 1000)
@@ -256,6 +301,16 @@ actor GroundingController {
                 ok: false, pid: Int32(pid), nodeCount: axBoxes.count, inferredCount: 0,
                 nodes: axBoxes.map { $0.node }, elapsedMs: ms,
                 error: "OCR pass failed: \(error)"
+            )
+        }
+        let displayBounds = CGDisplayBounds(CGMainDisplayID())
+        let ocrPointCenters: [CGPoint] = ocrBlocks.map { block in
+            Self.ocrPixelCenterToPoints(
+                blockX: block.x, blockY: block.y,
+                blockW: block.width, blockH: block.height,
+                imagePixelWidth: capture.width, imagePixelHeight: capture.height,
+                displayPointWidth: Double(displayBounds.width),
+                displayPointHeight: Double(displayBounds.height)
             )
         }
 
@@ -281,11 +336,8 @@ actor GroundingController {
             // checked by comparing frame areas — the smaller containing
             // frame wins.)
             var bestOCR: (text: String, area: Double, overlapping: Bool)?
-            for block in ocrBlocks {
-                let ocrCenter = CGPoint(
-                    x: block.x + block.width / 2,
-                    y: block.y + block.height / 2
-                )
+            for (blockIndex, block) in ocrBlocks.enumerated() {
+                let ocrCenter = ocrPointCenters[blockIndex]
                 guard box.rect.contains(ocrCenter) else { continue }
 
                 // Check whether any OTHER ax box also contains this center
