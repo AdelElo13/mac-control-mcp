@@ -386,7 +386,9 @@ actor HardwareController {
         case "sleep":
             cmd = state.lowercased() == "on" ? "Turn Sleep Focus On" : "Turn Sleep Focus Off"
         default:
-            cmd = "Turn \(mode) Focus \(state == "on" ? "On" : "Off")"
+            // Was `state == "on"` (case-sensitive) while every named case
+            // lowercased first, so "On"/"ON" flipped a custom mode to Off.
+            cmd = "Turn \(mode) Focus \(state.lowercased() == "on" ? "On" : "Off")"
         }
         let r = ProcessRunner.run("/usr/bin/shortcuts", ["run", cmd], timeout: 8)
         if r.ok {

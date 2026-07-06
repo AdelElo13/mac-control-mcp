@@ -101,14 +101,18 @@ actor AppleAppsController {
                     set p to (participants of thisChat)
                     set nameList to ""
                     repeat with px in p
-                        set nameList to nameList & (handle of px) & ", "
+                        if nameList is not "" then set nameList to nameList & ", "
+                        set nameList to nameList & (handle of px)
                     end repeat
                     set end of out to nameList
                 on error
                     set end of out to "(unknown)"
                 end try
             end repeat
-            return out
+            set AppleScript's text item delimiters to "§§REC§§"
+            set outStr to out as string
+            set AppleScript's text item delimiters to ""
+            return outStr
         end tell
         """
         let r = OsascriptRunner.run(script)
@@ -116,12 +120,14 @@ actor AppleAppsController {
             return Result(ok: false, data: nil,
                           error: r.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
         }
-        // AppleScript returns a comma-separated list when the outer value is
-        // a list. Each entry in our script ends with ", " — we split on
-        // that outer boundary, then strip trailing commas.
+        // One record per chat, joined by a sentinel. The old code split the
+        // whole output on "," — the same "," used between participants — so a
+        // group chat's participants each became a separate "thread" and the
+        // count was wrong. Split on the record sentinel instead; each thread's
+        // participant string keeps all its handles intact.
         let text = r.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         let entries = text
-            .split(separator: ",", omittingEmptySubsequences: false)
+            .components(separatedBy: "§§REC§§")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty && $0 != "(unknown)" }
         let threads = entries.map { RecentThread(participant: $0, lastMessagePreview: nil) }
@@ -457,6 +463,7 @@ actor AppleAppsController {
         let keys: [CNKeyDescriptor] = [
             CNContactGivenNameKey as CNKeyDescriptor,
             CNContactFamilyNameKey as CNKeyDescriptor,
+            CNContactOrganizationNameKey as CNKeyDescriptor,
             CNContactPhoneNumbersKey as CNKeyDescriptor,
             CNContactEmailAddressesKey as CNKeyDescriptor,
         ]
@@ -464,8 +471,11 @@ actor AppleAppsController {
         do {
             let raw = try store.unifiedContacts(matching: predicate, keysToFetch: keys)
             let contacts: [Contact] = raw.prefix(cap).map { c in
-                let name = "\(c.givenName) \(c.familyName)"
+                // Company/organization contacts have no given/family name —
+                // fall back to the org name so they aren't returned nameless.
+                var name = "\(c.givenName) \(c.familyName)"
                     .trimmingCharacters(in: .whitespaces)
+                if name.isEmpty { name = c.organizationName }
                 let phones = c.phoneNumbers.map { $0.value.stringValue }
                 let emails = c.emailAddresses.map { String($0.value) }
                 return Contact(name: name, phones: phones, emails: emails)

@@ -525,7 +525,10 @@ extension ToolRegistry {
             parsed.append((code, flags))
         }
 
-        let delayMs = max(0, arguments["delay_ms"]?.intValue ?? 30)
+        // Clamp the upper bound: delay_ms drives a Thread.sleep inside the
+        // AccessibilityController actor, so a huge value would pin a
+        // cooperative-pool thread for the whole duration.
+        let delayMs = min(max(0, arguments["delay_ms"]?.intValue ?? 30), 5_000)
         let ok = await accessibility.pressKeySequence(parsed, delay: TimeInterval(delayMs) / 1000.0)
         return ok
             ? successResult("Pressed \(parsed.count) step(s).", [

@@ -232,6 +232,10 @@ extension ToolRegistry {
         do {
             let tmpDir = NSTemporaryDirectory()
             let tmpPath = tmpDir + "mc-\(Int(Date().timeIntervalSince1970)).png"
+            // Clean up the temp capture on every exit — the old code removed it
+            // only on the success path, so a storeImage failure leaked a
+            // full-resolution screenshot into the temp dir.
+            defer { try? FileManager.default.removeItem(atPath: tmpPath) }
             let capture = try await screen.captureDisplay(outputPath: tmpPath)
             guard let artifact = await artifactStore.storeImage(
                 sourcePath: capture.path,
@@ -239,11 +243,10 @@ extension ToolRegistry {
                 maxDimension: maxDim
             ) else {
                 return errorResult(
-                    "image exceeds max_bytes=\(maxBytes) even after downscale — try smaller max_dimension",
+                    "artifact store rejected the image (likely exceeds max_bytes=\(maxBytes) even after downscale — try a smaller max_dimension)",
                     ["ok": .bool(false)]
                 )
             }
-            try? FileManager.default.removeItem(atPath: tmpPath)
             var payload: [String: JSONValue] = [
                 "ok": .bool(true),
                 "content_ref": .string(artifact.contentRef),
