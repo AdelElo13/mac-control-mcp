@@ -388,25 +388,34 @@ actor AppleAppsController {
     func listReminders(includeCompleted: Bool, limit: Int) -> Result<[ReminderSummary]> {
         let cap = max(1, min(limit, 200))
         let filter = includeCompleted ? "" : "whose completed is false"
+        // `total` caps globally — the old `if n > cap` capped per list, so a
+        // `limit` of N returned up to N×(number of lists). Records are joined
+        // with a sentinel and coerced to one string: the old code let osascript
+        // print the list comma-separated and split on ", ", silently dropping
+        // any reminder whose title contained ", ".
         let script = """
         tell application "Reminders"
             set out to {}
+            set total to 0
             set ls to lists
             repeat with l in ls
+                if total ≥ \(cap) then exit repeat
                 try
                     set ln to (name of l as string)
                     set items to (every reminder of l \(filter))
-                    set n to (count of items)
-                    if n > \(cap) then set n to \(cap)
-                    repeat with i from 1 to n
-                        set r to item i of items
+                    repeat with r in items
+                        if total ≥ \(cap) then exit repeat
                         set t to (name of r as string)
                         set c to completed of r
                         set end of out to ln & "||" & t & "||" & (c as string)
+                        set total to total + 1
                     end repeat
                 end try
             end repeat
-            return out
+            set AppleScript's text item delimiters to "§§REC§§"
+            set outStr to out as string
+            set AppleScript's text item delimiters to ""
+            return outStr
         end tell
         """
         let r = OsascriptRunner.run(script)
@@ -415,7 +424,7 @@ actor AppleAppsController {
                           error: r.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
         }
         let lines = r.stdout
-            .components(separatedBy: ", ")
+            .components(separatedBy: "§§REC§§")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
         let reminders: [ReminderSummary] = lines.compactMap { line in

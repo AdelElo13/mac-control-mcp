@@ -191,6 +191,15 @@ extension ToolRegistry {
             return invalidArgument(String(describing: error))
         }
 
+        // Region is all-or-nothing. A partial/malformed spec (e.g. x+y+width
+        // but no height) previously fell through to a full-display capture and
+        // still reported success — silently ignoring the caller's intent.
+        let regionKeys = ["x", "y", "width", "height"]
+        let present = regionKeys.filter { arguments[$0] != nil }
+        if !present.isEmpty && present.count < regionKeys.count {
+            return invalidArgument("capture_screen region requires all of x, y, width, height together (or omit all for the full display). Got: \(present.joined(separator: ", ")).")
+        }
+
         do {
             let capture: ScreenController.CaptureResult
             if let x = arguments["x"]?.intValue,
@@ -198,8 +207,10 @@ extension ToolRegistry {
                let w = arguments["width"]?.intValue,
                let h = arguments["height"]?.intValue {
                 capture = try await screen.captureRegion(x: x, y: y, width: w, height: h, outputPath: outputPath)
-            } else {
+            } else if present.isEmpty {
                 capture = try await screen.captureDisplay(outputPath: outputPath)
+            } else {
+                return invalidArgument("capture_screen region values (x, y, width, height) must be integers.")
             }
 
             return successResult(
