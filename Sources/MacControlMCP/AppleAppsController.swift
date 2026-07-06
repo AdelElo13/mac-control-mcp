@@ -54,10 +54,11 @@ actor AppleAppsController {
     /// Returns `ok:false` with the AppleScript stderr if Messages rejects
     /// the recipient (unknown contact, not iMessage-reachable, offline).
     func sendMessage(to: String, body: String) -> Result<MessageSent> {
-        let escTo = to.replacingOccurrences(of: "\"", with: "\\\"")
-        let escBody = body
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
+        // Both must escape backslash + quote; the recipient escaping used to
+        // omit the backslash pass, so a recipient containing "\" broke or
+        // could inject into the script.
+        let escTo = AppleScriptString.escape(to)
+        let escBody = AppleScriptString.escape(body)
         // Uses `send ... to buddy` which targets iMessage by default. Service
         // is auto-resolved so the same script works for both phone and email.
         let script = """
