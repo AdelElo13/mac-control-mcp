@@ -31,7 +31,9 @@ actor AgentMemoryController {
         let entries: [Entry]
     }
 
-    private let storePath: URL
+    private var storePath: URL {
+        StoreLocation.baseDirectory.appendingPathComponent("memory.jsonl")
+    }
     private let sessionID: String
     private let isoFormatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
@@ -46,10 +48,6 @@ actor AgentMemoryController {
     private var loaded = false
 
     init() {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        self.storePath = home
-            .appendingPathComponent(".mac-control-mcp", isDirectory: true)
-            .appendingPathComponent("memory.jsonl")
         self.sessionID = String(UUID().uuidString.prefix(8)).lowercased()
     }
 

@@ -289,9 +289,23 @@ actor AccessibilityController {
         case clipboard  // paste events only
         case keys       // CGEvent unicode only
         case ax         // AX set_value only
+
+        /// Strategy used when a caller omits `strategy`. `auto` tries
+        /// clipboard → keys → ax for event fidelity on React/Angular SPAs.
+        /// Single source of truth so the default can't drift silently.
+        static let `default`: TypeStrategy = .auto
+
+        /// Resolve a raw tool argument to a concrete strategy.
+        /// - `nil`/empty (argument omitted) → `.default`.
+        /// - a known name (case-insensitive) → that strategy.
+        /// - an unknown non-empty string → `nil` (caller reports an error).
+        static func resolve(argument raw: String?) -> TypeStrategy? {
+            guard let raw, !raw.isEmpty else { return .default }
+            return TypeStrategy(rawValue: raw.lowercased())
+        }
     }
 
-    func typeText(text: String, strategy: TypeStrategy = .auto) async -> TypeTextResult {
+    func typeText(text: String, strategy: TypeStrategy = .default) async -> TypeTextResult {
         switch strategy {
         case .ax:
             return setFocusedElementValue(text)

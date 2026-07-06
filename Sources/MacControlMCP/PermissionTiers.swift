@@ -102,7 +102,12 @@ public actor PermissionStore {
     public static let shared = PermissionStore()
 
     private var grants: [String: PermissionGrant] = [:]
-    private let storePath: URL
+    /// `~/.mac-control-mcp/permissions.json` — user-scoped, never shared.
+    /// Computed at access time via `StoreLocation` so test runs redirect
+    /// to a temp dir instead of clobbering the real store.
+    private var storePath: URL {
+        StoreLocation.baseDirectory.appendingPathComponent("permissions.json")
+    }
     private var loaded = false
 
     /// Default TTL when a caller doesn't specify one. 24h balances
@@ -117,13 +122,7 @@ public actor PermissionStore {
         return 24 * 60 * 60
     }()
 
-    private init() {
-        // ~/.mac-control-mcp/permissions.json — user-scoped, never shared.
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        self.storePath = home
-            .appendingPathComponent(".mac-control-mcp", isDirectory: true)
-            .appendingPathComponent("permissions.json")
-    }
+    private init() {}
 
     // MARK: - Lifecycle
 

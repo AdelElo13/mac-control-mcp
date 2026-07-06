@@ -16,12 +16,17 @@ struct BugFixesV0_2_6Tests {
 
     // MARK: - Bug #4 — title fallback is empty-string aware
 
-    @Test("Bug #4 — TypeStrategy.auto stays the default")
+    @Test("Bug #4 — an omitted strategy argument resolves to auto")
     func bug4TypeStrategyAuto() {
-        // If somebody accidentally changes the default away from auto we
-        // break the React/Angular SPA reliability fix. Lock it in.
-        let r = AccessibilityController.TypeStrategy(rawValue: "auto")
-        #expect(r == .auto)
+        // The regression this guards: `type_text` with no `strategy` arg must
+        // fall back to auto (clipboard → keys → ax). Assert the real
+        // resolution path, not just that the enum has an `auto` case, so a
+        // drift in the default is actually caught.
+        #expect(AccessibilityController.TypeStrategy.default == .auto)
+        #expect(AccessibilityController.TypeStrategy.resolve(argument: nil) == .auto)
+        #expect(AccessibilityController.TypeStrategy.resolve(argument: "") == .auto)
+        #expect(AccessibilityController.TypeStrategy.resolve(argument: "AX") == .ax)
+        #expect(AccessibilityController.TypeStrategy.resolve(argument: "bogus") == nil)
     }
 
     // MARK: - Bug #3 — AXPress silent success on disabled targets
@@ -101,12 +106,13 @@ struct BugFixesV0_2_6Tests {
 
     // MARK: - Bug #10 — triple_click
 
-    @Test("Bug #10 — MouseController exposes tripleClick + multiClick")
+    @Test("Bug #10 — MouseController exposes tripleClick + multiClick",
+          .enabled(if: TestSupport.hidTestingEnabled))
     func bug10MouseTripleClickSurface() async {
+        // The mere existence of these methods is a compile-time guarantee;
+        // the calls below post real HID clicks at (0,0), which is on-screen
+        // (top-left), so only run them when HID testing is opted in.
         let mouse = MouseController()
-        // We can't actually post events during test (no HID tap in CI),
-        // but posting to an off-screen coord won't hurt — the method
-        // should return cleanly.
         _ = await mouse.doubleClick(at: .zero)
         _ = await mouse.tripleClick(at: .zero)
         _ = await mouse.multiClick(at: .zero, count: 1)

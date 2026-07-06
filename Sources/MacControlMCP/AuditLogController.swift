@@ -20,7 +20,9 @@ actor AuditLogController {
         let metadata: [String: JSONValue]?
     }
 
-    private let logPath: URL
+    private var logPath: URL {
+        StoreLocation.baseDirectory.appendingPathComponent("audit.jsonl")
+    }
     private let sessionID: String
     private let isoFormatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
@@ -29,10 +31,6 @@ actor AuditLogController {
     }()
 
     init() {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        self.logPath = home
-            .appendingPathComponent(".mac-control-mcp", isDirectory: true)
-            .appendingPathComponent("audit.jsonl")
         // A short session id so entries from this boot are groupable
         // without recording the full UUID.
         self.sessionID = String(UUID().uuidString.prefix(8)).lowercased()
