@@ -14,6 +14,13 @@ actor ScreenController {
         let height: Int
     }
 
+    /// A single OCR text block. `x`/`y`/`width`/`height` are in IMAGE
+    /// PIXELS (top-left origin) of the captured image — i.e. backing
+    /// resolution, so 2× the point size on a Retina display. They are
+    /// consistent with the returned image's pixel dimensions (annotate /
+    /// crop use). To turn a block center into a click-ready global screen
+    /// POINT, divide by the backing scale — see
+    /// `GroundingController.ocrPixelCenterToPoints`.
     struct OCRBlock: Codable, Sendable {
         let text: String
         let confidence: Double

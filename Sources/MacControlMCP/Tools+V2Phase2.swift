@@ -67,7 +67,7 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "ocr_screen",
-            description: "Capture the screen (or a region) and run OCR. Returns joined text plus per-block coordinates and confidence.",
+            description: "Capture the screen (or a region) and run OCR. Returns joined text plus per-block coordinates and confidence. Coordinates are in IMAGE PIXELS matching image_width/image_height (i.e. backing resolution — 2x point size on Retina), for annotating/cropping the returned image. For click-ready screen points, use the `ground` tool with strategy 'ocr' instead.",
             inputSchema: schema(
                 properties: [
                     "x": .object(["type": .array([.string("integer"), .string("string")])]),
