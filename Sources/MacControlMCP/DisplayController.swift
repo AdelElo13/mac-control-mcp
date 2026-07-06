@@ -27,9 +27,15 @@ actor DisplayController {
         let mainID = CGMainDisplayID()
         return ids.enumerated().map { index, id in
             let bounds = CGDisplayBounds(id)
-            // Pixel dimensions vs point dimensions — scale factor = px/pt
-            let pixelWidth = Double(CGDisplayPixelsWide(id))
-            let scale = pixelWidth / bounds.width
+            // Backing scale = real pixels / points. CGDisplayPixelsWide returns
+            // POINTS in a HiDPI scaled mode, so px/pt collapsed to 1.0 on every
+            // Retina display. The current mode's pixelWidth is the true backing
+            // pixel count; divide by the point width for the real scale.
+            let scale: Double = {
+                guard let mode = CGDisplayCopyDisplayMode(id) else { return 1.0 }
+                let pt = Double(mode.width)
+                return pt > 0 ? Double(mode.pixelWidth) / pt : 1.0
+            }()
             return DisplayInfo(
                 id: UInt32(id),
                 index: index,
