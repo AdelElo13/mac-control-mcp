@@ -388,8 +388,13 @@ extension ToolRegistry {
                   case .number(let x) = obj["x"] ?? .null,
                   case .number(let y) = obj["y"] ?? .null,
                   case .number(let w) = obj["width"] ?? .null,
-                  case .number(let h) = obj["height"] ?? .null else { continue }
-            regions.append(.init(x: Int(x), y: Int(y), width: Int(w), height: Int(h)))
+                  case .number(let h) = obj["height"] ?? .null,
+                  // Reject out-of-Int-range coordinates (Int(Double) traps on
+                  // e.g. 1e300); skip the malformed region rather than crash.
+                  let ix = Int(exactly: x.rounded()), let iy = Int(exactly: y.rounded()),
+                  let iw = Int(exactly: w.rounded()), let ih = Int(exactly: h.rounded())
+            else { continue }
+            regions.append(.init(x: ix, y: iy, width: iw, height: ih))
         }
         guard !regions.isEmpty else {
             return invalidArgument("regions array had no valid entries (need x/y/width/height)")

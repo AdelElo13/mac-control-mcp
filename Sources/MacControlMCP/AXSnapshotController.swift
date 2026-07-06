@@ -69,7 +69,8 @@ actor AXSnapshotController {
     func capture(pid: pid_t, maxDepth: Int = 12) -> SnapshotTaken {
         let root = AXUIElementCreateApplication(pid)
         var flat: [String: NodeSnapshot] = [:]
-        walk(element: root, depth: 0, maxDepth: maxDepth, into: &flat)
+        let deadline = Date().addingTimeInterval(5.0)
+        walk(element: root, depth: 0, maxDepth: maxDepth, into: &flat, deadline: deadline)
 
         let id = "snap_" + String(UUID().uuidString.prefix(12)).lowercased()
         let now = Date()
@@ -133,9 +134,15 @@ actor AXSnapshotController {
         element: AXUIElement,
         depth: Int,
         maxDepth: Int,
-        into flat: inout [String: NodeSnapshot]
+        into flat: inout [String: NodeSnapshot],
+        deadline: Date,
+        nodeCap: Int = 5000
     ) {
         if depth > maxDepth { return }
+        // Wall-clock + node-count budget: without it, ax_snapshot_capture on
+        // a large app blocks the server for tens of seconds (each attribute
+        // read is an IPC round trip). Matches the AX walkers' 5 s / 5000 cap.
+        if Date() >= deadline || flat.count >= nodeCap { return }
         let key = String(CFHash(element), radix: 16)
         if flat[key] != nil { return } // already visited (cycle)
 
@@ -158,7 +165,8 @@ actor AXSnapshotController {
         let res = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &raw)
         if res == .success, let children = raw as? [AXUIElement] {
             for c in children {
-                walk(element: c, depth: depth + 1, maxDepth: maxDepth, into: &flat)
+                if Date() >= deadline || flat.count >= nodeCap { return }
+                walk(element: c, depth: depth + 1, maxDepth: maxDepth, into: &flat, deadline: deadline, nodeCap: nodeCap)
             }
         }
     }

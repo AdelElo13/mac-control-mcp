@@ -186,17 +186,24 @@ public final class AXObserverBridge: @unchecked Sendable {
                 return
             }
 
-            // 4. Attach the observer's source to our dedicated runloop.
+            // 4. Get the observer's runloop source and stash cleanup BEFORE
+            // arming it. `AXObserverGetRunLoopSource` only fetches the source;
+            // no callback can be delivered until the source is added to a
+            // runloop (step 5). If we added the source first, the AX callback
+            // could fire on the runloop thread and call `box.resume()` before
+            // `box.cleanup` was set — the box would already be resolved, so
+            // cleanup never ran, leaking the observer, its source, and the
+            // retained refcon forever.
             let source = AXObserverGetRunLoopSource(observer)
-            CFRunLoopAddSource(self.runloop, source, .defaultMode)
-
-            // 5. Stash cleanup. Whichever resolves first — callback or
-            // timeout — runs this once and nils it out.
             box.cleanup = { [runloop = self.runloop] in
                 CFRunLoopRemoveSource(runloop, source, .defaultMode)
                 AXObserverRemoveNotification(observer, element, notification as CFString)
                 Unmanaged<AXObserverWait>.fromOpaque(refcon).release()
             }
+
+            // 5. Arm it: attach the source so the callback can be delivered.
+            //    cleanup is already in place, so an immediate fire is safe.
+            CFRunLoopAddSource(self.runloop, source, .defaultMode)
 
             // 6. Arm the timeout on a global queue independent of the AX
             // runloop. This is fire-and-forget; `box.resume` is idempotent.

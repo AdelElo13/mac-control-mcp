@@ -646,10 +646,10 @@ final class ToolRegistry: @unchecked Sendable {
         // `auto` (default) now tries clipboard → keys → ax for event
         // fidelity on React/Angular SPAs. See TypeStrategy docs in
         // AccessibilityController.swift.
-        let strategyArg = arguments["strategy"]?.stringValue?.lowercased() ?? "auto"
-        guard let strategy = AccessibilityController.TypeStrategy(rawValue: strategyArg) else {
+        let strategyArg = arguments["strategy"]?.stringValue
+        guard let strategy = AccessibilityController.TypeStrategy.resolve(argument: strategyArg) else {
             return invalidArgument(
-                "type_text strategy must be one of: auto, clipboard, keys, ax (got '\(strategyArg)')."
+                "type_text strategy must be one of: auto, clipboard, keys, ax (got '\(strategyArg ?? "")')."
             )
         }
 

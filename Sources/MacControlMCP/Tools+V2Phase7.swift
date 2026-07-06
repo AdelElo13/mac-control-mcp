@@ -584,7 +584,7 @@ extension ToolRegistry {
         }
         let ok = await mouse.click(at: CGPoint(x: x, y: y), button: .right)
         return ok
-            ? successResult("right click at (\(Int(x)),\(Int(y)))",
+            ? successResult(String(format: "right click at (%.0f,%.0f)", x, y),
                             ["ok": .bool(true), "x": .number(x), "y": .number(y)])
             : errorResult("right_click failed", ["ok": .bool(false)])
     }
@@ -602,7 +602,7 @@ extension ToolRegistry {
         }
         let ok = await mouse.doubleClick(at: CGPoint(x: x, y: y), button: button)
         return ok
-            ? successResult("double-click at (\(Int(x)),\(Int(y)))",
+            ? successResult(String(format: "double-click at (%.0f,%.0f)", x, y),
                             ["ok": .bool(true), "x": .number(x), "y": .number(y), "button": .string(btnRaw)])
             : errorResult("double_click failed", ["ok": .bool(false)])
     }

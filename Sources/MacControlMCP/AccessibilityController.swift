@@ -157,8 +157,9 @@ actor AccessibilityController {
         let root = AXUIElementCreateApplication(pid)
         var visited = Set<AXKey>()
         var output: [ElementInfo] = []
+        let deadline = Date().addingTimeInterval(5.0)
 
-        _ = walk(element: root, depth: 0, maxDepth: max(1, maxDepth), visited: &visited) { element, depth, role in
+        _ = walk(element: root, depth: 0, maxDepth: max(1, maxDepth), visited: &visited, deadline: deadline) { element, depth, role in
             guard self.actionableRoles.contains(role) else { return false }
             output.append(self.buildElementInfo(element: element, depth: depth, cachedRole: role))
             return false
@@ -289,9 +290,23 @@ actor AccessibilityController {
         case clipboard  // paste events only
         case keys       // CGEvent unicode only
         case ax         // AX set_value only
+
+        /// Strategy used when a caller omits `strategy`. `auto` tries
+        /// clipboard → keys → ax for event fidelity on React/Angular SPAs.
+        /// Single source of truth so the default can't drift silently.
+        static let `default`: TypeStrategy = .auto
+
+        /// Resolve a raw tool argument to a concrete strategy.
+        /// - `nil`/empty (argument omitted) → `.default`.
+        /// - a known name (case-insensitive) → that strategy.
+        /// - an unknown non-empty string → `nil` (caller reports an error).
+        static func resolve(argument raw: String?) -> TypeStrategy? {
+            guard let raw, !raw.isEmpty else { return .default }
+            return TypeStrategy(rawValue: raw.lowercased())
+        }
     }
 
-    func typeText(text: String, strategy: TypeStrategy = .auto) async -> TypeTextResult {
+    func typeText(text: String, strategy: TypeStrategy = .default) async -> TypeTextResult {
         switch strategy {
         case .ax:
             return setFocusedElementValue(text)
@@ -926,9 +941,16 @@ actor AccessibilityController {
         depth: Int,
         maxDepth: Int,
         visited: inout Set<AXKey>,
+        deadline: Date,
+        nodeCap: Int = 5000,
         visitor: (AXUIElement, Int, String) -> Bool
     ) -> Bool {
         guard depth <= maxDepth else { return false }
+        // Wall-clock + node-count budget. Each AX attribute read is an IPC
+        // round trip; a wide tree (thousands of nodes) would otherwise let
+        // list_elements hang the server until the client gives up. Returning
+        // `true` unwinds the recursion. Matches treeWalk/findElements' budget.
+        guard Date() < deadline, visited.count < nodeCap else { return true }
 
         guard visited.insert(AXKey(element: element)).inserted else { return false }
 
@@ -938,7 +960,7 @@ actor AccessibilityController {
         }
 
         for child in childElements(of: element) {
-            if walk(element: child, depth: depth + 1, maxDepth: maxDepth, visited: &visited, visitor: visitor) {
+            if walk(element: child, depth: depth + 1, maxDepth: maxDepth, visited: &visited, deadline: deadline, nodeCap: nodeCap, visitor: visitor) {
                 return true
             }
         }

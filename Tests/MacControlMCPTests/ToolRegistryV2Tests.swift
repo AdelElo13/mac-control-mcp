@@ -1,5 +1,6 @@
 import Testing
 import ApplicationServices
+import AppKit
 @testable import MacControlMCP
 
 @Suite("ToolRegistry v0.2.0 tools", .serialized)
@@ -21,6 +22,24 @@ struct ToolRegistryV2Tests {
 
     @Test("clipboard round-trip")
     func clipboardRoundTrip() async {
+        // Preserve the user's real clipboard — this test overwrites it.
+        let pasteboard = NSPasteboard.general
+        let savedItems: [NSPasteboardItem] = (pasteboard.pasteboardItems ?? []).compactMap { item in
+            let copy = NSPasteboardItem()
+            var copiedAny = false
+            for type in item.types {
+                if let data = item.data(forType: type) {
+                    copy.setData(data, forType: type)
+                    copiedAny = true
+                }
+            }
+            return copiedAny ? copy : nil
+        }
+        defer {
+            pasteboard.clearContents()
+            if !savedItems.isEmpty { pasteboard.writeObjects(savedItems) }
+        }
+
         let registry = ToolRegistry(accessibility: AccessibilityController())
         let marker = "mcp-test-\(UUID().uuidString)"
 

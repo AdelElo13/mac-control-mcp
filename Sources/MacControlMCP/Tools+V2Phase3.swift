@@ -292,7 +292,10 @@ extension ToolRegistry {
         let role = arguments["role"]?.stringValue
         let title = arguments["title"]?.stringValue
         let timeout = min(max(arguments["timeout_seconds"]?.doubleValue ?? 5.0, 0.1), 60.0)
-        let intervalMs = max(arguments["poll_interval_ms"]?.intValue ?? 200, 50)
+        // Clamp to [50, 60000] ms: the lower bound avoids a busy-loop, the
+        // upper bound both prevents a UInt64 overflow trap in the nanosecond
+        // multiply below and stops one interval from exceeding the timeout.
+        let intervalMs = min(max(arguments["poll_interval_ms"]?.intValue ?? 200, 50), 60_000)
         let expectDisappear: Bool = {
             if case .bool(let b) = arguments["expect_disappear"] ?? .null { return b }
             return false

@@ -25,14 +25,12 @@ actor ArtifactStore {
         let schema: String            // e.g. "mac-control-mcp.image.v1"
     }
 
-    private let dir: URL
+    private var dir: URL {
+        StoreLocation.baseDirectory.appendingPathComponent("artifacts", isDirectory: true)
+    }
     private let ttl: TimeInterval
 
     init(ttl: TimeInterval = 3600) {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        self.dir = home
-            .appendingPathComponent(".mac-control-mcp", isDirectory: true)
-            .appendingPathComponent("artifacts", isDirectory: true)
         self.ttl = ttl
     }
 

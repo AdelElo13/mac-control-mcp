@@ -541,7 +541,7 @@ extension ToolRegistry {
         }
         let titleFilter = arguments["title_contains"]?.stringValue?.lowercased()
         let timeout = min(max(arguments["timeout_seconds"]?.doubleValue ?? 5.0, 0.1), 60.0)
-        let intervalMs = max(arguments["poll_interval_ms"]?.intValue ?? 250, 50)
+        let intervalMs = min(max(arguments["poll_interval_ms"]?.intValue ?? 250, 50), 60_000)
         let deadline = Date().addingTimeInterval(timeout)
 
         while Date() < deadline {
@@ -581,7 +581,7 @@ extension ToolRegistry {
             return invalidArgument("wait_for_app requires bundle_id or name.")
         }
         let timeout = min(max(arguments["timeout_seconds"]?.doubleValue ?? 5.0, 0.1), 60.0)
-        let intervalMs = max(arguments["poll_interval_ms"]?.intValue ?? 250, 50)
+        let intervalMs = min(max(arguments["poll_interval_ms"]?.intValue ?? 250, 50), 60_000)
         let deadline = Date().addingTimeInterval(timeout)
 
         while Date() < deadline {
@@ -631,7 +631,7 @@ extension ToolRegistry {
 
     func callWaitForFileDialog(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         let timeout = min(max(arguments["timeout_seconds"]?.doubleValue ?? 5.0, 0.1), 60.0)
-        let intervalMs = max(arguments["poll_interval_ms"]?.intValue ?? 250, 50)
+        let intervalMs = min(max(arguments["poll_interval_ms"]?.intValue ?? 250, 50), 60_000)
         let deadline = Date().addingTimeInterval(timeout)
 
         while Date() < deadline {

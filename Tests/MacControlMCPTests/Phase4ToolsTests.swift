@@ -65,10 +65,14 @@ struct Phase4ToolsTests {
         let r2 = await registry.callTool(name: "file_dialog_select_item", arguments: [:])
         #expect(r2.isError == true)
 
-        // confirm has no required args — returns ok regardless of whether a
-        // dialog is actually present (the keystroke is posted either way).
-        let r3 = await registry.callTool(name: "file_dialog_confirm", arguments: [:])
-        #expect(r3.isError == false)
+        // confirm has no required args and posts a real Return keystroke into
+        // whatever app is frontmost — only exercise it when HID testing is
+        // explicitly enabled, so a plain `swift test` can't fire a synthetic
+        // keypress into the developer's session.
+        if TestSupport.hidTestingEnabled {
+            let r3 = await registry.callTool(name: "file_dialog_confirm", arguments: [:])
+            #expect(r3.isError == false)
+        }
     }
 
     @Test("WindowController.setState recognizes canonical state names")
