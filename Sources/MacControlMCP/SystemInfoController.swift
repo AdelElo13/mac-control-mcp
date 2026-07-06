@@ -366,11 +366,12 @@ actor SystemInfoController {
     }
 
     func diskUsage() -> Result<DiskUsage> {
-        // `df -g -P` — POSIX output, GB blocks, single-line per volume even
-        // for long mount names. The -P flag is critical: without it, mount
-        // names with whitespace land on multi-line records that the old
-        // whitespace-split parser broke on (Codex finding).
-        let r = ProcessRunner.run("/bin/df", ["-g", "-P"], timeout: 3)
+        // `df -k -P` — POSIX output, 1024-byte (KB) blocks, single-line per
+        // volume even for long mount names. We use -k instead of -g because
+        // macOS df -g returns 1024-byte blocks despite the name, which caused
+        // fields named *GB to contain raw KB values (~1M× too large).
+        // Divide by 1024² here to produce real GB with 2 decimal precision.
+        let r = ProcessRunner.run("/bin/df", ["-k", "-P"], timeout: 3)
         guard r.ok else {
             return Result(
                 ok: false, data: nil,
@@ -387,9 +388,11 @@ actor SystemInfoController {
             let cols = splitMaxFields(String(line), max: 6)
             guard cols.count >= 6 else { continue }
             let name = cols[0]
-            let total = Double(cols[1]) ?? 0
-            let used = Double(cols[2]) ?? 0
-            let avail = Double(cols[3]) ?? 0
+            let kbToGB = 1024.0 * 1024.0
+            func toGB(_ kb: Double) -> Double { (kb / kbToGB * 100).rounded() / 100 }
+            let total = toGB(Double(cols[1]) ?? 0)
+            let used  = toGB(Double(cols[2]) ?? 0)
+            let avail = toGB(Double(cols[3]) ?? 0)
             let usedPct = Double(cols[4].replacingOccurrences(of: "%", with: "")) ?? 0
             let mount = cols[5]
             guard mount.hasPrefix("/") && !mount.hasPrefix("/System/Volumes/VM") &&
