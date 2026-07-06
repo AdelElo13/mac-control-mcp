@@ -148,7 +148,10 @@ actor AXSnapshotController {
 
         let role = stringAttr(element, kAXRoleAttribute)
         let title = stringAttr(element, kAXTitleAttribute)
-        let value = stringAttr(element, kAXValueAttribute)
+        // Use a value-aware getter: checkboxes/sliders/steppers/radios expose
+        // kAXValue as a number/bool, which `stringAttr` dropped as nil — so
+        // toggling a checkbox produced no diff. Stringify numbers too.
+        let value = valueString(element, kAXValueAttribute)
         let pos = pointAttr(element, kAXPositionAttribute)
         let size = sizeAttr(element, kAXSizeAttribute)
 
@@ -175,6 +178,19 @@ actor AXSnapshotController {
         var raw: CFTypeRef?
         guard AXUIElementCopyAttributeValue(el, attr as CFString, &raw) == .success else { return nil }
         return raw as? String
+    }
+
+    /// Like `stringAttr` but also captures numeric/boolean AX values
+    /// (checkbox 0/1, slider positions, stepper counts) that come back as
+    /// CFNumber/CFBoolean rather than CFString.
+    private func valueString(_ el: AXUIElement, _ attr: String) -> String? {
+        var raw: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, attr as CFString, &raw) == .success,
+              let v = raw else { return nil }
+        if let s = v as? String { return s }
+        if let n = v as? NSNumber { return n.stringValue }
+        if CFGetTypeID(v) == AXValueGetTypeID() { return String(describing: v) }
+        return nil
     }
 
     private func pointAttr(_ el: AXUIElement, _ attr: String) -> (x: Double, y: Double)? {

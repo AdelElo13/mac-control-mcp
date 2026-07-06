@@ -3,6 +3,9 @@ import CoreGraphics
 #if canImport(CoreWLAN)
 import CoreWLAN
 #endif
+#if canImport(AppKit)
+import AppKit
+#endif
 
 /// Hardware-adjacent controls: display brightness, Wi-Fi, Bluetooth,
 /// Night Shift, AirPlay. macOS gates most of these behind system daemons
@@ -149,30 +152,56 @@ actor HardwareController {
             )
         }
         if let direction {
-            let keyCode: CGKeyCode
+            // Brightness is a system-defined ("aux") key, NOT a regular
+            // keyboard virtualKey. The old code posted CGKeyCodes 144/145,
+            // which aren't the brightness keys and changed nothing while
+            // still reporting ok:true. Post NX_KEYTYPE_BRIGHTNESS_UP/DOWN as
+            // NSSystemDefined events, the documented way to drive the keys.
+            #if canImport(AppKit)
+            let auxKey: Int32
             switch direction.lowercased() {
-            case "up":   keyCode = 144  // F1/F2 mapped to brightness on most Macs — use private F-codes
-            case "down": keyCode = 145
+            case "up":   auxKey = 2   // NX_KEYTYPE_BRIGHTNESS_UP
+            case "down": auxKey = 3   // NX_KEYTYPE_BRIGHTNESS_DOWN
             default:
                 return BrightnessResult(
-                    ok: false, level: nil, method: "cgevent",
+                    ok: false, level: nil, method: "nsevent",
                     hint: "direction must be up|down"
                 )
             }
-            guard let src = CGEventSource(stateID: .combinedSessionState) else {
-                return BrightnessResult(
-                    ok: false, level: nil, method: "cgevent",
-                    hint: "CGEventSource() returned nil"
-                )
+            func postAux(_ key: Int32, keyDown: Bool) -> Bool {
+                let state = keyDown ? 0xA : 0xB
+                let data1 = (Int(key) << 16) | (state << 8)
+                guard let ev = NSEvent.otherEvent(
+                    with: .systemDefined,
+                    location: .zero,
+                    modifierFlags: NSEvent.ModifierFlags(rawValue: UInt(state << 8)),
+                    timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: 0,
+                    context: nil,
+                    subtype: 8,
+                    data1: data1,
+                    data2: -1
+                ), let cg = ev.cgEvent else { return false }
+                cg.post(tap: .cghidEventTap)
+                return true
             }
+            var posted = false
             for _ in 0..<4 {
-                let down = CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: true)
-                let up   = CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: false)
-                down?.post(tap: .cghidEventTap)
-                up?.post(tap: .cghidEventTap)
+                let d = postAux(auxKey, keyDown: true)
+                let u = postAux(auxKey, keyDown: false)
+                posted = posted || (d && u)
                 Thread.sleep(forTimeInterval: 0.05)
             }
-            return BrightnessResult(ok: true, level: nil, method: "cgevent", hint: nil)
+            return posted
+                ? BrightnessResult(ok: true, level: nil, method: "nsevent", hint: nil)
+                : BrightnessResult(ok: false, level: nil, method: "nsevent",
+                                   hint: "failed to construct NSSystemDefined brightness event")
+            #else
+            return BrightnessResult(
+                ok: false, level: nil, method: "none",
+                hint: "brightness direction keys require AppKit (macOS)"
+            )
+            #endif
         }
         return BrightnessResult(
             ok: false, level: nil, method: "none",
@@ -202,8 +231,13 @@ actor HardwareController {
         case "off", "disable":
             arg = "off"
         case "toggle":
+            // `nightlight status` prints "on"/"off"; it never prints "enabled",
+            // so the old check always fell through to "on" (toggle could never
+            // turn Night Shift off). Detect the real off-state instead.
             let cur = ProcessRunner.run(bin, ["status"])
-            arg = cur.stdout.contains("enabled") ? "off" : "on"
+            let status = cur.stdout.lowercased()
+            let currentlyOn = status.contains("on") && !status.contains("off")
+            arg = currentlyOn ? "off" : "on"
         default:
             return ToggleResult(
                 ok: false, target: "night_shift", newState: nil,

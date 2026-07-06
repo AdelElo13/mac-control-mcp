@@ -163,13 +163,21 @@ actor MissionControlController {
                 error: "CGEventSource() returned nil"
             )
         }
-        _ = src // silence unused warning — used below
-        let down = CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: true)
-        let up   = CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: false)
-        down?.flags = .maskControl
-        up?.flags = .maskControl
-        down?.post(tap: .cghidEventTap)
-        up?.post(tap: .cghidEventTap)
+        // Don't claim success when the events can't even be constructed — the
+        // old code returned ok:true unconditionally. (Whether the space
+        // actually switches still depends on the Ctrl+number shortcut being
+        // enabled in System Settings; ok here means "keystroke posted".)
+        guard let down = CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: true),
+              let up = CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: false) else {
+            return SpaceSwitchResult(
+                ok: false, targetIndex: index, method: "ctrl_number",
+                error: "failed to construct key events"
+            )
+        }
+        down.flags = .maskControl
+        up.flags = .maskControl
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
         return SpaceSwitchResult(
             ok: true,
             targetIndex: index,

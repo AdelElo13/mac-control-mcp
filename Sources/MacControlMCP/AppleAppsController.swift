@@ -2,6 +2,9 @@ import Foundation
 #if canImport(EventKit)
 import EventKit
 #endif
+#if canImport(Contacts)
+import Contacts
+#endif
 
 /// Native Apple-app automation: Messages, Mail, Calendar, Reminders, Contacts.
 ///
@@ -385,25 +388,34 @@ actor AppleAppsController {
     func listReminders(includeCompleted: Bool, limit: Int) -> Result<[ReminderSummary]> {
         let cap = max(1, min(limit, 200))
         let filter = includeCompleted ? "" : "whose completed is false"
+        // `total` caps globally — the old `if n > cap` capped per list, so a
+        // `limit` of N returned up to N×(number of lists). Records are joined
+        // with a sentinel and coerced to one string: the old code let osascript
+        // print the list comma-separated and split on ", ", silently dropping
+        // any reminder whose title contained ", ".
         let script = """
         tell application "Reminders"
             set out to {}
+            set total to 0
             set ls to lists
             repeat with l in ls
+                if total ≥ \(cap) then exit repeat
                 try
                     set ln to (name of l as string)
                     set items to (every reminder of l \(filter))
-                    set n to (count of items)
-                    if n > \(cap) then set n to \(cap)
-                    repeat with i from 1 to n
-                        set r to item i of items
+                    repeat with r in items
+                        if total ≥ \(cap) then exit repeat
                         set t to (name of r as string)
                         set c to completed of r
                         set end of out to ln & "||" & t & "||" & (c as string)
+                        set total to total + 1
                     end repeat
                 end try
             end repeat
-            return out
+            set AppleScript's text item delimiters to "§§REC§§"
+            set outStr to out as string
+            set AppleScript's text item delimiters to ""
+            return outStr
         end tell
         """
         let r = OsascriptRunner.run(script)
@@ -412,7 +424,7 @@ actor AppleAppsController {
                           error: r.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
         }
         let lines = r.stdout
-            .components(separatedBy: ", ")
+            .components(separatedBy: "§§REC§§")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
         let reminders: [ReminderSummary] = lines.compactMap { line in
@@ -435,72 +447,35 @@ actor AppleAppsController {
         public let emails: [String]
     }
 
-    /// Search Contacts.app by name substring. Returns phone numbers + emails
-    /// — useful for the "find Adel's phone" → "imessage_send" handoff.
+    /// Search contacts by name substring via CNContactStore — works whether or
+    /// not Contacts.app is running (no AppleScript / no -600 error).
     func searchContacts(query: String, limit: Int) -> Result<[Contact]> {
-        func esc(_ s: String) -> String {
-            s.replacingOccurrences(of: "\\", with: "\\\\")
-             .replacingOccurrences(of: "\"", with: "\\\"")
-        }
+        #if canImport(Contacts)
         let cap = max(1, min(limit, 50))
-        let script = """
-        tell application "Contacts"
-            set out to {}
-            set matches to (every person whose name contains "\(esc(query))")
-            set n to (count of matches)
-            if n > \(cap) then set n to \(cap)
-            repeat with i from 1 to n
-                set p to item i of matches
-                set nm to (name of p as string)
-                set phoneList to ""
-                repeat with ph in (phones of p)
-                    set phoneList to phoneList & (value of ph as string) & ";"
-                end repeat
-                set emailList to ""
-                repeat with em in (emails of p)
-                    set emailList to emailList & (value of em as string) & ";"
-                end repeat
-                set end of out to nm & "||" & phoneList & "||" & emailList
-            end repeat
-            return out
-        end tell
-        """
-        let r = OsascriptRunner.run(script)
-        guard r.ok else {
+        let store = CNContactStore()
+        let keys: [CNKeyDescriptor] = [
+            CNContactGivenNameKey as CNKeyDescriptor,
+            CNContactFamilyNameKey as CNKeyDescriptor,
+            CNContactPhoneNumbersKey as CNKeyDescriptor,
+            CNContactEmailAddressesKey as CNKeyDescriptor,
+        ]
+        let predicate = CNContact.predicateForContacts(matchingName: query)
+        do {
+            let raw = try store.unifiedContacts(matching: predicate, keysToFetch: keys)
+            let contacts: [Contact] = raw.prefix(cap).map { c in
+                let name = "\(c.givenName) \(c.familyName)"
+                    .trimmingCharacters(in: .whitespaces)
+                let phones = c.phoneNumbers.map { $0.value.stringValue }
+                let emails = c.emailAddresses.map { String($0.value) }
+                return Contact(name: name, phones: phones, emails: emails)
+            }
+            return Result(ok: true, data: contacts, error: nil)
+        } catch {
             return Result(ok: false, data: nil,
-                          error: r.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+                          error: "CNContactStore: \(error.localizedDescription)")
         }
-        let lines = r.stdout
-            .components(separatedBy: ", ")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        // v0.7.1 fix (BUG 4): AppleScript's `phones of p` values can
-        // contain embedded newlines (mobile numbers formatted by
-        // Contacts.app) and stray left-parens when the phone field is
-        // free-text. Strip whitespace + newlines, drop empties, clean
-        // leading punctuation that isn't a `+` or digit.
-        func cleanPhone(_ raw: String) -> String? {
-            var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            // Strip a single leading `(` when it's immediately followed by
-            // a `+` — seen in contacts stored as `(+31 (6) ...`.
-            if s.hasPrefix("(+") { s.removeFirst() }
-            return s.isEmpty ? nil : s
-        }
-        func cleanEmail(_ raw: String) -> String? {
-            let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !s.isEmpty, s.contains("@") else { return nil }
-            return s
-        }
-        let contacts: [Contact] = lines.compactMap { line in
-            let parts = line.components(separatedBy: "||")
-            guard parts.count >= 3 else { return nil }
-            let name = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
-            let phones = parts[1].split(separator: ";")
-                .compactMap { cleanPhone(String($0)) }
-            let emails = parts[2].split(separator: ";")
-                .compactMap { cleanEmail(String($0)) }
-            return Contact(name: name, phones: phones, emails: emails)
-        }
-        return Result(ok: true, data: contacts, error: nil)
+        #else
+        return Result(ok: false, data: nil, error: "Contacts framework not available on this platform.")
+        #endif
     }
 }

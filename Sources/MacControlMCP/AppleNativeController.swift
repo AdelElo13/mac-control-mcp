@@ -214,10 +214,20 @@ actor AppleNativeController {
     /// return a structured hint instructing the user to create one.
     func invokeAppIntent(bundleId: String, intent: String, input: String?) async -> AppIntentInvokeResult {
         var args = ["run", intent]
+        // `shortcuts run` has no `--input <text>` flag (that made every call
+        // with input fail); it reads input from a file via `--input-path`.
+        // Stage the text in a temp file and clean it up afterwards.
+        var tempInput: URL?
         if let input, !input.isEmpty {
-            args.append(contentsOf: ["--input", input])
+            let url = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("mac-control-mcp-intent-\(UUID().uuidString).txt")
+            if (try? input.write(to: url, atomically: true, encoding: .utf8)) != nil {
+                args.append(contentsOf: ["--input-path", url.path])
+                tempInput = url
+            }
         }
         let r = ProcessRunner.run("/usr/bin/shortcuts", args, timeout: 30)
+        if let tempInput { try? FileManager.default.removeItem(at: tempInput) }
         return AppIntentInvokeResult(
             ok: r.ok,
             bundleId: bundleId,

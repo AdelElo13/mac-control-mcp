@@ -260,6 +260,16 @@ extension ToolRegistry {
         }
         let maxDepth = max(1, min(arguments["max_depth"]?.intValue ?? 12, 32))
         let r = await axSnapshot.capture(pid: pid, maxDepth: maxDepth)
+        // 0 nodes means the AX root itself was unreadable (missing
+        // Accessibility permission or a dead/UI-less pid) — every app has at
+        // least a root + window. Reporting success here produced garbage
+        // snapshots and false "no changes" diffs.
+        guard r.nodeCount > 0 else {
+            return errorResult(
+                "ax_snapshot_capture read 0 nodes for pid \(pid); the AX tree is unreadable (grant Accessibility permission, or the process has no UI).",
+                ["ok": .bool(false), "pid": .number(Double(pid)), "node_count": .number(0)]
+            )
+        }
         return successResult("snapshot \(r.snapshotID) captured, \(r.nodeCount) nodes",
                              ["ok": .bool(true), "result": encodeAsJSONValue(r)])
     }
@@ -291,16 +301,26 @@ extension ToolRegistry {
             bundleId: arguments["bundle_id"]?.stringValue,
             tier: nil,
             result: arguments["result"]?.stringValue,
-            metadata: nil // v0.6.0: simple string payloads; extend later
+            metadata: arguments["metadata"]?.objectValue
         )
         return successResult("audit entry appended",
                              ["ok": .bool(true), "event": .string(event)])
     }
 
     func callAuditLogRead(_ arguments: [String: JSONValue]) async -> ToolCallResult {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let since = arguments["since_iso"]?.stringValue.flatMap { formatter.date(from: $0) }
+        // Parse since_iso tolerantly: standard ISO-8601 without fractional
+        // seconds (e.g. "2026-07-06T10:00:00Z") must still work. The old
+        // formatter required fractional seconds, so those inputs silently
+        // parsed to nil and the since filter was dropped entirely.
+        func parseISO(_ s: String) -> Date? {
+            let withFrac = ISO8601DateFormatter()
+            withFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let d = withFrac.date(from: s) { return d }
+            let plain = ISO8601DateFormatter()
+            plain.formatOptions = [.withInternetDateTime]
+            return plain.date(from: s)
+        }
+        let since = arguments["since_iso"]?.stringValue.flatMap(parseISO)
         let filterTool = arguments["filter_tool"]?.stringValue
         let filterEvent = arguments["filter_event"]?.stringValue
         let limit = arguments["limit"]?.intValue ?? 500

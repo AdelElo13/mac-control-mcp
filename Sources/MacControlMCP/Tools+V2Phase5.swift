@@ -742,6 +742,12 @@ extension ToolRegistry {
         }
         let role = arguments["role"]?.stringValue
         let title = arguments["title"]?.stringValue
+        // Require a real target. With both omitted, findElement matches the
+        // first element (the app root) on attempt 0, so the tool reported
+        // "visible after 0 scroll(s)" without scrolling or finding anything.
+        guard (role?.isEmpty == false) || (title?.isEmpty == false) else {
+            return invalidArgument("scroll_to_element requires at least one of 'role' or 'title'.")
+        }
         let maxScrolls = max(1, min(arguments["max_scrolls"]?.intValue ?? 30, 200))
 
         for attempt in 0..<maxScrolls {

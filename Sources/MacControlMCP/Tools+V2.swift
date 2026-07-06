@@ -1,5 +1,6 @@
 import Foundation
 import ApplicationServices
+import AppKit
 
 // MARK: - Tool definitions (v0.2.0)
 
@@ -119,12 +120,11 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "list_menu_titles",
-            description: "List top-level menubar titles for an app — useful for discovery before click_menu_path.",
+            description: "List top-level menubar titles for an app — useful for discovery before click_menu_path. Omit pid to use the frontmost app.",
             inputSchema: schema(
                 properties: [
                     "pid": .object(["type": .array([.string("integer"), .string("string")])])
-                ],
-                required: ["pid"]
+                ]
             )
         ),
         MCPToolDefinition(
@@ -470,8 +470,16 @@ extension ToolRegistry {
     }
 
     func callListMenuTitles(_ arguments: [String: JSONValue]) async -> ToolCallResult {
-        guard let pid = parsePID(arguments["pid"]) else {
-            return invalidArgument("list_menu_titles requires a positive integer pid.")
+        let pid: pid_t
+        if let provided = parsePID(arguments["pid"]) {
+            pid = provided
+        } else if arguments["pid"] == nil {
+            guard let app = NSWorkspace.shared.frontmostApplication else {
+                return errorResult("No frontmost application found.", ["ok": .bool(false)])
+            }
+            pid = app.processIdentifier
+        } else {
+            return invalidArgument("list_menu_titles: pid must be a positive integer.")
         }
         let titles = await menus.topLevelTitles(pid: pid)
         return successResult(

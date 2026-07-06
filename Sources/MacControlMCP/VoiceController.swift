@@ -21,6 +21,33 @@ import Speech
 ///
 /// All paths that touch TCC degrade gracefully with a structured
 /// `{ok:false, hint: "..."}` result rather than crashing.
+/// Keeps `AVSpeechSynthesizer` instances alive for the duration of an
+/// utterance. `text_to_speech` speak-mode created a local synthesizer that
+/// was deallocated the moment the call returned, cancelling speech before a
+/// word came out (while still reporting ok:true). This retains each
+/// synthesizer until its delegate reports the utterance finished/cancelled.
+@MainActor
+final class SpeechRetainer: NSObject, @preconcurrency AVSpeechSynthesizerDelegate {
+    static let shared = SpeechRetainer()
+    // Keyed by ObjectIdentifier (Sendable) so the nonisolated delegate
+    // callbacks can schedule removal without capturing the non-Sendable
+    // synthesizer across the actor hop.
+    private var active: [ObjectIdentifier: AVSpeechSynthesizer] = [:]
+
+    func speak(_ utterance: AVSpeechUtterance, with synth: AVSpeechSynthesizer) {
+        synth.delegate = self
+        active[ObjectIdentifier(synth)] = synth
+        synth.speak(utterance)
+    }
+
+    func speechSynthesizer(_ synth: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        active.removeValue(forKey: ObjectIdentifier(synth))
+    }
+    func speechSynthesizer(_ synth: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        active.removeValue(forKey: ObjectIdentifier(synth))
+    }
+}
+
 actor VoiceController {
 
     public struct SpeechResult: Codable, Sendable {
@@ -167,7 +194,10 @@ actor VoiceController {
                 error: r.ok ? nil : r.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             )
         }
-        // Speak aloud via AVSpeechSynthesizer on the main actor.
+        // Speak aloud via AVSpeechSynthesizer on the main actor. The
+        // synthesizer is retained by SpeechRetainer until the utterance
+        // finishes — a local instance would be deallocated immediately,
+        // cancelling speech before anything is heard.
         let synthesisError = await MainActor.run { () -> String? in
             let synth = AVSpeechSynthesizer()
             let utterance = AVSpeechUtterance(string: text)
@@ -176,7 +206,7 @@ actor VoiceController {
                    ?? AVSpeechSynthesisVoice(language: voice) {
                 utterance.voice = avVoice
             }
-            synth.speak(utterance)
+            SpeechRetainer.shared.speak(utterance, with: synth)
             return nil
         }
         return SynthesisResult(ok: synthesisError == nil, mode: "speak",
