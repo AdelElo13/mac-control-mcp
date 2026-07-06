@@ -88,28 +88,53 @@ actor VoiceController {
         let request = SFSpeechURLRecognitionRequest(url: url)
         request.requiresOnDeviceRecognition = recognizer.supportsOnDeviceRecognition
 
+        // Hold strong refs to the recognizer + task and enforce a timeout.
+        // The old code resumed only on error or `isFinal`, so a recognition
+        // that stalls (e.g. server-side path when on-device isn't supported,
+        // with no/slow network) left the continuation — and the tool call —
+        // hanging forever. The lock-guarded box makes single-resume and the
+        // cross-thread ref lifetime safe.
+        let timeout: TimeInterval = 30
         return await withCheckedContinuation { continuation in
-            var resumed = false
-            recognizer.recognitionTask(with: request) { result, error in
-                if resumed { return }
+            final class State: @unchecked Sendable {
+                let lock = NSLock()
+                var resumed = false
+                var task: SFSpeechRecognitionTask?
+                var recognizer: SFSpeechRecognizer?
+            }
+            let state = State()
+            state.recognizer = recognizer
+
+            let finish: @Sendable (SpeechResult) -> Void = { result in
+                state.lock.lock()
+                if state.resumed { state.lock.unlock(); return }
+                state.resumed = true
+                let task = state.task
+                state.task = nil
+                state.recognizer = nil   // release the strong ref
+                state.lock.unlock()
+                task?.cancel()
+                continuation.resume(returning: result)
+            }
+
+            let task = recognizer.recognitionTask(with: request) { result, error in
                 if let error {
-                    resumed = true
-                    continuation.resume(returning: SpeechResult(
-                        ok: false, text: nil, language: language,
-                        error: "recognition failed: \(error.localizedDescription)"
-                    ))
+                    finish(SpeechResult(ok: false, text: nil, language: language,
+                                        error: "recognition failed: \(error.localizedDescription)"))
                     return
                 }
                 guard let result else { return }
                 if result.isFinal {
-                    resumed = true
-                    continuation.resume(returning: SpeechResult(
-                        ok: true,
-                        text: result.bestTranscription.formattedString,
-                        language: language,
-                        error: nil
-                    ))
+                    finish(SpeechResult(ok: true,
+                                        text: result.bestTranscription.formattedString,
+                                        language: language, error: nil))
                 }
+            }
+            state.lock.lock(); state.task = task; state.lock.unlock()
+
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                finish(SpeechResult(ok: false, text: nil, language: language,
+                                    error: "speech recognition timed out after \(Int(timeout))s"))
             }
         }
         #else
