@@ -104,7 +104,9 @@ actor AuditLogController {
             out.append(entry)
             if out.count >= limit { break }
         }
-        return out.reversed() // caller gets chronological order
+        // Newest-first, matching the audit_log_read tool contract. The loop
+        // above already walks lines newest→oldest, so `out` is newest-first.
+        return out
     }
 
     private func ensureParentExists() throws {

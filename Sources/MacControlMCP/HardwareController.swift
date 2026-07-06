@@ -202,8 +202,13 @@ actor HardwareController {
         case "off", "disable":
             arg = "off"
         case "toggle":
+            // `nightlight status` prints "on"/"off"; it never prints "enabled",
+            // so the old check always fell through to "on" (toggle could never
+            // turn Night Shift off). Detect the real off-state instead.
             let cur = ProcessRunner.run(bin, ["status"])
-            arg = cur.stdout.contains("enabled") ? "off" : "on"
+            let status = cur.stdout.lowercased()
+            let currentlyOn = status.contains("on") && !status.contains("off")
+            arg = currentlyOn ? "off" : "on"
         default:
             return ToggleResult(
                 ok: false, target: "night_shift", newState: nil,

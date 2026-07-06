@@ -327,7 +327,10 @@ actor SystemInfoController {
             )
         }
 
-        let enabled = (root["controller_properties"] as? [String: Any])?["controller_state"] as? String == "on_state"
+        // system_profiler reports controller_state as "attrib_on"/"attrib_off"
+        // (verified on macOS 14/15), not "on_state" — the old literal never
+        // matched, so bluetooth always reported disabled.
+        let enabled = (root["controller_properties"] as? [String: Any])?["controller_state"] as? String == "attrib_on"
         var devices: [BluetoothSummary.Device] = []
 
         func collect(from dict: [String: Any], connected: Bool) {
