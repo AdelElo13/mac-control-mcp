@@ -134,7 +134,7 @@ cat > "${APP_PATH}/Contents/Info.plist" <<EOF
     <string>mac-control-mcp searches your Downloads folder via Spotlight so the AI agent can locate files you've just downloaded.</string>
     <!--
     v0.8.0: EventKit + Contacts + Location access. Without these TCC keys,
-    EKEventStore.requestFullAccessToEvents silently returns `denied` and
+    EKEventStore.requestFullAccessToEvents silently returns "denied" and
     CNContactStore.requestAccess does the same. The strings appear in
     the macOS prompt and in System Settings → Privacy entries.
     -->
