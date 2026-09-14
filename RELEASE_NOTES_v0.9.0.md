@@ -48,6 +48,9 @@ Built from a live audit of every read-only tool against the shipped v0.8.3 (`doc
 - `ground` (AX) searches 32 levels deep and returns `bounds` + `element_id`; `ground` (OCR) targets the window instead of the main display.
 - `ax_snapshot_diff` reports nothing on an idle app; nodes are matched by structure and frame, title edits show as `changed`.
 - Test suite no longer touches the developer's clipboard (private pasteboards).
+- A relabelled control keeps its element id: "Start" → "Stop" used to be mistaken for an id collision, which evicted the stable id and handed out a random one.
+- Text tools treat an app-reported selection range as untrusted input: a negative or overflowing `AXSelectedTextRange` is refused (`invalid_selection_range`) instead of trapping the server.
+- `clipboard_write(image_path:)` decides "regular file, under 50 MB" on the open descriptor (`fstat`), so a path swapped to a FIFO after the initial check cannot block the server.
 - Fixed (present since v0.8): a SwiftUI element with a non-finite AX frame (System Settings, an `AXImage` with `position = NaN`) made the JSON encoder reject the whole `get_ui_tree` response, and the server answered nothing — the client hung until its own timeout (90 s). Non-finite numbers now encode as `null` (that call takes 465 ms), and a response that still cannot be encoded is answered with a JSON-RPC `internalError` for the same id instead of silence.
 
 ## Upgrade notes
