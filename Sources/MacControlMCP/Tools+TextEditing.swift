@@ -80,11 +80,11 @@ extension ToolRegistry {
                     ]),
                     "location": .object([
                         "type": .array([.string("integer"), .string("string")]),
-                        "description": .string("0-based character index where the selection starts.")
+                        "description": .string("0-based start offset of the selection, in UTF-16 code units (the unit AX uses).")
                     ]),
                     "length": .object([
                         "type": .array([.string("integer"), .string("string")]),
-                        "description": .string("Number of characters selected; 0 for a plain caret.")
+                        "description": .string("Selection length in UTF-16 code units; 0 for a plain caret.")
                     ])
                 ],
                 required: ["location", "length"]
@@ -129,11 +129,11 @@ extension ToolRegistry {
                     ]),
                     "location": .object([
                         "type": .array([.string("integer"), .string("string")]),
-                        "description": .string("0-based character index where the replaced range starts.")
+                        "description": .string("0-based start offset of the replaced range, in UTF-16 code units.")
                     ]),
                     "length": .object([
                         "type": .array([.string("integer"), .string("string")]),
-                        "description": .string("Number of characters to replace; 0 inserts at that index.")
+                        "description": .string("Length to replace in UTF-16 code units; 0 inserts at that offset.")
                     ]),
                     "text": .object([
                         "type": .string("string"),
@@ -159,7 +159,7 @@ extension ToolRegistry {
                     ]),
                     "max_chars": .object([
                         "type": .array([.string("integer"), .string("string")]),
-                        "description": .string("Cap the returned text at this many characters (must be > 0). Omit for the whole value.")
+                        "description": .string("Cap the returned text at this many UTF-16 code units (must be > 0); cuts on a scalar boundary, never mid-surrogate. Omit for the whole value.")
                     ])
                 ]
             )
@@ -237,6 +237,7 @@ extension ToolRegistry {
             "error_code": .string(failure.code),
             "error": .string(failure.message)
         ]
+        if let reason = failure.reason { payload["reason"] = .string(reason) }
         if let hint = failure.hint { payload["hint"] = .string(hint) }
         payload.merge(extra) { current, _ in current }
         return errorResult("\(tool): \(failure.message)", payload)
@@ -384,7 +385,7 @@ extension ToolRegistry {
             var payload = Self.writePayload(outcome, source: target.source)
             payload.merge(target.identity) { current, _ in current }
             return successResult(
-                "Inserted \(outcome.insertedCharacters) character(s) at \(outcome.range.location).",
+                "Inserted \(outcome.insertedCharacters) UTF-16 unit(s) at \(outcome.range.location)\(outcome.applied ? "" : " — but the element applied something else").",
                 payload
             )
         } catch {
@@ -427,7 +428,7 @@ extension ToolRegistry {
             var payload = Self.writePayload(outcome, source: target.source)
             payload.merge(target.identity) { current, _ in current }
             return successResult(
-                "Replaced \(length) character(s) at \(location) with \(outcome.insertedCharacters).",
+                "Replaced \(length) UTF-16 unit(s) at \(location) with \(outcome.insertedCharacters)\(outcome.applied ? "" : " — but the element applied something else").",
                 payload
             )
         } catch {
@@ -438,14 +439,24 @@ extension ToolRegistry {
     private static func writePayload(
         _ outcome: TextEditingController.WriteOutcome, source: String
     ) -> [String: JSONValue] {
-        [
+        var payload: [String: JSONValue] = [
             "ok": .bool(true),
             "source": .string(source),
             "range": rangePayload(outcome.range),
+            // UTF-16 code units — the unit AX ranges and counts use.
             "inserted_characters": .number(Double(outcome.insertedCharacters)),
             "collapsed_selection": .bool(outcome.collapsedSelection),
-            "selection_after": outcome.selectionAfter.map(rangePayload) ?? .null
+            "selection_after": outcome.selectionAfter.map(rangePayload) ?? .null,
+            "applied": .bool(outcome.applied),
+            "verification": .string(outcome.verification)
         ]
+        if let observed = outcome.observedText {
+            payload["observed_text"] = .string(observed)
+            payload["hint"] = .string(
+                "The element applied something other than the requested edit — compare observed_text with what you asked for before continuing."
+            )
+        }
+        return payload
     }
 
     // MARK: - text_get_value
@@ -469,17 +480,18 @@ extension ToolRegistry {
         case .ok(let value): target = value
         }
         do {
-            let value = try await textEditing.value(of: target.element, maxChars: maxChars)
+            let value = try await textEditing.value(of: target.element, maxUTF16Units: maxChars)
             var payload: [String: JSONValue] = [
                 "ok": .bool(true),
                 "source": .string(target.source),
                 "value": .string(value.text),
                 "number_of_characters": value.numberOfCharacters.map { .number(Double($0)) } ?? .null,
+                "returned_characters": .number(Double(value.text.utf16.count)),
                 "truncated": .bool(value.truncated)
             ]
             payload.merge(target.identity) { current, _ in current }
             return successResult(
-                "Read \(value.text.count) character(s)\(value.truncated ? " (truncated)" : "").",
+                "Read \(value.text.utf16.count) UTF-16 unit(s)\(value.truncated ? " (truncated)" : "").",
                 payload
             )
         } catch {

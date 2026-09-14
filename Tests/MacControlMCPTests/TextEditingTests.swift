@@ -117,29 +117,31 @@ struct TextEditingTests {
 
     @Test("truncate reports the untruncated value when it fits")
     func truncateFits() {
-        let r = TextEditingController.truncate("hello", maxChars: 10)
+        let r = TextEditingController.truncate("hello", maxUTF16Units: 10)
         #expect(r.text == "hello")
         #expect(r.truncated == false)
     }
 
     @Test("truncate cuts to maxChars and flags it")
     func truncateCuts() {
-        let r = TextEditingController.truncate("hello world", maxChars: 5)
+        let r = TextEditingController.truncate("hello world", maxUTF16Units: 5)
         #expect(r.text == "hello")
         #expect(r.truncated == true)
     }
 
     @Test("truncate with no limit returns everything")
     func truncateNoLimit() {
-        let r = TextEditingController.truncate("hello world", maxChars: nil)
+        let r = TextEditingController.truncate("hello world", maxUTF16Units: nil)
         #expect(r.text == "hello world")
         #expect(r.truncated == false)
     }
 
-    @Test("truncate counts characters, not UTF-8 bytes")
+    @Test("truncate counts UTF-16 code units, not graphemes or bytes")
     func truncateUnicode() {
-        let r = TextEditingController.truncate("héllo→wörld", maxChars: 6)
+        // "héllo→wörld" is 11 UTF-16 units (all BMP), so a 6-unit cap keeps 6.
+        let r = TextEditingController.truncate("héllo→wörld", maxUTF16Units: 6)
         #expect(r.text == "héllo→")
+        #expect(r.text.utf16.count == 6)
         #expect(r.truncated == true)
     }
 

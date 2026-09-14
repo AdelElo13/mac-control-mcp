@@ -17,15 +17,30 @@ import CoreGraphics
 /// select-all-and-retype: an element that is not frontmost can still be
 /// edited, and text the agent did not intend to touch is not disturbed.
 ///
-/// Elements that refuse `AXSelectedText` writes (many Electron/Chromium text
-/// surfaces expose the attribute read-only) are reported as `not_supported`
-/// with a pointer at `type_text`, rather than silently doing nothing.
+/// UNITS (v0.9 review, HIGH): every offset, length and count that crosses the
+/// AX boundary is a **UTF-16 code unit**, because that is what AX itself uses
+/// — `AXSelectedTextRange` on "a😀b" reports length 4, not 3. Swift's
+/// `String.count` counts grapheme clusters and would have made
+/// `inserted_characters`, the `number_of_characters` fallback and `max_chars`
+/// disagree with the app for any non-BMP text. All of those now go through
+/// `utf16.count`. `truncate` cuts on a scalar boundary so it can never emit a
+/// lone surrogate.
+///
+/// WRITES ARE VERIFIED (v0.9 review, HIGH): AX happily returns `.success` for
+/// a range/text write that the element then ignores — the exact silent-no-op
+/// class this repo already hit with `AXPress` on disabled controls. Every
+/// write is therefore read back: a selection that did not take reports
+/// `not_supported` / `selection_not_applied` and no text is written; a text
+/// write that changed nothing reports `not_supported` / `write_not_applied`;
+/// a write that landed differently than requested still returns ok but with
+/// `applied: false` and the observed text.
 actor TextEditingController {
 
     // MARK: - Typed values
 
-    /// A character range in an AX text element. This is the typed form of
-    /// what `get_element_attributes` stringifies as `"range(2115,0)"`.
+    /// A character range in an AX text element, in UTF-16 code units. This is
+    /// the typed form of what `get_element_attributes` stringifies as
+    /// `"range(2115,0)"`.
     struct TextRange: Codable, Sendable, Equatable {
         let location: Int
         let length: Int
@@ -46,9 +61,9 @@ actor TextEditingController {
         case permissionMissing
         /// The element handle is stale/dead, or the pid has no focused element.
         case notFound
-        /// The element is alive but is not a text element, or refuses the
-        /// write (read-only AXSelectedText).
-        case notSupported(String)
+        /// The element is alive but cannot serve this request: not a text
+        /// element, a secure field, or it rejected/ignored the write.
+        case notSupported(String, reason: String)
         /// The caller asked for a range the document does not have. A caller
         /// mistake, not an element limitation — surfaced separately so the
         /// "use type_text instead" hint is not attached to it.
@@ -66,13 +81,26 @@ actor TextEditingController {
             }
         }
 
+        /// Machine-readable sub-reason. Stable across versions.
+        var reason: String? {
+            switch self {
+            case .permissionMissing:          return "ax_not_trusted"
+            case .notFound:                    return "element_gone"
+            case .notSupported(_, let reason): return reason
+            case .invalidRange:                return "range_out_of_bounds"
+            case .axError:                     return "ax_error"
+            }
+        }
+
         var message: String {
             switch self {
             case .permissionMissing:
                 return "Accessibility permission is not granted to this process."
             case .notFound:
                 return "The target element is gone (stale element_id, or the app has no focused element)."
-            case .notSupported(let detail), .invalidRange(let detail):
+            case .notSupported(let detail, _):
+                return detail
+            case .invalidRange(let detail):
                 return detail
             case .axError(let status, let detail):
                 return "\(detail) (AXError=\(status))"
@@ -85,10 +113,19 @@ actor TextEditingController {
                 return "Grant Accessibility in System Settings → Privacy & Security → Accessibility, then retry. open_permission_pane(pane=\"accessibility\") deep-links there."
             case .notFound:
                 return "Re-resolve the element with find_elements/query_elements (ids expire after 5 minutes), or pass pid to target the app's currently focused element."
-            case .notSupported:
-                return "This element does not accept AX text edits. Focus it and use type_text (clipboard/keys strategy) instead, or set the whole value with set_element_attribute(AXValue)."
+            case .notSupported(_, let reason):
+                switch reason {
+                case "secure_field":
+                    return "This is an AXSecureTextField (password field). mac-control-mcp refuses to read or write it; ask the user to type the value themselves."
+                case "selection_not_applied":
+                    return "The element accepted the AXSelectedTextRange write but did not apply it — nothing was typed. Focus it and use type_text (clipboard/keys strategy) instead."
+                case "write_not_applied":
+                    return "The element accepted the AXSelectedText write but its value did not change. Focus it and use type_text (clipboard/keys strategy) instead."
+                default:
+                    return "This element does not accept AX text edits. Focus it and use type_text (clipboard/keys strategy) instead, or set the whole value with set_element_attribute(AXValue)."
+                }
             case .invalidRange:
-                return "Read the current length first (text_get_selection reports number_of_characters) and clamp the range to it."
+                return "Read the current length first (text_get_selection reports number_of_characters, in UTF-16 units) and clamp the range to it."
             case .axError:
                 return nil
             }
@@ -116,18 +153,42 @@ actor TextEditingController {
     }
 
     struct WriteOutcome: Sendable {
+        /// The range the write targeted (UTF-16 units).
         let range: TextRange
+        /// UTF-16 code units of the inserted text.
         let insertedCharacters: Int
         /// Selection the element reports *after* the write, when it exposes one.
         let selectionAfter: TextRange?
         /// True when a non-empty selection was collapsed before inserting.
         let collapsedSelection: Bool
+        /// False when the element applied something other than what we asked
+        /// for. A write that applied nothing at all throws instead.
+        let applied: Bool
+        /// The element's text after the write, when it differs from what was
+        /// requested (so the caller can see what actually happened).
+        let observedText: String?
+        /// How the write was verified: "value" | "string_for_range" | "unverified".
+        let verification: String
     }
 
     struct Value: Sendable {
         let text: String
+        /// UTF-16 code units in the FULL value (not in the truncated text).
         let numberOfCharacters: Int?
         let truncated: Bool
+    }
+
+    // MARK: - Construction
+
+    private let ax: any AXTextBackend
+    private let isTrusted: @Sendable () -> Bool
+
+    init(
+        backend: any AXTextBackend = LiveAXTextBackend(),
+        isTrusted: @escaping @Sendable () -> Bool = { AXIsProcessTrusted() }
+    ) {
+        self.ax = backend
+        self.isTrusted = isTrusted
     }
 
     // MARK: - Pure helpers (unit-testable without a live element)
@@ -156,20 +217,52 @@ actor TextEditingController {
         return AXValueCreate(.cfRange, &range)
     }
 
-    /// Validate a caller-supplied range. Returns nil when acceptable, else a
-    /// human-readable reason. `numberOfCharacters` nil means the element does
-    /// not report a length — we then check signs only rather than guessing.
+    /// Validate a caller-supplied range, in UTF-16 units. Returns nil when
+    /// acceptable, else a human-readable reason. `numberOfCharacters` nil
+    /// means the element does not report a length — we then check signs only
+    /// rather than guessing.
     static func validateRange(location: Int, length: Int, numberOfCharacters: Int?) -> String? {
         if location < 0 { return "location must be >= 0 (got \(location))." }
         if length < 0 { return "length must be >= 0 (got \(length))." }
         guard let total = numberOfCharacters else { return nil }
         if location > total {
-            return "location \(location) is past the end of the text (number_of_characters=\(total))."
+            return "location \(location) is past the end of the text (number_of_characters=\(total), UTF-16 units)."
         }
         if location + length > total {
-            return "range \(location)+\(length) exceeds the text length (number_of_characters=\(total))."
+            return "range \(location)+\(length) exceeds the text length (number_of_characters=\(total), UTF-16 units)."
         }
         return nil
+    }
+
+    /// Truncate to at most `maxUTF16Units` UTF-16 code units, cutting only on
+    /// a Unicode scalar boundary so the result can never end in a lone
+    /// surrogate (which would be an invalid string on the wire).
+    ///
+    /// Grapheme clusters MAY be split (a 🇳🇱 flag is two scalars): the caller
+    /// asked for a byte-budget-like cap, and silently returning fewer units
+    /// than asked is better than returning broken UTF-16.
+    static func truncate(_ text: String, maxUTF16Units: Int?) -> (text: String, truncated: Bool) {
+        guard let limit = maxUTF16Units, text.utf16.count > limit else { return (text, false) }
+        var out = String()
+        var used = 0
+        for scalar in text.unicodeScalars {
+            let width = UTF16.width(scalar)
+            if used + width > limit { break }
+            out.unicodeScalars.append(scalar)
+            used += width
+        }
+        return (out, true)
+    }
+
+    /// Splice in UTF-16 space — the same space AX ranges live in. Returns nil
+    /// when the range does not fit the original.
+    static func replacingUTF16(_ original: String, range: TextRange, with replacement: String) -> String? {
+        guard range.location >= 0, range.length >= 0 else { return nil }
+        var units = Array(original.utf16)
+        let end = range.location + range.length
+        guard end <= units.count else { return nil }
+        units.replaceSubrange(range.location..<end, with: Array(replacement.utf16))
+        return String(utf16CodeUnits: units, count: units.count)
     }
 
     /// AppKit answers AXInsertionPointLineNumber with a sentinel (Int.max, or
@@ -185,27 +278,19 @@ actor TextEditingController {
     /// No real document has a billion lines; anything above this is a sentinel.
     static let maxPlausibleLineNumber = 1_000_000_000
 
-    /// Character-accurate truncation for `text_get_value`.
-    static func truncate(_ text: String, maxChars: Int?) -> (text: String, truncated: Bool) {
-        guard let maxChars, text.count > maxChars else { return (text, false) }
-        return (String(text.prefix(maxChars)), true)
-    }
+    /// AXRole of a password field. Refused in both directions.
+    static let secureTextFieldRole = "AXSecureTextField"
 
     // MARK: - Element resolution
 
     /// The element that currently has keyboard focus inside `pid`'s app.
-    /// Deliberately app-scoped (`AXUIElementCreateApplication`) rather than
-    /// system-wide: the caller named an app, and the system-wide focused
-    /// element belongs to whatever is frontmost right now.
+    /// Deliberately app-scoped rather than system-wide: the caller named an
+    /// app, and the system-wide focused element belongs to whatever is
+    /// frontmost right now.
     func focusedElement(pid: pid_t) throws(Failure) -> AXUIElement {
         try requireTrust()
-        let app = AXUIElementCreateApplication(pid)
-        var value: CFTypeRef?
-        let status = AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &value)
-        guard status == .success, let value, CFGetTypeID(value) == AXUIElementGetTypeID() else {
-            throw .notFound
-        }
-        return unsafeDowncast(value, to: AXUIElement.self)
+        guard let element = ax.focusedElement(pid: pid) else { throw .notFound }
+        return element
     }
 
     // MARK: - Reads
@@ -214,12 +299,12 @@ actor TextEditingController {
         try requireTrust()
         try requireTextCapable(element)
         return Selection(
-            text: string(element, kAXSelectedTextAttribute as String),
-            range: range(element, kAXSelectedTextRangeAttribute as String),
-            numberOfCharacters: integer(element, kAXNumberOfCharactersAttribute as String),
-            visibleRange: range(element, kAXVisibleCharacterRangeAttribute as String),
+            text: ax.stringAttribute(element, kAXSelectedTextAttribute as String),
+            range: ax.rangeAttribute(element, kAXSelectedTextRangeAttribute as String),
+            numberOfCharacters: ax.intAttribute(element, kAXNumberOfCharactersAttribute as String),
+            visibleRange: ax.rangeAttribute(element, kAXVisibleCharacterRangeAttribute as String),
             insertionPointLine: Self.sanitizeLineNumber(
-                integer(element, kAXInsertionPointLineNumberAttribute as String)
+                ax.intAttribute(element, kAXInsertionPointLineNumberAttribute as String)
             )
         )
     }
@@ -227,20 +312,23 @@ actor TextEditingController {
     func caret(of element: AXUIElement) throws(Failure) -> Caret {
         try requireTrust()
         try requireTextCapable(element)
-        guard let selected = range(element, kAXSelectedTextRangeAttribute as String) else {
-            throw .notSupported("Element does not expose AXSelectedTextRange, so it has no addressable caret.")
+        guard let selected = ax.rangeAttribute(element, kAXSelectedTextRangeAttribute as String) else {
+            throw .notSupported(
+                "Element does not expose AXSelectedTextRange, so it has no addressable caret.",
+                reason: "no_selection_range"
+            )
         }
         let index = selected.location
-        let line = Self.sanitizeLineNumber(lineForIndex(element, index: index))
-            ?? Self.sanitizeLineNumber(integer(element, kAXInsertionPointLineNumberAttribute as String))
+        let line = Self.sanitizeLineNumber(ax.lineForIndex(element, index: index))
+            ?? Self.sanitizeLineNumber(ax.intAttribute(element, kAXInsertionPointLineNumberAttribute as String))
 
         // A zero-length range is the true caret rect, but several apps answer
         // an empty rect (or nothing) for it — fall back to the bounds of the
         // character the caret sits in front of.
         var usedLength = 0
-        var rect = boundsForRange(element, location: index, length: 0)
+        var rect = ax.boundsForRange(element, location: index, length: 0)
         if rect == nil || (rect?.width == 0 && rect?.height == 0) {
-            if let wider = boundsForRange(element, location: index, length: 1) {
+            if let wider = ax.boundsForRange(element, location: index, length: 1) {
                 rect = wider
                 usedLength = 1
             }
@@ -254,22 +342,27 @@ actor TextEditingController {
         )
     }
 
-    func value(of element: AXUIElement, maxChars: Int?) throws(Failure) -> Value {
+    func value(of element: AXUIElement, maxUTF16Units: Int?) throws(Failure) -> Value {
         try requireTrust()
-        guard let raw = string(element, kAXValueAttribute as String) else {
+        try requireNotSecure(element)
+        guard let raw = ax.stringAttribute(element, kAXValueAttribute as String) else {
             try assertAlive(element)
-            throw .notSupported("Element exposes no string AXValue.")
+            throw .notSupported("Element exposes no string AXValue.", reason: "no_string_value")
         }
-        let cut = Self.truncate(raw, maxChars: maxChars)
+        let cut = Self.truncate(raw, maxUTF16Units: maxUTF16Units)
         return Value(
             text: cut.text,
-            numberOfCharacters: integer(element, kAXNumberOfCharactersAttribute as String) ?? raw.count,
+            numberOfCharacters: ax.intAttribute(element, kAXNumberOfCharactersAttribute as String)
+                ?? raw.utf16.count,
             truncated: cut.truncated
         )
     }
 
     // MARK: - Writes
 
+    /// Set the selection and CONFIRM it took. An element that accepts the
+    /// write and ignores it would otherwise send the following
+    /// `AXSelectedText` write to the wrong place (or to the whole field).
     @discardableResult
     func setSelection(of element: AXUIElement, location: Int, length: Int) throws(Failure) -> TextRange {
         try requireTrust()
@@ -277,28 +370,44 @@ actor TextEditingController {
         if let reason = Self.validateRange(
             location: location,
             length: length,
-            numberOfCharacters: integer(element, kAXNumberOfCharactersAttribute as String)
+            numberOfCharacters: ax.intAttribute(element, kAXNumberOfCharactersAttribute as String)
         ) {
             throw .invalidRange(reason)
         }
-        guard let value = Self.makeRangeValue(location: location, length: length) else {
-            throw .axError(AXError.illegalArgument.rawValue, "Could not build an AXValue for the range.")
-        }
-        let status = AXUIElementSetAttributeValue(
-            element, kAXSelectedTextRangeAttribute as CFString, value
+        let status = ax.setRangeAttribute(
+            element, kAXSelectedTextRangeAttribute as String, location: location, length: length
         )
         guard status == .success else { throw Self.classify(status, action: "set AXSelectedTextRange") }
-        return TextRange(location: location, length: length)
+
+        let requested = TextRange(location: location, length: length)
+        let observed = ax.rangeAttribute(element, kAXSelectedTextRangeAttribute as String)
+        guard let observed else {
+            throw .notSupported(
+                "AXSelectedTextRange write returned success but the element reports no selection back.",
+                reason: "selection_not_applied"
+            )
+        }
+        guard observed == requested else {
+            throw .notSupported(
+                "AXSelectedTextRange write returned success but the element's selection is \(observed.location)+\(observed.length), not \(location)+\(length). Nothing was typed.",
+                reason: "selection_not_applied"
+            )
+        }
+        return requested
     }
 
-    /// Insert at the caret. A non-empty selection is collapsed to its end
-    /// first, so "insert" never destroys selected text (use replaceRange when
-    /// that is what you want).
+    /// Insert at the caret. A non-empty selection is COLLAPSED TO ITS END
+    /// first, so "insert" never destroys selected text — use `replaceRange`
+    /// when overwriting a selection is what you want. The collapse is
+    /// reported back as `collapsed_selection: true`.
     func insertAtCaret(of element: AXUIElement, text: String) throws(Failure) -> WriteOutcome {
         try requireTrust()
         try requireTextCapable(element)
-        guard let current = range(element, kAXSelectedTextRangeAttribute as String) else {
-            throw .notSupported("Element does not expose AXSelectedTextRange, so there is no caret to insert at.")
+        guard let current = ax.rangeAttribute(element, kAXSelectedTextRangeAttribute as String) else {
+            throw .notSupported(
+                "Element does not expose AXSelectedTextRange, so there is no caret to insert at.",
+                reason: "no_selection_range"
+            )
         }
         var collapsed = false
         var caret = current
@@ -308,52 +417,131 @@ actor TextEditingController {
             )
             collapsed = true
         }
-        try writeSelectedText(element, text)
-        return WriteOutcome(
-            range: caret,
-            insertedCharacters: text.count,
-            selectionAfter: range(element, kAXSelectedTextRangeAttribute as String),
-            collapsedSelection: collapsed
-        )
+        return try write(element, at: caret, text: text, collapsedSelection: collapsed)
     }
 
     func replaceRange(
         of element: AXUIElement, location: Int, length: Int, text: String
     ) throws(Failure) -> WriteOutcome {
         let target = try setSelection(of: element, location: location, length: length)
-        try writeSelectedText(element, text)
-        return WriteOutcome(
-            range: target,
-            insertedCharacters: text.count,
-            selectionAfter: range(element, kAXSelectedTextRangeAttribute as String),
-            collapsedSelection: false
-        )
+        return try write(element, at: target, text: text, collapsedSelection: false)
     }
 
-    private func writeSelectedText(_ element: AXUIElement, _ text: String) throws(Failure) {
-        let status = AXUIElementSetAttributeValue(
-            element, kAXSelectedTextAttribute as CFString, text as CFTypeRef
-        )
+    /// Shared write + read-back verification for insert and replace.
+    private func write(
+        _ element: AXUIElement, at range: TextRange, text: String, collapsedSelection: Bool
+    ) throws(Failure) -> WriteOutcome {
+        let beforeValue = ax.stringAttribute(element, kAXValueAttribute as String)
+        let beforeCount = ax.intAttribute(element, kAXNumberOfCharactersAttribute as String)
+
+        let status = ax.setStringAttribute(element, kAXSelectedTextAttribute as String, text)
         guard status == .success else {
             throw Self.classify(status, action: "write AXSelectedText")
         }
+
+        let verdict = try verify(
+            element, range: range, text: text, beforeValue: beforeValue, beforeCount: beforeCount
+        )
+        return WriteOutcome(
+            range: range,
+            insertedCharacters: text.utf16.count,
+            selectionAfter: ax.rangeAttribute(element, kAXSelectedTextRangeAttribute as String),
+            collapsedSelection: collapsedSelection,
+            applied: verdict.applied,
+            observedText: verdict.observed,
+            verification: verdict.method
+        )
+    }
+
+    /// Read the element back and decide whether the write landed.
+    ///
+    /// Throws `write_not_applied` when the element is demonstrably unchanged;
+    /// returns `applied: false` plus what it observed when it changed into
+    /// something other than what was asked for.
+    private func verify(
+        _ element: AXUIElement,
+        range: TextRange,
+        text: String,
+        beforeValue: String?,
+        beforeCount: Int?
+    ) throws(Failure) -> (applied: Bool, observed: String?, method: String) {
+        if let beforeValue,
+           let afterValue = ax.stringAttribute(element, kAXValueAttribute as String) {
+            let expected = Self.replacingUTF16(beforeValue, range: range, with: text)
+            if afterValue == expected { return (true, nil, "value") }
+            if afterValue == beforeValue {
+                throw .notSupported(
+                    "AXSelectedText write returned success but the element's value is unchanged.",
+                    reason: "write_not_applied"
+                )
+            }
+            return (false, afterValue, "value")
+        }
+
+        // No readable AXValue (big text views often refuse it) — fall back to
+        // the character count plus the text that now occupies the range we
+        // wrote into.
+        let afterCount = ax.intAttribute(element, kAXNumberOfCharactersAttribute as String)
+        let observedSlice = ax.stringForRange(
+            element, location: range.location, length: text.utf16.count
+        )
+        if let observedSlice {
+            if observedSlice == text { return (true, nil, "string_for_range") }
+            if let beforeCount, let afterCount, beforeCount == afterCount, text.utf16.count != range.length {
+                throw .notSupported(
+                    "AXSelectedText write returned success but the element's character count and text are unchanged.",
+                    reason: "write_not_applied"
+                )
+            }
+            return (false, observedSlice, "string_for_range")
+        }
+
+        if let beforeCount, let afterCount {
+            let expectedCount = beforeCount - range.length + text.utf16.count
+            if afterCount == expectedCount { return (true, nil, "count_only") }
+            if afterCount == beforeCount, expectedCount != beforeCount {
+                throw .notSupported(
+                    "AXSelectedText write returned success but AXNumberOfCharacters is unchanged.",
+                    reason: "write_not_applied"
+                )
+            }
+            return (false, nil, "count_only")
+        }
+
+        return (true, nil, "unverified")
     }
 
     // MARK: - Guards
 
     private func requireTrust() throws(Failure) {
-        guard AXIsProcessTrusted() else { throw .permissionMissing }
+        guard isTrusted() else { throw .permissionMissing }
+    }
+
+    /// Password fields are off limits in both directions — reading one would
+    /// hand a secret to the model, writing one would type into a credential
+    /// prompt. Both are refused before any AX traffic happens.
+    private func requireNotSecure(_ element: AXUIElement) throws(Failure) {
+        guard let role = ax.stringAttribute(element, kAXRoleAttribute as String) else { return }
+        // "AXSecureTextField" has no exported kAX… constant in
+        // ApplicationServices (unlike kAXTextFieldRole), so the literal is
+        // the only way to name it.
+        if role == Self.secureTextFieldRole {
+            throw .notSupported(
+                "Refusing to read or edit an AXSecureTextField (password field).",
+                reason: "secure_field"
+            )
+        }
     }
 
     /// Distinguishes "not a text element" (not_supported) from "element is
     /// gone" (not_found) — both look like a failed attribute read otherwise.
     private func requireTextCapable(_ element: AXUIElement) throws(Failure) {
-        var names: CFArray?
-        let status = AXUIElementCopyAttributeNames(element, &names)
+        try requireNotSecure(element)
+        let (status, available) = ax.attributeNames(of: element)
         if status == .invalidUIElement || status == .cannotComplete {
             throw .notFound
         }
-        guard status == .success, let available = names as? [String] else {
+        guard status == .success else {
             throw Self.classify(status, action: "list attribute names")
         }
         let textMarkers: Set<String> = [
@@ -361,17 +549,17 @@ actor TextEditingController {
             kAXSelectedTextAttribute as String,
             kAXNumberOfCharactersAttribute as String
         ]
-        guard !textMarkers.isDisjoint(with: available) else {
-            let role = string(element, kAXRoleAttribute as String) ?? "unknown"
+        guard !textMarkers.isDisjoint(with: Set(available)) else {
+            let role = ax.stringAttribute(element, kAXRoleAttribute as String) ?? "unknown"
             throw .notSupported(
-                "Element (role=\(role)) exposes none of AXSelectedTextRange/AXSelectedText/AXNumberOfCharacters — it is not an editable text element."
+                "Element (role=\(role)) exposes none of AXSelectedTextRange/AXSelectedText/AXNumberOfCharacters — it is not an editable text element.",
+                reason: "not_text_element"
             )
         }
     }
 
     private func assertAlive(_ element: AXUIElement) throws(Failure) {
-        var names: CFArray?
-        let status = AXUIElementCopyAttributeNames(element, &names)
+        let (status, _) = ax.attributeNames(of: element)
         if status == .invalidUIElement || status == .cannotComplete { throw .notFound }
     }
 
@@ -380,55 +568,12 @@ actor TextEditingController {
         case .invalidUIElement, .cannotComplete:
             return .notFound
         case .attributeUnsupported, .actionUnsupported, .notImplemented, .illegalArgument:
-            return .notSupported("Could not \(action): the element rejects it (AXError=\(status.rawValue)).")
+            return .notSupported(
+                "Could not \(action): the element rejects it (AXError=\(status.rawValue)).",
+                reason: "ax_rejected"
+            )
         default:
             return .axError(status.rawValue, "Could not \(action)")
         }
-    }
-
-    // MARK: - Typed attribute reads
-
-    private func rawAttribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
-        var value: CFTypeRef?
-        let status = AXUIElementCopyAttributeValue(element, name as CFString, &value)
-        guard status == .success else { return nil }
-        return value
-    }
-
-    private func string(_ element: AXUIElement, _ name: String) -> String? {
-        rawAttribute(element, name) as? String
-    }
-
-    private func integer(_ element: AXUIElement, _ name: String) -> Int? {
-        (rawAttribute(element, name) as? NSNumber)?.intValue
-    }
-
-    private func range(_ element: AXUIElement, _ name: String) -> TextRange? {
-        guard let raw = rawAttribute(element, name), CFGetTypeID(raw) == AXValueGetTypeID() else {
-            return nil
-        }
-        return Self.textRange(from: unsafeDowncast(raw, to: AXValue.self))
-    }
-
-    private func boundsForRange(_ element: AXUIElement, location: Int, length: Int) -> Bounds? {
-        guard let parameter = Self.makeRangeValue(location: location, length: length) else { return nil }
-        var result: CFTypeRef?
-        let status = AXUIElementCopyParameterizedAttributeValue(
-            element, kAXBoundsForRangeParameterizedAttribute as CFString, parameter, &result
-        )
-        guard status == .success, let result, CFGetTypeID(result) == AXValueGetTypeID() else {
-            return nil
-        }
-        return Self.bounds(from: unsafeDowncast(result, to: AXValue.self))
-    }
-
-    private func lineForIndex(_ element: AXUIElement, index: Int) -> Int? {
-        let parameter = NSNumber(value: index)
-        var result: CFTypeRef?
-        let status = AXUIElementCopyParameterizedAttributeValue(
-            element, kAXLineForIndexParameterizedAttribute as CFString, parameter, &result
-        )
-        guard status == .success else { return nil }
-        return (result as? NSNumber)?.intValue
     }
 }
