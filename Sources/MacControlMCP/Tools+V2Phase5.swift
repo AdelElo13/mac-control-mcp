@@ -32,7 +32,8 @@ extension ToolRegistry {
             name: "capture_window",
             description: "Screenshot ONE window of an app by pid (optional title_contains). Picks the largest onscreen, layer-0 window matching the filter and captures just that window via ScreenCaptureKit — it works when the window is occluded or on another Space (legacy CG fallbacks otherwise). "
                 + "Use this instead of capture_screen + cropping when you want a specific app window; use capture_screen for the whole main display or an arbitrary region. "
-                + "Returns path/width/height plus format, scale, source size and pixels_per_point (image pixels per window point, from the window's top-left). Supports max_width / format / quality.",
+                + "Returns path/width/height plus format, scale, source size, pixels_per_point (image pixels per window point, from the window's top-left) and window_bounds. "
+                + "pixels_per_point and window_bounds derive from the window bounds read from the window server immediately BEFORE the capture (geometry_source=window_bounds_before_capture); if the window moves or resizes in between, re-capture before mapping image coordinates to clicks. Supports max_width / format / quality.",
             inputSchema: schema(
                 properties: withImageOutputProperties([
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),

@@ -61,6 +61,19 @@ extension ToolRegistry {
         if let ppp = ImageEncoder.pixelsPerPoint(outputWidth: capture.width, pointWidth: capture.pointWidth) {
             payload["pixels_per_point"] = .number(ppp)
         }
+        if let b = capture.pointBounds {
+            // capture_window only: the bounds pixels_per_point was derived
+            // from, read just before capturing. If the window moved or
+            // resized between that read and the capture, mapping is off
+            // by that change — re-capture before clicking.
+            payload["window_bounds"] = .object([
+                "x": .number(b.origin.x),
+                "y": .number(b.origin.y),
+                "width": .number(b.width),
+                "height": .number(b.height)
+            ])
+            payload["geometry_source"] = .string("window_bounds_before_capture")
+        }
         return payload
     }
 }

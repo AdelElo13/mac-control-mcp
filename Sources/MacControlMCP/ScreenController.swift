@@ -23,6 +23,10 @@ actor ScreenController {
         /// Horizontal extent of the capture in global screen POINTS, when
         /// known — lets the tool layer report `pixels_per_point`.
         var pointWidth: Double? = nil
+        /// For capture_window: the window's bounds in global points, read
+        /// from CGWindowListCopyWindowInfo immediately BEFORE the capture.
+        /// `pointWidth` / pixels_per_point derive from these.
+        var pointBounds: CGRect? = nil
     }
 
     /// Region of the main display in global points (all four required).
@@ -380,7 +384,7 @@ actor ScreenController {
         // entry can't produce a wrongly-sized capture.
         do {
             let image = try await ScreenCaptureKitBridge.captureWindow(windowID: windowID, frame: selected.bounds)
-            return try finish(image, outputPath: outputPath, options: options, pointWidth: pointWidth)
+            return try finish(image, outputPath: outputPath, options: options, pointWidth: pointWidth, pointBounds: selected.bounds)
         } catch {
             if let bridgeError = error as? ScreenCaptureKitBridge.BridgeError,
                case .permissionDenied = bridgeError {
@@ -405,7 +409,7 @@ actor ScreenController {
             windowID,
             [.bestResolution, .boundsIgnoreFraming]
         ) {
-            return try finish(image, outputPath: outputPath, options: options, pointWidth: pointWidth)
+            return try finish(image, outputPath: outputPath, options: options, pointWidth: pointWidth, pointBounds: selected.bounds)
         }
 
         // Strategy 3 (last resort): crop the window's bounds from the
@@ -429,7 +433,7 @@ actor ScreenController {
             throw ScreenError.windowCaptureFailed(window: selected, underlying: "CGWindowListCreateImage region crop returned nil.")
         }
 
-        return try finish(image, outputPath: outputPath, options: options, pointWidth: pointWidth)
+        return try finish(image, outputPath: outputPath, options: options, pointWidth: pointWidth, pointBounds: selected.bounds)
     }
 
     // MARK: - OCR
@@ -561,7 +565,8 @@ actor ScreenController {
         _ image: CGImage,
         outputPath: String?,
         options: ImageOutputOptions,
-        pointWidth: Double?
+        pointWidth: Double?,
+        pointBounds: CGRect? = nil
     ) throws -> CaptureResult {
         let path = outputPath ?? Self.defaultTempPath(format: options.format)
         let encoded = try ImageEncoder.write(image, to: path, options: options)
@@ -572,7 +577,8 @@ actor ScreenController {
             sourceWidth: encoded.sourceWidth,
             sourceHeight: encoded.sourceHeight,
             format: encoded.format.rawValue,
-            pointWidth: pointWidth
+            pointWidth: pointWidth,
+            pointBounds: pointBounds
         )
     }
 
