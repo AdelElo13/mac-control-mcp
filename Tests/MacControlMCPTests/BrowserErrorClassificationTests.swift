@@ -45,7 +45,7 @@ struct BrowserErrorClassificationTests {
 
     @Test("Safari JS-from-AppleEvents-disabled classifies as permission_policy_denied")
     func safariJSDisabled() {
-        let stderr = "Safari got an error: Allow JavaScript from Apple Events is not enabled."
+        let stderr = "You must enable the 'Allow JavaScript from Apple Events' option in Safari's Develop menu."
         let c = BrowserErrorClassifier.classify(stderr: stderr, browser: .safari)
         #expect(c.errorCode == "permission_policy_denied")
         #expect(c.hint?.contains("Develop") == true)
@@ -74,6 +74,13 @@ struct BrowserErrorClassificationTests {
     func timeout() {
         let stderr = "execution error: Google Chrome got an error: AppleEvent timed out. (-1712)"
         let c = BrowserErrorClassifier.classify(stderr: stderr, browser: .chrome)
+        #expect(c.errorCode == "timeout")
+    }
+
+    @Test("OsascriptRunner's own subprocess timeout message classifies as timeout")
+    func osascriptRunnerSubprocessTimeout() {
+        let stderr = "osascript exceeded the 30s timeout and was terminated."
+        let c = BrowserErrorClassifier.classify(stderr: stderr, browser: .safari)
         #expect(c.errorCode == "timeout")
     }
 

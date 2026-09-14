@@ -146,9 +146,12 @@ extension ToolRegistry {
 
     func callBrowserActiveTab(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         let browserKind = BrowserController.Browser.detect(arguments["browser"]?.stringValue)
-        let fetch = await browser.activeTab(browser: browserKind)
+        let outcome = await browser.activeTab(browser: browserKind)
 
-        if let c = fetch.classification {
+        // `ActiveTabOutcome` is exhaustive (found/failed) — there is no
+        // third "no active tab, no error" case to guard against here.
+        switch outcome {
+        case .failed(let c):
             var payload: [String: JSONValue] = [
                 "ok": .bool(false),
                 "browser": .string(browserKind.rawValue),
@@ -158,26 +161,17 @@ extension ToolRegistry {
             if let hint = c.hint { payload["hint"] = .string(hint) }
             if let pane = c.pane { payload["pane"] = .string(pane) }
             return errorResult("browser_get_active_tab failed: \(c.error)", payload)
-        }
 
-        guard let tab = fetch.tab else {
-            return errorResult(
-                "No active tab found (is \(browserKind.rawValue) running with a window open?)",
+        case .found(let tab):
+            return successResult(
+                "Active \(browserKind.rawValue) tab retrieved.",
                 [
-                    "ok": .bool(false),
+                    "ok": .bool(true),
                     "browser": .string(browserKind.rawValue),
-                    "error_code": .string("no_active_tab")
+                    "tab": encodeAsJSONValue(tab)
                 ]
             )
         }
-        return successResult(
-            "Active \(browserKind.rawValue) tab retrieved.",
-            [
-                "ok": .bool(true),
-                "browser": .string(browserKind.rawValue),
-                "tab": encodeAsJSONValue(tab)
-            ]
-        )
     }
 
     func callBrowserNavigate(_ arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -188,8 +182,12 @@ extension ToolRegistry {
         let windowIndex = arguments["window_index"]?.intValue ?? 1
         let tabIndex = arguments["tab_index"]?.intValue
 
-        let ok = await browser.navigate(browser: browserKind, url: url, windowIndex: windowIndex, tabIndex: tabIndex)
-        let classification = ok ? nil : await browser.classifiedError(browser: browserKind)
+        // Single actor call returns ok + classification together — no
+        // separate follow-up read of actor state, which under concurrent
+        // tool calls could race with another request overwriting it.
+        let outcome = await browser.navigate(browser: browserKind, url: url, windowIndex: windowIndex, tabIndex: tabIndex)
+        let ok = outcome.ok
+        let classification = outcome.classification
         var payload: [String: JSONValue] = [
             "ok": .bool(ok),
             "browser": .string(browserKind.rawValue),

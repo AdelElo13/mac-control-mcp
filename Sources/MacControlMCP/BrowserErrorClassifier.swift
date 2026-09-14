@@ -53,7 +53,7 @@ enum BrowserErrorClassifier {
             && (lower.contains("apple event") || lower.contains("applescript"))
             && (lower.contains("turned off") || lower.contains("disabled")
                 || lower.contains("not enabled") || lower.contains("is not enabled")
-                || lower.contains("not allowed")) {
+                || lower.contains("not allowed") || lower.contains("must enable")) {
             let hint: String
             switch browser {
             case .chrome:
@@ -76,7 +76,10 @@ enum BrowserErrorClassifier {
         }
 
         // -1712 — the Apple Event timed out (browser busy, modal dialog, etc.).
-        if lower.contains("-1712") || lower.contains("timed out") {
+        // Also covers OsascriptRunner's own subprocess-level timeout message
+        // ("osascript exceeded the 30s timeout and was terminated."), which
+        // says "timeout" rather than "timed out" and carries no -1712 code.
+        if lower.contains("-1712") || lower.contains("timed out") || lower.contains("timeout") {
             return Classification(
                 errorCode: "timeout",
                 error: stderr,

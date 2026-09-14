@@ -251,8 +251,12 @@ extension ToolRegistry {
     func callBrowserNewTab(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         let kind = BrowserController.Browser.detect(arguments["browser"]?.stringValue)
         let url = arguments["url"]?.stringValue
-        let ok = await browser.newTab(browser: kind, url: url)
-        let classification = ok ? nil : await browser.classifiedError(browser: kind)
+        // Single actor call returns ok + classification together — see
+        // BrowserController.classifiedError for why a separate follow-up
+        // read would race under concurrent tool calls.
+        let outcome = await browser.newTab(browser: kind, url: url)
+        let ok = outcome.ok
+        let classification = outcome.classification
         var payload: [String: JSONValue] = [
             "ok": .bool(ok),
             "browser": .string(kind.rawValue),
@@ -273,8 +277,9 @@ extension ToolRegistry {
         let kind = BrowserController.Browser.detect(arguments["browser"]?.stringValue)
         let windowIndex = arguments["window_index"]?.intValue ?? 1
         let tabIndex = arguments["tab_index"]?.intValue
-        let ok = await browser.closeTab(browser: kind, windowIndex: windowIndex, tabIndex: tabIndex)
-        let classification = ok ? nil : await browser.classifiedError(browser: kind)
+        let outcome = await browser.closeTab(browser: kind, windowIndex: windowIndex, tabIndex: tabIndex)
+        let ok = outcome.ok
+        let classification = outcome.classification
         var payload: [String: JSONValue] = [
             "ok": .bool(ok),
             "browser": .string(kind.rawValue),

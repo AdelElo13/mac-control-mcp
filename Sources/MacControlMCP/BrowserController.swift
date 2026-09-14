@@ -50,13 +50,25 @@ actor BrowserController {
         let classification: BrowserErrorClassifier.Classification?
     }
 
-    /// Result of an active-tab lookup. Same success/failure distinction
-    /// as `TabsFetchResult`: `tab == nil && classification == nil` means
-    /// the script ran fine but there is genuinely no active tab (e.g. no
-    /// window open).
-    struct ActiveTabFetchResult: Sendable {
-        let tab: TabInfo?
+    /// Result of a fire-and-check action (`navigate`/`newTab`/`closeTab`).
+    /// Carries its own classification instead of leaving the caller to
+    /// separately read `lastError` after the fact — see `runAction` for
+    /// why that separate-read pattern is a concurrency bug.
+    struct ActionOutcome: Sendable {
+        let ok: Bool
         let classification: BrowserErrorClassifier.Classification?
+    }
+
+    /// Result of an active-tab lookup. Modeled as an enum (not a
+    /// `tab: TabInfo?, classification: Classification?` pair) so the two
+    /// outcomes are exhaustive at the type level — there is no third,
+    /// unreachable "both nil" state for callers to guard against. Any
+    /// AppleScript failure (no window open, Automation denied, etc.) is
+    /// always classified — "front window" doesn't exist -> AppleScript
+    /// raises an error -> `runOsascript` fails -> `.failed`.
+    enum ActiveTabOutcome: Sendable {
+        case found(TabInfo)
+        case failed(BrowserErrorClassifier.Classification)
     }
 
     // Field/record separators for AppleScript output. Tab (`\t`) and
@@ -129,7 +141,7 @@ actor BrowserController {
     /// errors -> [] -> "no active tab") and could also mis-rank ordering
     /// across windows. Querying the front window's active tab directly is
     /// both cheaper and correct regardless of window ordering.
-    func activeTab(browser: Browser) -> ActiveTabFetchResult {
+    func activeTab(browser: Browser) -> ActiveTabOutcome {
         let us = Self.unitSeparator
         let script: String
         switch browser {
@@ -154,20 +166,24 @@ actor BrowserController {
         }
 
         guard let raw = runOsascript(script: script) else {
-            return ActiveTabFetchResult(tab: nil, classification: classifiedError(browser: browser))
+            // "front window" doesn't exist (no window open) surfaces here
+            // as an AppleScript error too — classified the same as any
+            // other osascript failure, never a separate silent "no tab"
+            // state.
+            let fallback = BrowserErrorClassifier.Classification(
+                errorCode: "failed", error: "osascript invocation failed", hint: nil, pane: nil
+            )
+            return .failed(classifiedError(browser: browser) ?? fallback)
         }
         let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             .components(separatedBy: us)
         guard parts.count >= 4, let w = Int(parts[0]), let t = Int(parts[1]) else {
-            return ActiveTabFetchResult(
-                tab: nil,
-                classification: BrowserErrorClassifier.Classification(
-                    errorCode: "failed",
-                    error: "Unexpected response from \(browser.rawValue): \(raw)",
-                    hint: nil,
-                    pane: nil
-                )
-            )
+            return .failed(BrowserErrorClassifier.Classification(
+                errorCode: "failed",
+                error: "Unexpected response from \(browser.rawValue): \(raw)",
+                hint: nil,
+                pane: nil
+            ))
         }
         let tab = TabInfo(
             browser: browser.rawValue,
@@ -177,12 +193,12 @@ actor BrowserController {
             url: parts[3],
             active: true
         )
-        return ActiveTabFetchResult(tab: tab, classification: nil)
+        return .found(tab)
     }
 
     /// Set a tab's URL. Creates a window if none exists (same reasoning
     /// as newTab — was failing on windowless browsers).
-    func navigate(browser: Browser, url: String, windowIndex: Int = 1, tabIndex: Int? = nil) -> Bool {
+    func navigate(browser: Browser, url: String, windowIndex: Int = 1, tabIndex: Int? = nil) -> ActionOutcome {
         let tabRef: String
         let ensureWindow: String
         switch browser {
@@ -202,7 +218,7 @@ actor BrowserController {
             return "ok"
         end tell
         """
-        return runOsascript(script: script) != nil
+        return runAction(script: script, browser: browser)
     }
 
     /// Evaluate JavaScript in a tab. The result is always returned as a
@@ -326,7 +342,7 @@ actor BrowserController {
     /// Open a new tab. If the browser has no window, creates one first
     /// so new_tab works from a fresh launch state (was failing with
     /// 'Can't get window 1' when Safari was running but windowless).
-    func newTab(browser: Browser, url: String?) -> Bool {
+    func newTab(browser: Browser, url: String?) -> ActionOutcome {
         let script: String
         switch browser {
         case .safari:
@@ -356,11 +372,11 @@ actor BrowserController {
             end tell
             """
         }
-        return runOsascript(script: script) != nil
+        return runAction(script: script, browser: browser)
     }
 
     /// Close a tab by window/tab index, or the current tab when indices are nil.
-    func closeTab(browser: Browser, windowIndex: Int = 1, tabIndex: Int? = nil) -> Bool {
+    func closeTab(browser: Browser, windowIndex: Int = 1, tabIndex: Int? = nil) -> ActionOutcome {
         let tabRef: String
         switch browser {
         case .safari:
@@ -374,7 +390,7 @@ actor BrowserController {
             return "ok"
         end tell
         """
-        return runOsascript(script: script) != nil
+        return runAction(script: script, browser: browser)
     }
 
     // MARK: - Helpers
@@ -382,7 +398,7 @@ actor BrowserController {
     /// Last AppleScript error from a failed `runOsascript` call on this
     /// actor. Cleared whenever a subsequent call succeeds so stale errors
     /// don't leak into later tool invocations.
-    private(set) var lastError: String?
+    private var lastError: String?
 
     /// Returns stdout on success. On non-zero exit, returns nil and
     /// populates `lastError` with the captured stderr so the caller can
@@ -397,13 +413,34 @@ actor BrowserController {
         return nil
     }
 
-    /// Classify `lastError` (if any) for the given browser. Exposed so
-    /// callers that drive `navigate`/`newTab`/`closeTab` (which return a
-    /// plain `Bool`) can turn a failure into a structured error_code/hint
-    /// without duplicating the classification logic.
-    func classifiedError(browser: Browser) -> BrowserErrorClassifier.Classification? {
+    /// Classify `lastError` (if any) for the given browser. Private —
+    /// only ever called from within another synchronous actor method
+    /// (`runAction`, `activeTab`) in the same call frame as the
+    /// `runOsascript` that set `lastError`, so there is no `await`
+    /// between the write and the read. Do NOT expose this for external
+    /// callers to invoke via a second `await browser.___` after checking
+    /// a Bool/`nil` result — under concurrent tool calls another request
+    /// on this actor can run (and overwrite `lastError`) in the gap
+    /// between two separate awaited calls. That was exactly the bug in
+    /// the previous `navigate`/`newTab`/`closeTab` + `await browser.lastError`
+    /// pattern; `ActionOutcome`/`ActiveTabOutcome` close that gap by
+    /// computing the classification inside the same actor-isolated call.
+    private func classifiedError(browser: Browser) -> BrowserErrorClassifier.Classification? {
         guard let err = lastError else { return nil }
         return BrowserErrorClassifier.classify(stderr: err, browser: browser)
+    }
+
+    /// Run an AppleScript action (navigate/newTab/closeTab) and classify
+    /// failure in the same call — see `classifiedError` for why this must
+    /// not be split across two separate actor calls.
+    private func runAction(script: String, browser: Browser) -> ActionOutcome {
+        guard runOsascript(script: script) != nil else {
+            let fallback = BrowserErrorClassifier.Classification(
+                errorCode: "failed", error: "osascript invocation failed", hint: nil, pane: nil
+            )
+            return ActionOutcome(ok: false, classification: classifiedError(browser: browser) ?? fallback)
+        }
+        return ActionOutcome(ok: true, classification: nil)
     }
 
     private func evalFailure(_ message: String, browser: Browser) -> EvalResult {

@@ -38,6 +38,18 @@ actor BrowserDOMController {
         public let errorCode: String?
         public let hint: String?
         public let pane: String?
+
+        // BUG-FIX (code review): without explicit CodingKeys, JSONEncoder's
+        // default camelCase strategy encoded this as nested `errorCode`
+        // while the top-level tool payload (Tools+V2Phase10.swift) uses
+        // `error_code` — the same failure reported under two different key
+        // spellings in one response. Keep the wire format snake_case
+        // everywhere.
+        enum CodingKeys: String, CodingKey {
+            case ok, browser, root, nodeCount, includeShadow, error
+            case errorCode = "error_code"
+            case hint, pane
+        }
     }
 
     public struct VisibleTextResult: Codable, Sendable {
@@ -49,6 +61,12 @@ actor BrowserDOMController {
         public let errorCode: String?
         public let hint: String?
         public let pane: String?
+
+        enum CodingKeys: String, CodingKey {
+            case ok, browser, text, charCount, error
+            case errorCode = "error_code"
+            case hint, pane
+        }
     }
 
     public struct IframesResult: Codable, Sendable {
@@ -60,6 +78,13 @@ actor BrowserDOMController {
         public let errorCode: String?
         public let hint: String?
         public let pane: String?
+
+        enum CodingKeys: String, CodingKey {
+            case ok, browser, count, iframes, error
+            case errorCode = "error_code"
+            case hint, pane
+        }
+
         public struct IframeInfo: Codable, Sendable {
             public let src: String?
             public let sameOrigin: Bool
