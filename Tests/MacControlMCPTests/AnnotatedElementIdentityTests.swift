@@ -112,8 +112,9 @@ struct AnnotatedElementIdentityTests {
             let id = try #require(entry["element_id"]?.stringValue,
                                   "a drawn element came back without an element_id")
             #expect(id.hasPrefix("el_"))
-            // Path-derived ids are `el_` + 16 hex chars (AXPath.identifier).
-            #expect(id.count == 19)
+            // Path-derived ids are `el_` + 32 hex chars — SHA-256 truncated
+            // to 128 bits (AXPath.identifier, Codex review 3).
+            #expect(id.count == 35)
         }
         let ids = elements.compactMap { $0["element_id"]?.stringValue }
         #expect(Set(ids).count == ids.count, "two boxes must never share an element_id")

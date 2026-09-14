@@ -248,6 +248,80 @@ struct TextEditingTests {
         #expect(failure.hint?.contains("type_text") != true)
     }
 
+    /// Codex review 6 (HIGH): the text tools resolved element ids with
+    /// `elementCache.resolve`, which hands back whatever handle was stored —
+    /// skipping the process-identity and fingerprint checks every other
+    /// element tool goes through. A handle whose pid had been recycled would
+    /// have been written to. They now use `resolveLive` and surface
+    /// `stale_element`, exactly like get_element_attributes.
+    @Test("text tools report stale_element for a recycled-pid handle", arguments: [
+        "text_get_selection", "text_get_caret", "text_get_value"
+    ])
+    func staleElementSurfaced(name: String) async {
+        let registry = ToolRegistry(accessibility: AccessibilityController())
+        let id = await registry.elementCache.store(
+            AXUIElementCreateApplication(getpid()),
+            pid: getpid(),
+            path: [AXPathComponent(role: "AXWindow", index: 0, identifier: nil)],
+            identity: ProcessIdentity(startTime: 1.0, bundleID: "com.example.gone")
+        )
+        let result = await registry.callTool(name: name, arguments: ["element_id": .string(id)])
+        #expect(result.isError == true)
+        let payload = result.structuredContent.objectValue ?? [:]
+        #expect(payload["error_code"]?.stringValue == "stale_element")
+        #expect(payload["hint"]?.stringValue?.contains("find_elements") == true)
+    }
+
+    /// The write tools must refuse the same handle — before any AX traffic.
+    @Test("text write tools refuse a recycled-pid handle")
+    func staleElementRefusesWrites() async {
+        let registry = ToolRegistry(accessibility: AccessibilityController())
+        func freshStaleID() async -> String {
+            await registry.elementCache.store(
+                AXUIElementCreateApplication(getpid()),
+                pid: getpid(),
+                path: [AXPathComponent(role: "AXWindow", index: 0, identifier: nil)],
+                identity: ProcessIdentity(startTime: 1.0, bundleID: "com.example.gone")
+            )
+        }
+        let insert = await registry.callTool(
+            name: "text_insert_at_caret",
+            arguments: ["element_id": .string(await freshStaleID()), "text": .string("x")]
+        )
+        #expect(insert.structuredContent.objectValue?["error_code"]?.stringValue == "stale_element")
+
+        let replace = await registry.callTool(
+            name: "text_replace_range",
+            arguments: [
+                "element_id": .string(await freshStaleID()),
+                "location": .number(0), "length": .number(1), "text": .string("x")
+            ]
+        )
+        #expect(replace.structuredContent.objectValue?["error_code"]?.stringValue == "stale_element")
+    }
+
+    /// Codex review 6 (HIGH): `location + length` overflowed for Int.max.
+    @Test("an overflowing range is an argument error at the tool boundary")
+    func overflowingRangeRejected() async {
+        let registry = ToolRegistry(accessibility: AccessibilityController())
+        for name in ["text_set_selection", "text_replace_range"] {
+            var arguments: [String: JSONValue] = [
+                "element_id": .string("el_nope"),
+                // As strings: Double cannot represent Int.max exactly, and
+                // the tools accept numeric strings for exactly this reason.
+                "location": .string("\(Int.max)"),
+                "length": .string("\(Int.max)")
+            ]
+            if name == "text_replace_range" { arguments["text"] = .string("x") }
+            let result = await registry.callTool(name: name, arguments: arguments)
+            #expect(result.isError == true)
+            #expect(
+                result.structuredContent.objectValue?["error_code"]?.stringValue == "invalid_argument",
+                "\(name) must reject an overflowing range"
+            )
+        }
+    }
+
     @Test("an unknown element_id reports not_found, not a crash")
     func unknownElementID() async {
         let registry = ToolRegistry(accessibility: AccessibilityController())
