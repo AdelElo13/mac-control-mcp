@@ -324,7 +324,8 @@ extension ToolRegistry {
             ? successResult("found \(r.data?.count ?? 0) event(s)",
                             ["ok": .bool(true), "events": encodeAsJSONValue(r.data ?? [])])
             : errorResult(r.error ?? "calendar_list_events failed",
-                          ["ok": .bool(false), "error": .string(r.error ?? "")])
+                          ["ok": .bool(false), "error": .string(r.error ?? "")]
+                              .merging(r.errorPayload ?? [:]) { _, structured in structured })
     }
 
     func callRemindersCreate(_ arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -370,7 +371,8 @@ extension ToolRegistry {
             ? successResult("found \(r.data?.count ?? 0) contact(s)",
                             ["ok": .bool(true), "contacts": encodeAsJSONValue(r.data ?? [])])
             : errorResult(r.error ?? "contacts_search failed",
-                          ["ok": .bool(false), "error": .string(r.error ?? "")])
+                          ["ok": .bool(false), "error": .string(r.error ?? "")]
+                              .merging(r.errorPayload ?? [:]) { _, structured in structured })
     }
 
     // MARK: Power

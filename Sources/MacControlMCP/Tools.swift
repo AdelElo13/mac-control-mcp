@@ -287,7 +287,7 @@ final class ToolRegistry: @unchecked Sendable {
         case "move_window_to_display":
             return await callMoveWindowToDisplay(arguments)
         case "request_permissions":
-            return await callRequestPermissions()
+            return await callRequestPermissions(arguments)
         case "scroll_to_element":
             return await callScrollToElement(arguments)
         case "force_quit_app":

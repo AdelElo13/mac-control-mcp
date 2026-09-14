@@ -93,16 +93,19 @@ extension ToolRegistry {
         // `open(_:)` returns Bool (success); the dispatch is async to AppKit
         // but we don't need to wait — the Settings app shows asynchronously.
         NSWorkspace.shared.open(url)
-        return successResult(
-            "Opened System Settings → \(pane.replacingOccurrences(of: "_", with: " "))",
-            [
-                "ok": .bool(true),
-                "pane": .string(pane),
-                "url": .string(entry.url),
-                "currentStatus": entry.status.map(JSONValue.string) ?? .null,
-                "hint": .string("Toggle mac-control-mcp ON in the list. If the app isn't listed, click '+' and navigate to ~/Library/Application Support/Claude/Claude Extensions/local.mcpb.adil-el-ouariachi.mac-control-mcp/MacControlMCP.app — the path Claude Desktop actually runs.")
-            ]
-        )
+        let paneTitle = pane.replacingOccurrences(of: "_", with: " ")
+        var payload: [String: JSONValue] = [
+            "ok": .bool(true),
+            "pane": .string(pane),
+            "url": .string(entry.url),
+            "currentStatus": entry.status.map(JSONValue.string) ?? .null,
+            // v0.8.3: the '+' path is the app macOS actually attributes our
+            // requests to — not a hard-coded Claude Extensions path, which was
+            // wrong for tarball installs and other MCP clients.
+            "hint": .string(PermissionContext.grantHint(paneTitle: paneTitle))
+        ]
+        payload.merge(PermissionContext.contextPayload()) { current, _ in current }
+        return successResult("Opened System Settings → \(paneTitle)", payload)
         #else
         return errorResult("AppKit not available — cannot open Settings", ["ok": .bool(false)])
         #endif

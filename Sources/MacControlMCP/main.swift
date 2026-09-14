@@ -141,6 +141,7 @@ actor MCPServer {
 
             let arguments = params["arguments"]?.objectValue ?? [:]
             let toolResult = await toolRegistry.callTool(name: name, arguments: arguments)
+                .withPermissionContext()
             return JSONRPCResponse.success(id: request.id, result: toolResult.asMCPResult())
 
         case "notifications/initialized":

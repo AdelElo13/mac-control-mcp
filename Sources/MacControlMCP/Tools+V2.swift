@@ -144,7 +144,7 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "permissions_status",
-            description: "Report the accessibility permission state for this process.",
+            description: "Report every macOS privacy permission mac-control-mcp uses (accessibility, screen_recording, calendar, reminders, contacts, location, microphone) plus responsible_app: the app macOS attributes the requests to (e.g. Claude, ChatGPT, Terminal). Grants belong to THAT app, so status differs per MCP client. Also lists categories that will be refused without a prompt because an entitlement is missing.",
             inputSchema: schema(properties: [:])
         ),
         MCPToolDefinition(
@@ -516,60 +516,6 @@ extension ToolRegistry {
         return ok
             ? successResult("Clipboard updated.", ["ok": .bool(true), "length": .number(Double(text.count))])
             : errorResult("Pasteboard rejected the write.", ["ok": .bool(false)])
-    }
-
-    func callPermissionsStatus() async -> ToolCallResult {
-        // v0.8.0: report all TCC categories mac-control-mcp touches, not
-        // just Accessibility. Agent now gets an actionable picture of what's
-        // missing instead of a single boolean.
-        let ax = await accessibility.checkPermission()
-        let screen = Self.screenPermissionStatusString()
-        let calendar = Self.calendarPermissionStatusString()
-        let reminders = Self.remindersPermissionStatusString()
-        let contacts = Self.contactsPermissionStatusString()
-        let location = Self.locationPermissionStatusString()
-        let microphone = Self.microphonePermissionStatusString()
-
-        let axStr = ax ? "granted" : "not_granted"
-        let missing: [String] = [
-            ("accessibility", axStr),
-            ("screen_recording", screen),
-            ("calendar", calendar),
-            ("reminders", reminders),
-            ("contacts", contacts),
-            ("location", location),
-            ("microphone", microphone)
-        ]
-        .filter { (_, status) in
-            let granted: Set<String> = ["granted", "granted_when_in_use", "granted_always", "granted_legacy", "write_only", "authorized_legacy", "limited"]
-            // `location` can only report system-wide services state
-            // ("system_enabled …"); the old exact-match whitelist had no such
-            // string, so location was always listed as missing even when on.
-            return !(granted.contains(status) || status.hasPrefix("granted") || status.hasPrefix("system_enabled"))
-        }
-        .map { $0.0 }
-
-        let summary = missing.isEmpty
-            ? "All 7 monitored permissions granted."
-            : "Missing: \(missing.joined(separator: ", ")). Use open_permission_pane to jump to the right System Settings page."
-
-        return successResult(
-            summary,
-            [
-                "ok": .bool(true),
-                "accessibility": .string(axStr),
-                "screen_recording": .string(screen),
-                "calendar": .string(calendar),
-                "reminders": .string(reminders),
-                "contacts": .string(contacts),
-                "location": .string(location),
-                "microphone": .string(microphone),
-                "missing": .array(missing.map { .string($0) }),
-                "hint": .string(missing.isEmpty
-                    ? "All monitored categories are ready to use."
-                    : "For each item in 'missing', call `open_permission_pane` with pane=<that item>. Toggle mac-control-mcp ON in the System Settings list, then restart the MCP server for the grant to take effect.")
-            ]
-        )
     }
 
     // MARK: - JSON encoders
