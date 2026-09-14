@@ -696,7 +696,7 @@ extension ToolRegistry {
             let list = await windows.listAppWindows(pid: pid)
             if let match = list.first(where: { w in
                 guard let filter = titleFilter, !filter.isEmpty else { return true }
-                return (w.title ?? "").lowercased().contains(filter)
+                return w.title.lowercased().contains(filter)
             }) {
                 return successResult(
                     "Window appeared.",

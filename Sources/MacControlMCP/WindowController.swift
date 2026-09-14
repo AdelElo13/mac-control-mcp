@@ -7,7 +7,10 @@ actor WindowController {
     struct WindowInfo: Codable, Sendable {
         let app: String
         let pid: Int32
-        let title: String?
+        /// v0.9 (C-2): ALWAYS present — "" for an untitled window. It used
+        /// to be omitted from the JSON entirely when the window had no
+        /// title, so a caller could not tell "no title" from "key missing".
+        let title: String
         let x: Double
         let y: Double
         let width: Double
@@ -19,10 +22,28 @@ actor WindowController {
         /// `WindowController.axDeadline` and this entry comes from the
         /// Window Server list instead. Absent (nil) otherwise.
         var axTimeout: Bool? = nil
+        /// v0.9 (C-2) — the window server's own stable handle (CGWindowID).
+        /// This is the preferred way to target a window in every other
+        /// tool. nil only when no window-server entry could be matched to
+        /// this AX window (rare: window closed between the two reads).
+        var windowID: CGWindowID? = nil
+        /// Index into `list_displays` of the display showing this window
+        /// (by window center). nil when the window is off every display.
+        var displayIndex: Int? = nil
+        /// True for the main window of the frontmost application — i.e.
+        /// the window that receives keystrokes.
+        var isFocused: Bool = false
+        /// Front-to-back position among all normal application windows:
+        /// 0 is the frontmost window on screen. nil when unmatched.
+        var zOrder: Int? = nil
 
         enum CodingKeys: String, CodingKey {
             case app, pid, title, x, y, width, height, minimized, main, index
             case axTimeout = "ax_timeout"
+            case windowID = "window_id"
+            case displayIndex = "display_index"
+            case isFocused = "is_focused"
+            case zOrder = "z_order"
         }
     }
 
@@ -177,7 +198,7 @@ actor WindowController {
             // when no browser window is on that monitor).
             guard w > 1, h > 1 else { continue }
             if y < 1 && h < 60 { continue }
-            let title = dict[kCGWindowName as String] as? String
+            let title = (dict[kCGWindowName as String] as? String) ?? ""
             let onscreen = (dict[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue ?? false
             out.append(WindowInfo(
                 app: appName,
@@ -226,6 +247,92 @@ actor WindowController {
         return result
     }
 
+    // MARK: - v0.9 (C-2): window identity
+
+    /// Attach the window-server identity (`window_id`, `z_order`) plus
+    /// `display_index` and `is_focused` to an assembled window list.
+    ///
+    /// Matching rule: for each window, the first **unused** window-server
+    /// entry of the same pid whose frame equals the window's frame
+    /// (`WindowIdentity.frameTolerance`). Entries are consumed, so two
+    /// windows of one app with identical frames — the case that made
+    /// `pid + title_contains` unusable — still get distinct ids, in
+    /// window-server (front-to-back) order. A window with no matching
+    /// entry keeps `window_id: null` rather than borrowing a neighbour's.
+    ///
+    /// Pure: no AX, no CG calls. `cgEntries`, `displays` and
+    /// `frontmostPID` are supplied by the caller.
+    static func enrich(
+        windows: [WindowInfo],
+        cgEntries: [WindowIdentity.Entry],
+        displays: [DisplayController.DisplayInfo],
+        frontmostPID: pid_t?
+    ) -> [WindowInfo] {
+        var used = Set<CGWindowID>()
+        return windows.map { window in
+            var out = window
+            let frame = CGRect(x: window.x, y: window.y, width: window.width, height: window.height)
+            if let match = cgEntries.first(where: { entry in
+                entry.pid == window.pid
+                    && !used.contains(entry.windowID)
+                    && WindowIdentity.framesMatch(entry.bounds, frame)
+            }) {
+                used.insert(match.windowID)
+                out.windowID = match.windowID
+                out.zOrder = match.zOrder
+            }
+            out.displayIndex = WindowIdentity.displayIndex(containing: frame, displays: displays)
+            // "Focused" == the main window of the frontmost app: the one
+            // that receives keystrokes. A minimized window never is.
+            out.isFocused = !window.minimized && window.main && frontmostPID == window.pid
+            return out
+        }
+    }
+
+    /// A `window_id` resolved back to everything the AX-based window tools
+    /// need. `index` is nil when the owning app exposes no AX window with
+    /// this frame (Chrome's browser windows, some Electron apps): capture
+    /// and OCR still work by id, but move/resize/focus cannot.
+    struct ResolvedWindow: Sendable {
+        let windowID: CGWindowID
+        let pid: pid_t
+        let title: String
+        let bounds: CGRect
+        let isOnscreen: Bool
+        let index: Int?
+    }
+
+    /// Resolve a `CGWindowID` to its owning pid + AX window index.
+    /// Returns nil when no window-server entry carries that id.
+    func resolve(windowID: CGWindowID) -> ResolvedWindow? {
+        let entries = WindowIdentity.copyEntries()
+        guard let entry = WindowIdentity.entry(id: windowID, in: entries) else { return nil }
+        let frames: [CGRect?] = axWindows(pid: entry.pid).map { element in
+            var posRef: CFTypeRef?
+            var sizeRef: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &posRef) == .success,
+                  AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeRef) == .success,
+                  let posValue = posRef, let sizeValue = sizeRef,
+                  CFGetTypeID(posValue) == AXValueGetTypeID(),
+                  CFGetTypeID(sizeValue) == AXValueGetTypeID()
+            else { return nil }
+            var point = CGPoint.zero
+            var size = CGSize.zero
+            guard AXValueGetValue(posValue as! AXValue, .cgPoint, &point),
+                  AXValueGetValue(sizeValue as! AXValue, .cgSize, &size)
+            else { return nil }
+            return CGRect(origin: point, size: size)
+        }
+        return ResolvedWindow(
+            windowID: entry.windowID,
+            pid: entry.pid,
+            title: entry.title,
+            bounds: entry.bounds,
+            isOnscreen: entry.isOnscreen,
+            index: WindowIdentity.matchIndex(bounds: entry.bounds, in: frames)
+        )
+    }
+
     /// Enumerate all windows of all regular running apps. Windows are ordered
     /// per-app in the AX child order, which approximately matches z-order for
     /// the active app and is stable across calls for inactive apps.
@@ -268,10 +375,37 @@ actor WindowController {
             if outcome.value != nil { manualAccessibilityEnabled.insert(apps[i].pid) }
         }
 
-        return Self.assemble(
+        // One window-server snapshot serves BOTH the AX fallback and the
+        // v0.9 identity enrichment (window_id / z_order), so adding
+        // identity costs no extra CGWindowListCopyWindowInfo call.
+        var snapshot: [[String: Any]]?
+        func windowServerList() -> [[String: Any]] {
+            if let snapshot { return snapshot }
+            let fetched = Self.copyWindowServerList()
+            snapshot = fetched
+            return fetched
+        }
+
+        let assembled = Self.assemble(
             apps: apps.map { (pid: $0.pid, name: $0.name) },
             outcomes: outcomes,
-            windowServerList: Self.copyWindowServerList
+            windowServerList: windowServerList
+        )
+        return await enriched(assembled, windowServerList: windowServerList())
+    }
+
+    /// Shared tail of both list calls: attach window_id / z_order /
+    /// display_index / is_focused.
+    private func enriched(_ windows: [WindowInfo], windowServerList: [[String: Any]]) async -> [WindowInfo] {
+        let frontmost: pid_t? = await MainActor.run {
+            NSWorkspace.shared.frontmostApplication?.processIdentifier
+        }
+        let displays = await DisplayController().list()
+        return Self.enrich(
+            windows: windows,
+            cgEntries: WindowIdentity.entries(from: windowServerList),
+            displays: displays,
+            frontmostPID: frontmost
         )
     }
 
@@ -283,10 +417,13 @@ actor WindowController {
         }
 
         enableManualAccessibility(pid: pid)
+        let snapshot = Self.copyWindowServerList()
         let real = Self.realAXWindowInfos(pid: pid, appName: name, messagingTimeout: nil)
-        if !real.isEmpty { return real }
-        // Chrome / apps with no AX-exposed windows.
-        return Self.cgWindows(from: Self.copyWindowServerList(), pid: pid, appName: name)
+        let list = real.isEmpty
+            // Chrome / apps with no AX-exposed windows.
+            ? Self.cgWindows(from: snapshot, pid: pid, appName: name)
+            : real
+        return await enriched(list, windowServerList: snapshot)
     }
 
     /// Bring a window to the front. Raises the app first, then the window.
@@ -439,7 +576,7 @@ actor WindowController {
             }
         }
 
-        let title = slots[0] as? String
+        let title = (slots[0] as? String) ?? ""
         let point = AXAttributeBatch.point(slots[1]) ?? .zero
         let size = AXAttributeBatch.size(slots[2]) ?? .zero
         let minimized = (slots[3] as? NSNumber)?.boolValue ?? false
