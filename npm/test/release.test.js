@@ -150,14 +150,49 @@ test('assertSafeArchiveLinks ignores a listing with no links', () => {
   );
 });
 
-test('assertSafeArchiveLinks rejects escaping and absolute link targets', () => {
+test('assertSafeArchiveLinks rejects every symlink, escaping or not', () => {
   assert.throws(
     () => assertSafeArchiveLinks(['lrwxr-xr-x 0 a staff 0 Jan 1 00:00 a/b -> /etc/passwd']),
-    /unsafe link target/,
+    /symlink entry/,
   );
   assert.throws(
     () => assertSafeArchiveLinks(['lrwxr-xr-x 0 a staff 0 Jan 1 00:00 a/b -> ../../../root']),
-    /unsafe link target/,
+    /symlink entry/,
+  );
+  // A "contained" target is still a link, and the bundle has none.
+  assert.throws(
+    () => assertSafeArchiveLinks(['lrwxr-xr-x 0 a staff 0 Jan 1 00:00 a/b -> c']),
+    /symlink entry/,
+  );
+});
+
+test('assertSafeArchiveLinks rejects hardlinks — the "link to" form the old scan missed', () => {
+  assert.throws(
+    () =>
+      assertSafeArchiveLinks([
+        'hrw-r--r--  0 a wheel 0 Jan 1 00:00 MacControlMCP.app/Contents/MacOS/MacControlMCP link to MacControlMCP.app/Contents/hard',
+      ]),
+    /hardlink entry/,
+  );
+});
+
+test('assertSafeArchiveLinks rejects device, FIFO and socket members', () => {
+  for (const flag of ['b', 'c', 'p', 's']) {
+    assert.throws(
+      () => assertSafeArchiveLinks([`${flag}rw-r--r-- 0 a staff 0 Jan 1 00:00 MacControlMCP.app/x`]),
+      /non-regular member/,
+      `type ${flag} must be refused`,
+    );
+  }
+});
+
+test('assertSafeArchiveLinks tolerates xattr/ACL markers on regular members', () => {
+  assert.doesNotThrow(() =>
+    assertSafeArchiveLinks([
+      '-rwxr-xr-x@ 0 a staff 123 Jan  1 00:00 MacControlMCP.app/Contents/MacOS/MacControlMCP',
+      'drwxr-xr-x+ 0 a staff   0 Jan  1 00:00 MacControlMCP.app/Contents/',
+      '',
+    ]),
   );
 });
 
