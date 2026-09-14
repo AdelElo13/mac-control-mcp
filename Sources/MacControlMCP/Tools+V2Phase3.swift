@@ -349,18 +349,18 @@ extension ToolRegistry {
 
         while Date() < deadline {
             attempts += 1
-            let element = await accessibility.findElement(pid: pid, role: role, title: title)
+            let hit = await accessibility.findElementWithPath(pid: pid, role: role, title: title)
 
             if expectDisappear {
-                if element == nil {
+                if hit == nil {
                     return successResult(
                         "Element disappeared after \(attempts) attempt(s).",
                         ["ok": .bool(true), "attempts": .number(Double(attempts)), "disappeared": .bool(true)]
                     )
                 }
-            } else if let element {
-                let info = await accessibility.getElementInfo(element: element)
-                let id = await elementCache.store(element, pid: pid)
+            } else if let hit {
+                let info = await accessibility.getElementInfo(element: hit.element)
+                let id = await elementCache.store(hit.element, pid: pid, path: hit.path)
                 return successResult(
                     "Element appeared after \(attempts) attempt(s).",
                     [
