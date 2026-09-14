@@ -63,16 +63,17 @@ struct WindowIdentityTests {
         #expect(entries[1].bounds == CGRect(x: 0, y: 100, width: 500, height: 400))
     }
 
-    @Test("z_order counts only layer-0 windows; overlays get no z_order")
+    @Test("z_order ranks only on-screen layer-0 windows; overlays and minimized get none")
     func zOrderSkipsOverlays() {
         let info = [
-            Self.cgEntry(id: 1, pid: 1, layer: 25),   // menubar overlay
+            Self.cgEntry(id: 1, pid: 1, layer: 25),              // menubar overlay
             Self.cgEntry(id: 2, pid: 1),
+            Self.cgEntry(id: 4, pid: 1, onscreen: false),        // minimized / off-Space
             Self.cgEntry(id: 3, pid: 1)
         ]
         let entries = WindowIdentity.entries(from: info)
-        #expect(entries.map(\.zOrder) == [nil, 0, 1])
-        #expect(entries.map(\.layer) == [25, 0, 0])
+        #expect(entries.map(\.zOrder) == [nil, 0, nil, 1])
+        #expect(entries.map(\.layer) == [25, 0, 0, 0])
     }
 
     @Test("entry(id:) finds a window and reports nil for an unknown id")

@@ -27,10 +27,11 @@ enum WindowIdentity {
         let bounds: CGRect
         let isOnscreen: Bool
         let layer: Int
-        /// Front-to-back index among the **layer-0** (normal application)
-        /// windows of the snapshot: 0 is the frontmost window on screen.
-        /// nil for overlays/menubar/dock entries, which have no
-        /// meaningful place in the app-window stack.
+        /// Front-to-back index among the layer-0 windows that are
+        /// currently ON SCREEN: 0 is the frontmost window. nil for
+        /// overlays/menubar/dock entries (non-zero layer) and for
+        /// minimized / off-Space windows, which are not in the visible
+        /// stack at all — a number there would be meaningless.
         let zOrder: Int?
     }
 
@@ -60,8 +61,9 @@ enum WindowIdentity {
             let w = (boundsDict["Width"] as? NSNumber)?.doubleValue ?? 0
             let h = (boundsDict["Height"] as? NSNumber)?.doubleValue ?? 0
             let layer = (dict[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0
+            let onscreen = (dict[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue ?? false
             let zOrder: Int?
-            if layer == 0 {
+            if layer == 0 && onscreen {
                 zOrder = z
                 z += 1
             } else {
@@ -72,7 +74,7 @@ enum WindowIdentity {
                 pid: pidNum.int32Value,
                 title: (dict[kCGWindowName as String] as? String) ?? "",
                 bounds: CGRect(x: x, y: y, width: w, height: h),
-                isOnscreen: (dict[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue ?? false,
+                isOnscreen: onscreen,
                 layer: layer,
                 zOrder: zOrder
             ))
