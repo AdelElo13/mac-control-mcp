@@ -68,6 +68,8 @@ final class ToolRegistry: @unchecked Sendable {
     let appleNative: AppleNativeController
     let undo: UndoController
     let artifactStore: ArtifactStore
+    // v0.9 workstream E — text editing primitives (gap-audit C-7 / B-15)
+    let textEditing: TextEditingController
 
     init(
         accessibility: AccessibilityController,
@@ -102,7 +104,8 @@ final class ToolRegistry: @unchecked Sendable {
         browserDOM: BrowserDOMController? = nil,
         appleNative: AppleNativeController = AppleNativeController(),
         undoCtrl: UndoController = UndoController(),
-        artifactStore: ArtifactStore = ArtifactStore()
+        artifactStore: ArtifactStore = ArtifactStore(),
+        textEditing: TextEditingController = TextEditingController()
     ) {
         self.accessibility = accessibility
         self.elementCache = elementCache
@@ -142,13 +145,15 @@ final class ToolRegistry: @unchecked Sendable {
         self.appleNative = appleNative
         self.undo = undoCtrl
         self.artifactStore = artifactStore
+        self.textEditing = textEditing
     }
 
     var toolDefinitions: [MCPToolDefinition] {
         Self.definitions + Self.definitionsV2 + Self.definitionsV2Phase2 +
             Self.definitionsV2Phase3 + Self.definitionsV2Phase4 + Self.definitionsV2Phase5 +
             Self.definitionsV2Phase6 + Self.definitionsV2Phase7 + Self.definitionsV2Phase8 +
-            Self.definitionsV2Phase9 + Self.definitionsV2Phase10 + Self.definitionsV2Phase11
+            Self.definitionsV2Phase9 + Self.definitionsV2Phase10 + Self.definitionsV2Phase11 +
+            Self.definitionsTextEditing
     }
 
     // MARK: - Tool dispatch
@@ -468,6 +473,19 @@ final class ToolRegistry: @unchecked Sendable {
             return await callListAppIntents()
         case "invoke_app_intent":
             return await callInvokeAppIntent(arguments)
+        // v0.9 workstream E — text editing primitives
+        case "text_get_selection":
+            return await callTextGetSelection(arguments)
+        case "text_get_caret":
+            return await callTextGetCaret(arguments)
+        case "text_set_selection":
+            return await callTextSetSelection(arguments)
+        case "text_insert_at_caret":
+            return await callTextInsertAtCaret(arguments)
+        case "text_replace_range":
+            return await callTextReplaceRange(arguments)
+        case "text_get_value":
+            return await callTextGetValue(arguments)
         default:
             return errorResult("Unknown tool '\(name)'.")
         }
