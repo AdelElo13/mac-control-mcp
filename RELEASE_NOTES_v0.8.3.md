@@ -37,6 +37,25 @@ With `title_contains`, the largest visible matching window wins, not a tiny help
 
 Input tools accept optional `expected_app` / `expected_window`. If another app came to the front, nothing is sent and the tool returns `focus_mismatch`. AX actions (`perform_element_action`, `set_element_attribute`) remain the focus-independent option.
 
+## Faster (measured, release builds, back-to-back, median)
+
+| tool | v0.8.2 | v0.8.3 |
+|---|---|---|
+| get_ui_tree (Chrome, depth 10) | 1177 ms | **31 ms** |
+| list_windows | 131 ms | **33 ms** |
+| capture_window | 117 ms | **60 ms** |
+| capture_screen_v2 | 221 ms | **100 ms** |
+| ocr_screen (default) | 764 ms | 622–646 ms |
+| ocr_screen `level=fast` (new) | – | 220 ms |
+| capture_screen `max_width=1280, format=jpeg` (new) | – | 38 ms |
+| cold start → tools/list | 22 ms | 23 ms |
+
+- get_ui_tree no longer degrades as the element cache fills (a full sort ran on every stored node); attributes are read in one AX call per node. It now walks at most 2000 nodes (the cache capacity) and reports `node_cap_reached`.
+- list_windows reads the window server once and queries apps on a bounded pool with a per-app deadline; a hanging app is marked `ax_timeout: true` instead of stalling the call.
+- OCR runs in memory; new opt-in `level`, `language_correction`, `include_blocks`, `max_blocks`.
+- Capture tools accept opt-in `format` (png/jpeg), `quality`, `max_width` and report `scale` / `pixels_per_point`.
+- Tool descriptions state when to use which of the overlapping capture and element-lookup tools.
+
 ## Docs
 
 `docs/TOOLS.md` is generated from the registered tools and a test fails on drift. The README install links follow the latest release (#15).
