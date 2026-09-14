@@ -206,8 +206,19 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "request_permissions",
-            description: "Prompt the user for Accessibility permission (shows system dialog).",
-            inputSchema: schema(properties: [:])
+            description: "Trigger macOS permission prompts WITHOUT waiting for the user's answer; returns the current status immediately. Default categories: accessibility + folders (Desktop/Documents/Downloads). Call permissions_status after the user has responded.",
+            inputSchema: schema(
+                properties: [
+                    "categories": .object([
+                        "type": .string("array"),
+                        "items": .object([
+                            "type": .string("string"),
+                            "enum": .array(ToolRegistry.requestablePermissionCategories.map(JSONValue.string))
+                        ]),
+                        "description": .string("Which prompts to trigger. Already-decided categories are skipped.")
+                    ])
+                ]
+            )
         ),
         MCPToolDefinition(
             name: "force_quit_app",
@@ -709,34 +720,6 @@ extension ToolRegistry {
         return ok
             ? successResult("Window moved to display \(displayIdx).", payload)
             : errorResult("Window move failed.", payload)
-    }
-
-    func callRequestPermissions() async -> ToolCallResult {
-        let granted = await accessibility.requestPermission()
-        // Also trigger the protected-folder TCC prompts up-front so the
-        // user grants everything in one visit to System Settings
-        // instead of getting a surprise prompt on the first Spotlight
-        // search. Each `contentsOfDirectory` call either succeeds
-        // silently (grant already given), throws silently (we ignore),
-        // or pops the system dialog the very first time.
-        let home = NSHomeDirectory()
-        var folderAccess: [String: Bool] = [:]
-        for folder in ["Desktop", "Documents", "Downloads"] {
-            let ok = (try? FileManager.default.contentsOfDirectory(
-                atPath: home + "/" + folder
-            )) != nil
-            folderAccess[folder.lowercased()] = ok
-        }
-        return successResult(
-            granted ? "Permission already granted." : "Permission dialog shown (user action required).",
-            [
-                "ok": .bool(true),
-                "accessibility": .bool(granted),
-                "desktop": .bool(folderAccess["desktop"] ?? false),
-                "documents": .bool(folderAccess["documents"] ?? false),
-                "downloads": .bool(folderAccess["downloads"] ?? false)
-            ]
-        )
     }
 
     func callScrollToElement(_ arguments: [String: JSONValue]) async -> ToolCallResult {

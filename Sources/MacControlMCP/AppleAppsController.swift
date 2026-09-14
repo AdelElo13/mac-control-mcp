@@ -30,6 +30,9 @@ actor AppleAppsController {
         public let ok: Bool
         public let data: T?
         public let error: String?
+        /// v0.8.3: structured error fields (error_code, pane, reason, …)
+        /// merged into the tool's error payload. nil for plain errors.
+        public var errorPayload: [String: JSONValue]? = nil
     }
 
     // v0.8.0: lazy EKEventStore for calendar/reminders access.
@@ -262,19 +265,26 @@ actor AppleAppsController {
         // "denied" message sent users on a wild goose chase when they
         // had actually granted write-only access in an earlier session.
         let access = await requestCalendarAccess()
-        guard access.granted else {
-            let message: String
-            switch access.status {
-            case "writeOnly":
-                message = "Calendar access is write-only. listCalendarEvents needs FULL access to read events. In System Settings → Privacy & Security → Calendars, toggle mac-control-mcp to 'Full Access' (not 'Add Events Only'), then restart the MCP server."
-            case "denied", "denied_after_prompt":
-                message = "Calendar access denied. Grant in System Settings → Privacy & Security → Calendars (enable mac-control-mcp), then restart the MCP server."
-            case "restricted":
-                message = "Calendar access restricted by MDM / parental controls. An administrator must unblock Calendar access for this user account."
-            default:
-                message = "Calendar access not available (status=\(access.status)). Grant in System Settings → Privacy & Security → Calendars."
+        guard access.outcome == .granted else {
+            if access.status == "write_only" {
+                let message = "Calendar access is write-only. calendar_list_events needs FULL access to read events. In System Settings → Privacy & Security → Calendars, set '\(PermissionContext.current.permissionTarget.name)' to 'Full Access' (not 'Add Events Only'), then restart the MCP client."
+                return Result(ok: false, data: nil, error: message, errorPayload: [
+                    "error_code": .string("permission_missing"),
+                    "reason": .string("write_only"),
+                    "status": .string(access.status),
+                    "pane": .string("calendar")
+                ])
             }
-            return Result(ok: false, data: nil, error: message)
+            // v0.8.3: "denied" used to cover both a user refusal and macOS
+            // refusing without ever prompting (status still not_determined).
+            let failure = PermissionContext.permissionError(
+                service: "Calendar",
+                pane: "calendar",
+                entitlement: "com.apple.security.personal-information.calendars",
+                outcome: access.outcome,
+                statusAfter: access.status
+            )
+            return Result(ok: false, data: nil, error: failure.message, errorPayload: failure.payload)
         }
 
         let start = Date()
@@ -318,26 +328,32 @@ actor AppleAppsController {
     /// only for write scope, and the upgrade-to-full request in a
     /// background MCP process never shows the UI. We now surface the
     /// exact state so listCalendarEvents can tell the user what to do.
-    private func requestCalendarAccess() async -> (granted: Bool, status: String) {
-        if #available(macOS 14.0, *) {
-            let status = EKEventStore.authorizationStatus(for: .event)
-            if status == .fullAccess { return (true, "fullAccess") }
-            if status == .denied { return (false, "denied") }
-            if status == .restricted { return (false, "restricted") }
-            if status == .writeOnly { return (false, "writeOnly") }
-
-            // Slow path: show prompt / wait for user decision.
-            let eventStoreRef = eventStore
-            let granted: Bool = await withCheckedContinuation { continuation in
-                eventStoreRef.requestFullAccessToEvents { granted, _ in
-                    continuation.resume(returning: granted)
-                }
-            }
-            return (granted, granted ? "fullAccess" : "denied_after_prompt")
-        } else {
-            return (false, "macos_pre_14")
+    ///
+    /// v0.8.3: the request result is classified against the status read
+    /// AFTER the request. `false` with status still `not_determined` means
+    /// macOS refused without prompting (missing entitlement / responsible app
+    /// can't prompt) — previously reported as a user denial. The wait is
+    /// bounded: an unanswered prompt no longer holds the call forever.
+    private func requestCalendarAccess() async -> (outcome: PermissionContext.AuthOutcome, status: String) {
+        let before = ToolRegistry.calendarPermissionStatusString()
+        switch before {
+        case "granted": return (.granted, before)
+        case "denied": return (.deniedByUser, before)
+        case "write_only": return (.writeOnly, before)
+        case "restricted": return (.restricted, before)
+        case "info_plist_missing": return (.deniedWithoutPrompt, before)
+        default: break
         }
+        let store = eventStore
+        let granted: Bool? = await PermissionContext.awaitCallback(timeout: Self.permissionPromptTimeout) { done in
+            store.requestFullAccessToEvents { granted, _ in done(granted) }
+        }
+        let after = ToolRegistry.calendarPermissionStatusString()
+        return (PermissionContext.classify(granted: granted, statusAfter: after), after)
     }
+
+    /// Upper bound for waiting on a TCC prompt answer inside one tool call.
+    static let permissionPromptTimeout: TimeInterval = 45
     #endif
 
     private func parseISO(_ s: String) -> Date? {
@@ -454,12 +470,52 @@ actor AppleAppsController {
         public let emails: [String]
     }
 
+    #if canImport(Contacts)
+    /// v0.8.3: request access explicitly and classify the outcome. v0.8.2
+    /// went straight to `unifiedContacts`, whose implicit TCC check turned
+    /// `not_determined` into `denied` within one call and never surfaced a
+    /// prompt when the responsible app couldn't show one. Returns nil when
+    /// access is available.
+    private func ensureContactsAccess(_ store: CNContactStore) async -> Result<[Contact]>? {
+        var status = ToolRegistry.contactsPermissionStatusString()
+        let outcome: PermissionContext.AuthOutcome
+        switch status {
+        case "granted", "limited":
+            return nil
+        case "denied":
+            outcome = .deniedByUser
+        case "restricted":
+            outcome = .restricted
+        case "info_plist_missing":
+            outcome = .deniedWithoutPrompt
+        default:
+            let granted: Bool? = await PermissionContext.awaitCallback(timeout: Self.permissionPromptTimeout) { done in
+                store.requestAccess(for: .contacts) { granted, _ in done(granted) }
+            }
+            status = ToolRegistry.contactsPermissionStatusString()
+            outcome = PermissionContext.classify(granted: granted, statusAfter: status)
+            if outcome == .granted { return nil }
+        }
+        let failure = PermissionContext.permissionError(
+            service: "Contacts",
+            pane: "contacts",
+            entitlement: "com.apple.security.personal-information.addressbook",
+            outcome: outcome,
+            statusAfter: status
+        )
+        return Result(ok: false, data: nil, error: failure.message, errorPayload: failure.payload)
+    }
+    #endif
+
     /// Search contacts by name substring via CNContactStore — works whether or
     /// not Contacts.app is running (no AppleScript / no -600 error).
-    func searchContacts(query: String, limit: Int) -> Result<[Contact]> {
+    func searchContacts(query: String, limit: Int) async -> Result<[Contact]> {
         #if canImport(Contacts)
         let cap = max(1, min(limit, 50))
         let store = CNContactStore()
+        if let refused = await ensureContactsAccess(store) {
+            return refused
+        }
         let keys: [CNKeyDescriptor] = [
             CNContactGivenNameKey as CNKeyDescriptor,
             CNContactFamilyNameKey as CNKeyDescriptor,
