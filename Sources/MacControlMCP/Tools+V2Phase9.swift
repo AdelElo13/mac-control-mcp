@@ -270,8 +270,15 @@ extension ToolRegistry {
                 ["ok": .bool(false), "pid": .number(Double(pid)), "node_count": .number(0)]
             )
         }
+        // A-14: echo the id in snake_case at the top level too. The nested
+        // `result.snapshotID` is camelCase while docs/TOOLS.md and every
+        // other tool argument are snake_case, which made scripted chaining
+        // into ax_snapshot_diff pass null.
         return successResult("snapshot \(r.snapshotID) captured, \(r.nodeCount) nodes",
-                             ["ok": .bool(true), "result": encodeAsJSONValue(r)])
+                             ["ok": .bool(true),
+                              "snapshot_id": .string(r.snapshotID),
+                              "node_count": .number(Double(r.nodeCount)),
+                              "result": encodeAsJSONValue(r)])
     }
 
     func callAXSnapshotDiff(_ arguments: [String: JSONValue]) async -> ToolCallResult {
