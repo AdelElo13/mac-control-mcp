@@ -25,6 +25,82 @@ struct ServerLifecycleTests {
         #expect(ToolTimeouts.limit(for: "list_windows", arguments: [:], environment: [ToolTimeouts.environmentKey: "nonsense"]) == ToolTimeouts.defaultLimit)
     }
 
+    // MARK: - v0.9 review follow-up (MEDIUM, #8): batch outer/inner timeout race
+
+    @Test("the outer batch timeout always exceeds the summed inner per-call budgets")
+    func batchOuterTimeoutExceedsInnerSum() {
+        let calls: JSONValue = .array([
+            .object(["name": .string("focused_app")]),
+            .object(["name": .string("list_windows")]),
+            .object(["name": .string("wait_for_app"), "arguments": .object(["timeout_seconds": .number(40)])])
+        ])
+        let arguments: [String: JSONValue] = ["calls": calls]
+
+        let outer = ToolTimeouts.limit(for: "batch", arguments: arguments, environment: [:])
+
+        let innerSum = (calls.arrayValue ?? []).reduce(TimeInterval(0)) { total, call in
+            guard let object = call.objectValue, let name = object["name"]?.stringValue else { return total }
+            let subArguments = object["arguments"]?.objectValue ?? [:]
+            return total + ToolTimeouts.limit(for: name, arguments: subArguments, environment: [:])
+        }
+
+        #expect(innerSum > 0)
+        #expect(outer > innerSum, "the outer wrapper must never be tighter than (or equal to) the work it wraps")
+        #expect(outer == innerSum + ToolTimeouts.batchHandlerSlack)
+    }
+
+    @Test("a batch exactly at the cap boundary (sum == batchCap - slack) is accepted")
+    func batchAtCapBoundaryIsAccepted() async {
+        // 5 calls at 59s each (via the test-only override) sum to
+        // EXACTLY `batchCap - batchHandlerSlack` (300 - 5 = 295 = 5 * 59):
+        // the documented boundary is inclusive ("reject ... > batchCap -
+        // 5s"), so this must still be accepted.
+        let effectiveCap = ToolTimeouts.batchCap - ToolTimeouts.batchHandlerSlack
+        let perCall = effectiveCap / 5
+        let registry = ToolRegistry(accessibility: AccessibilityController())
+        let calls: JSONValue = .array((0..<5).map { _ in .object(["name": .string("focused_app")]) })
+
+        let result = await registry.callTool(
+            name: "batch",
+            arguments: [
+                "calls": calls,
+                "__test_override_call_timeout_seconds": .number(perCall)
+            ]
+        )
+        guard case .object(let payload) = result.structuredContent else {
+            Issue.record("batch did not return an object payload")
+            return
+        }
+        #expect(result.isError == false)
+        #expect(payload["completed"]?.doubleValue == 5)
+    }
+
+    @Test("a batch one second past the cap boundary is rejected up front")
+    func batchJustPastCapBoundaryIsRejected() async {
+        // Same 5 calls, but 1s over the boundary in total (60s each = 300
+        // summed > 295 effective cap) — must now be rejected, proving the
+        // reserved slack is actually enforced, not just cosmetic.
+        let effectiveCap = ToolTimeouts.batchCap - ToolTimeouts.batchHandlerSlack
+        let perCall = (effectiveCap / 5) + 1
+        let registry = ToolRegistry(accessibility: AccessibilityController())
+        let calls: JSONValue = .array((0..<5).map { _ in .object(["name": .string("focused_app")]) })
+
+        let result = await registry.callTool(
+            name: "batch",
+            arguments: [
+                "calls": calls,
+                "__test_override_call_timeout_seconds": .number(perCall)
+            ]
+        )
+        #expect(result.isError == true)
+        guard case .object(let payload) = result.structuredContent else {
+            Issue.record("batch did not return an object payload")
+            return
+        }
+        #expect(payload["error_code"]?.stringValue == "invalid_argument")
+        #expect(payload["results"] == nil, "must be rejected up front, before anything ran")
+    }
+
     @Test("timeout result is a structured timeout error")
     func timeoutResultShape() {
         let r = ToolTimeouts.timeoutResult(name: "browser_list_tabs", limit: 90)

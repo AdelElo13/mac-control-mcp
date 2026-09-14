@@ -254,13 +254,23 @@ extension ToolRegistry {
         // "batch", ...)) while this handler kept running side-effecting
         // sub-calls underneath it. Reject up front instead — never let
         // that truncation happen silently.
+        // v0.9 review follow-up (MEDIUM, #8): reject at `batchCap -
+        // batchHandlerSlack`, not `batchCap` itself. `ToolTimeouts.limit(for:
+        // "batch", ...)` — the OUTER tools/call wrapper timeout — is
+        // `sum + delayOverhead + batchHandlerSlack` with no cap of its own
+        // (see ServerLifecycle.swift), so leaving `batchHandlerSlack`
+        // seconds of headroom here guarantees that outer wrapper is never
+        // tighter than (or even equal to) the work it wraps, no matter how
+        // close a request lands to the cap.
         let delayOverheadSeconds = (delayMs / 1000) * Double(max(0, parsedCalls.count - 1))
         let totalBudget = callLimits.reduce(0, +) + delayOverheadSeconds
-        guard totalBudget <= ToolTimeouts.batchCap else {
+        let effectiveCap = ToolTimeouts.batchCap - ToolTimeouts.batchHandlerSlack
+        guard totalBudget <= effectiveCap else {
             return batchInvalidArgument(
                 "batch budget \(Int(totalBudget.rounded()))s (sum of each call's timeout, plus delay_ms "
-                    + "overhead) exceeds the \(Int(ToolTimeouts.batchCap))s cap; split it into smaller batches "
-                    + "or reduce delay_ms."
+                    + "overhead) exceeds the \(Int(effectiveCap))s cap (\(Int(ToolTimeouts.batchCap))s minus "
+                    + "\(Int(ToolTimeouts.batchHandlerSlack))s reserved for the outer call handler); split it "
+                    + "into smaller batches or reduce delay_ms."
             )
         }
 
