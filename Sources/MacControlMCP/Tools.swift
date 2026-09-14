@@ -964,7 +964,8 @@ final class ToolRegistry: @unchecked Sendable {
     private static let definitions: [MCPToolDefinition] = [
         MCPToolDefinition(
             name: "list_elements",
-            description: "List actionable accessibility elements for a process ID.",
+            description: "Survey the ACTIONABLE controls of an app (fixed role whitelist: buttons, links, text fields/areas, checkboxes, radio buttons, pop-up/menu buttons, sliders, switches, steppers… — no containers, rows or static text) down to max_depth (default 8). "
+                + "No filters and no element ids. Use it to answer \"what can I interact with here?\"; use find_elements / query_elements to target specific elements and get ids for follow-up calls, and get_ui_tree for the full structure including containers.",
             inputSchema: schema(
                 properties: [
                     "pid": .object([
@@ -981,7 +982,9 @@ final class ToolRegistry: @unchecked Sendable {
         ),
         MCPToolDefinition(
             name: "find_element",
-            description: "Find a matching accessibility element by role/title.",
+            description: "Return the FIRST element (depth-first, depth <= 20, 5 s budget) whose role contains `role` and whose title contains `title` — case-insensitive substring; title matches AXTitle → AXDescription → AXIdentifier and falls back to AXValue. "
+                + "Returns role/title/value/position/size but NO element id. Cheapest existence/geometry check. "
+                + "Use find_elements when you need every match or an element id for perform_element_action / get_element_attributes / set_element_attribute; query_elements for regex (e.g. exact ^Save$); list_elements to survey controls; get_ui_tree for full structure.",
             inputSchema: schema(
                 properties: [
                     "pid": .object([
