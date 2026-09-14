@@ -424,8 +424,13 @@ actor AXSnapshotController {
     }
 
     private static func frameDistance(_ lhs: FlatNode, _ rhs: FlatNode) -> Double {
-        abs((lhs.x ?? 0) - (rhs.x ?? 0)) + abs((lhs.y ?? 0) - (rhs.y ?? 0))
-            + abs((lhs.width ?? 0) - (rhs.width ?? 0)) + abs((lhs.height ?? 0) - (rhs.height ?? 0))
+        // Split into statements: Xcode 16's type checker gives up on the
+        // single-expression form ("unable to type-check in reasonable time").
+        let dx: Double = abs((lhs.x ?? 0) - (rhs.x ?? 0))
+        let dy: Double = abs((lhs.y ?? 0) - (rhs.y ?? 0))
+        let dw: Double = abs((lhs.width ?? 0) - (rhs.width ?? 0))
+        let dh: Double = abs((lhs.height ?? 0) - (rhs.height ?? 0))
+        return dx + dy + dw + dh
     }
 
     private static func sameFrame(_ lhs: FlatNode, _ rhs: FlatNode) -> Bool {
