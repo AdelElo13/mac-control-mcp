@@ -1035,7 +1035,7 @@ final class ToolRegistry: @unchecked Sendable {
     private static let definitions: [MCPToolDefinition] = [
         MCPToolDefinition(
             name: "list_elements",
-            description: "Survey the ACTIONABLE controls of an app (fixed role whitelist: buttons, links, text fields/areas, checkboxes, radio buttons, pop-up/menu buttons, sliders, switches, steppers… — no containers, rows or static text) down to max_depth (default 8). "
+            description: "Survey the ACTIONABLE controls of an app (fixed role whitelist: buttons, links, text fields/areas, checkboxes, radio buttons, pop-up/menu buttons, sliders, switches, steppers… — no containers, rows or static text) down to max_depth (default 24). "
                 + "No filters and no element ids. Use it to answer \"what can I interact with here?\"; use find_elements / query_elements to target specific elements and get ids for follow-up calls, and get_ui_tree for the full structure including containers. " + axPayloadBudgetDoc,
             inputSchema: schema(
                 properties: [

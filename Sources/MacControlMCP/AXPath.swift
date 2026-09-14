@@ -1,5 +1,49 @@
 import Foundation
 import ApplicationServices
+import AppKit
+
+/// What an element looked like when its path was recorded. Used to
+/// verify — not merely guess — that a re-resolved element is the same
+/// control (v0.9 C-5, review fix 1).
+///
+/// Every field here is already fetched by `AXAttributeBatch` in the one
+/// batched round trip a walk makes per node, so capturing a fingerprint
+/// costs nothing extra. `AXValue` is deliberately NOT part of it: a text
+/// field's value changes constantly and would turn every edit into a
+/// stale handle.
+struct AXFingerprint: Sendable, Hashable {
+    let role: String
+    let identifier: String?
+    let title: String?
+    let subrole: String?
+
+    init(role: String?, identifier: String?, title: String?, subrole: String?) {
+        self.role = role ?? "AXUnknown"
+        self.identifier = (identifier?.isEmpty == false) ? identifier : nil
+        self.title = (title?.isEmpty == false) ? title : nil
+        self.subrole = (subrole?.isEmpty == false) ? subrole : nil
+    }
+
+    /// Does this candidate satisfy the identity recorded in `component`?
+    ///
+    /// Role must always match. Beyond that, `AXIdentifier` wins when the
+    /// recorded path has one (apps publish it precisely so it is stable);
+    /// otherwise title AND subrole must both match, including "both
+    /// absent". An ordinal on its own is never enough — that was the
+    /// review's HIGH finding: inserting a sibling silently shifted a
+    /// stale id onto a different control.
+    func matches(_ component: AXPathComponent) -> Bool {
+        guard role == component.role else { return false }
+        if let wanted = component.identifier {
+            return identifier == wanted
+        }
+        // A candidate that has an identifier where the recorded path had
+        // none is a different element (the app started publishing ids, or
+        // this is simply another control).
+        guard identifier == nil else { return false }
+        return title == component.title && subrole == component.subrole
+    }
+}
 
 /// One level of an element's position in its application's accessibility
 /// tree, counted from the application root.
@@ -9,9 +53,12 @@ import ApplicationServices
 /// server descends in), not among same-role siblings. Same-role indexing
 /// would need every sibling's `AXRole` before descending, i.e. one extra
 /// IPC round trip per sibling on every walk, which would undo the
-/// batched-attribute work of v0.8.3. `role` and `identifier` are carried
-/// alongside the ordinal precisely so resolution can repair itself when
-/// the ordinal drifts (see `AXPath.resolve`).
+/// batched-attribute work of v0.8.3.
+///
+/// The ordinal is only ever a *hint* for where to look: resolution
+/// always verifies the fingerprint (role + identifier, else title +
+/// subrole) and falls back to searching siblings by fingerprint when the
+/// ordinal has drifted.
 struct AXPathComponent: Sendable, Hashable {
     let role: String
     let index: Int
@@ -20,11 +67,70 @@ struct AXPathComponent: Sendable, Hashable {
     /// strongest signal we have — and free, since `AXAttributeBatch`
     /// already fetches it.
     let identifier: String?
+    /// Fingerprint fields. Deliberately NOT part of the id hash: a
+    /// button whose label changes is still the same button, and an id
+    /// that changed with its title would not be stable at all.
+    let title: String?
+    let subrole: String?
 
-    init(role: String?, index: Int, identifier: String?) {
+    init(role: String?, index: Int, identifier: String?, title: String? = nil, subrole: String? = nil) {
         self.role = role ?? "AXUnknown"
         self.index = index
         self.identifier = (identifier?.isEmpty == false) ? identifier : nil
+        self.title = (title?.isEmpty == false) ? title : nil
+        self.subrole = (subrole?.isEmpty == false) ? subrole : nil
+    }
+
+    var fingerprint: AXFingerprint {
+        AXFingerprint(role: role, identifier: identifier, title: title, subrole: subrole)
+    }
+}
+
+/// Identity of the process an element handle belongs to (v0.9 C-5,
+/// review fix 2).
+///
+/// pids are recycled. Without this, a cached id minted against Finder
+/// pid 742 would keep resolving after 742 died and some unrelated
+/// process inherited the number — quietly acting on a different app.
+/// The boot-relative process start time makes a recycled pid a
+/// different identity; the bundle id is a cheap secondary check.
+struct ProcessIdentity: Sendable, Equatable {
+    /// `kinfo_proc.kp_proc.p_starttime`, seconds since the epoch.
+    let startTime: TimeInterval?
+    let bundleID: String?
+
+    static func current(pid: pid_t) -> ProcessIdentity {
+        ProcessIdentity(
+            startTime: startTime(of: pid),
+            bundleID: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier
+        )
+    }
+
+    /// Same sysctl path `PermissionContext` uses for process ancestry.
+    static func startTime(of pid: pid_t) -> TimeInterval? {
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        guard sysctl(&mib, u_int(mib.count), &info, &size, nil, 0) == 0, size > 0 else { return nil }
+        let started = info.kp_proc.p_starttime
+        guard started.tv_sec > 0 else { return nil }
+        return TimeInterval(started.tv_sec) + TimeInterval(started.tv_usec) / 1_000_000
+    }
+
+    /// Is `other` the same running process this identity was captured
+    /// from? Unknown-vs-unknown start times fall back to the bundle id;
+    /// a start time that is known on one side and absent on the other
+    /// means the process is gone — not the same.
+    func matches(_ other: ProcessIdentity) -> Bool {
+        if let mine = startTime, let theirs = other.startTime {
+            // Same-second granularity is not enough to identify a
+            // process; compare the full microsecond timestamp.
+            guard mine == theirs else { return false }
+        } else if startTime != nil || other.startTime != nil {
+            return false
+        }
+        guard let mineBundle = bundleID, let theirsBundle = other.bundleID else { return true }
+        return mineBundle == theirsBundle
     }
 }
 
@@ -46,6 +152,10 @@ enum AXPath {
     /// Canonical, human-readable identity string that gets hashed. Kept
     /// separate from the hash so it is unit-testable and so a future
     /// debug field can surface it verbatim.
+    ///
+    /// Only role / ordinal / identifier take part: fingerprint fields
+    /// (title, subrole) must NOT change the id, or a relabelled button
+    /// would look like a new element.
     static func identity(pid: pid_t, path: [AXPathComponent]) -> String {
         var out = "pid:\(pid)"
         for component in path {
@@ -73,64 +183,65 @@ enum AXPath {
     }
 
     /// Extend `parentPath` with the component describing the child at
-    /// `index` with the given role/identifier.
+    /// `index`, capturing its fingerprint at the same time.
     static func appending(
         _ parentPath: [AXPathComponent],
         role: String?,
         index: Int,
-        identifier: String?
+        identifier: String?,
+        title: String? = nil,
+        subrole: String? = nil
     ) -> [AXPathComponent] {
-        parentPath + [AXPathComponent(role: role, index: index, identifier: identifier)]
+        parentPath + [
+            AXPathComponent(role: role, index: index, identifier: identifier, title: title, subrole: subrole)
+        ]
     }
 
     // MARK: - Resolution
 
-    /// Walk a stored path back down from the application root. Used when
-    /// a cached `AXUIElement` has gone dead (the app rebuilt that part of
-    /// its tree) but the id is still meaningful.
+    /// Which sibling is the element `component` describes?
     ///
-    /// Repair strategy per level, cheapest first:
-    ///   1. the recorded ordinal, when its role still matches (and its
-    ///      identifier too, when the path carries one);
-    ///   2. the single child whose `AXIdentifier` matches;
-    ///   3. the child at the recorded ordinal *among same-role children*.
-    /// Anything else fails the whole resolution — a wrong element is far
-    /// worse than no element.
+    /// Pure, so the drift cases are unit-testable without a live AX tree.
+    ///   1. the recorded ordinal, IF its fingerprint still matches;
+    ///   2. otherwise the single sibling whose fingerprint matches.
+    /// Several equally-matching siblings, or none, → `nil`. Refusing is
+    /// the whole point: acting on the wrong control is far worse than
+    /// telling the caller its handle went stale.
+    static func resolveIndex(component: AXPathComponent, among siblings: [AXFingerprint]) -> Int? {
+        if component.index >= 0, component.index < siblings.count,
+           siblings[component.index].matches(component) {
+            return component.index
+        }
+        let matching = siblings.indices.filter { siblings[$0].matches(component) }
+        return matching.count == 1 ? matching[0] : nil
+    }
+
+    /// Walk a stored path back down from the application root, verifying
+    /// the fingerprint at EVERY level. Used when a cached `AXUIElement`
+    /// has gone dead (the app rebuilt that part of its tree) but the id
+    /// is still meaningful. Returns nil — never a best guess — when any
+    /// level fails to match.
     static func resolve(path: [AXPathComponent], pid: pid_t) -> AXUIElement? {
         var current = AXUIElementCreateApplication(pid)
         for component in path {
             let children = childElements(of: current)
-            guard let next = match(component: component, in: children) else { return nil }
-            current = next
+            let fingerprints = children.map { fingerprint(of: $0) }
+            guard let index = resolveIndex(component: component, among: fingerprints) else { return nil }
+            current = children[index]
         }
         return current
     }
 
-    static func match(component: AXPathComponent, in children: [AXUIElement]) -> AXUIElement? {
-        func role(_ element: AXUIElement) -> String? {
-            copyString(element, "AXRole")
-        }
-        func identifier(_ element: AXUIElement) -> String? {
-            let value = copyString(element, "AXIdentifier")
-            return (value?.isEmpty == false) ? value : nil
-        }
-
-        if component.index >= 0, component.index < children.count {
-            let candidate = children[component.index]
-            if role(candidate) == component.role,
-               component.identifier == nil || identifier(candidate) == component.identifier {
-                return candidate
-            }
-        }
-        if let wanted = component.identifier {
-            let byIdentifier = children.filter { identifier($0) == wanted && role($0) == component.role }
-            if byIdentifier.count == 1 { return byIdentifier[0] }
-        }
-        let sameRole = children.filter { role($0) == component.role }
-        if component.index >= 0, component.index < sameRole.count {
-            return sameRole[component.index]
-        }
-        return nil
+    /// One batched round trip per element (role, title, identifier and
+    /// subrole all come back together).
+    static func fingerprint(of element: AXUIElement) -> AXFingerprint {
+        let attrs = AXAttributeBatch.fetch(element, includeChildren: false)
+        return AXFingerprint(
+            role: attrs.role,
+            identifier: attrs.identifier,
+            title: attrs.title,
+            subrole: attrs.subrole
+        )
     }
 
     /// Is this handle still backed by a live element? A dead
@@ -166,7 +277,7 @@ enum AXPath {
 
     /// Reconstruct the path of an element we only hold a handle to (the
     /// `element_at_point` case) by walking up to the application root and
-    /// recording each ordinal on the way back down.
+    /// recording each ordinal — and fingerprint — on the way back down.
     static func upwardPath(of element: AXUIElement, limit: Int = 32) -> [AXPathComponent]? {
         let chain = ancestors(of: element, limit: limit)
         guard let root = chain.last, copyString(root, "AXRole") == (kAXApplicationRole as String) else {
@@ -184,11 +295,14 @@ enum AXPath {
         while let child = iterator.next() {
             let siblings = childElements(of: parent)
             guard let index = siblings.firstIndex(where: { CFEqual($0, child) }) else { return nil }
+            let attrs = AXAttributeBatch.fetch(child, includeChildren: false)
             path.append(
                 AXPathComponent(
-                    role: copyString(child, "AXRole"),
+                    role: attrs.role,
                     index: index,
-                    identifier: copyString(child, "AXIdentifier")
+                    identifier: attrs.identifier,
+                    title: attrs.title,
+                    subrole: attrs.subrole
                 )
             )
             parent = child

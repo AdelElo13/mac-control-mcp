@@ -300,7 +300,7 @@ extension ToolRegistry {
         var pid: pid_t = 0
         var element: AXUIElement
         if let elementId = arguments["element_id"]?.stringValue, !elementId.isEmpty {
-            guard let resolved = await elementCache.resolveLive(elementId) else {
+            guard case .resolved(let resolved) = await elementCache.resolveLive(elementId) else {
                 return errorResult(
                     "element_id '\(elementId)' not found or expired.",
                     ["ok": .bool(false), "reason": .string("element_not_found")]

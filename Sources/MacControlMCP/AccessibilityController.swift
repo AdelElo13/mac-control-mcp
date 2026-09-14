@@ -112,6 +112,11 @@ actor AccessibilityController {
         enableManualAccessibility(pid: pid)
         let app = AXUIElementCreateApplication(pid)
         return AXPath.copyElements(app, kAXWindowsAttribute as String).compactMap { window in
+            // A minimized window still publishes a frame, but nothing in
+            // it is on screen — counting it would let viewport_only keep
+            // controls the user cannot see (review fix 4).
+            if let minimized = AXPath.copyString(window, kAXMinimizedAttribute as String),
+               minimized == "1" || minimized.lowercased() == "true" { return nil }
             let attrs = AXAttributeBatch.fetch(window, includeChildren: false)
             guard let origin = attrs.position, let size = attrs.size else { return nil }
             return CGRect(origin: origin, size: size)
@@ -278,7 +283,10 @@ actor AccessibilityController {
             // node appends its ordinal among its parent's children.
             let path = depth == 0
                 ? parentPath
-                : AXPath.appending(parentPath, role: attrs.role, index: ordinal, identifier: attrs.identifier)
+                : AXPath.appending(
+                    parentPath, role: attrs.role, index: ordinal, identifier: attrs.identifier,
+                    title: attrs.title, subrole: attrs.subrole
+                )
             let currentRole = attrs.role ?? "AXUnknown"
             let roleMatches = Self.textMatches(filter: role, candidate: currentRole, exact: exact)
             let titleMatches: Bool = {
@@ -595,7 +603,10 @@ actor AccessibilityController {
             let attrs = AXAttributeBatch.fetch(element, includeChildren: descend)
             let path = depth == 0
                 ? parentPath
-                : AXPath.appending(parentPath, role: attrs.role, index: ordinal, identifier: attrs.identifier)
+                : AXPath.appending(
+                    parentPath, role: attrs.role, index: ordinal, identifier: attrs.identifier,
+                    title: attrs.title, subrole: attrs.subrole
+                )
             nodes.append(
                 TreeNode(
                     element: element,
@@ -676,7 +687,10 @@ actor AccessibilityController {
             let attrs = AXAttributeBatch.fetch(element, includeChildren: true)
             let path = depth == 0
                 ? parentPath
-                : AXPath.appending(parentPath, role: attrs.role, index: ordinal, identifier: attrs.identifier)
+                : AXPath.appending(
+                    parentPath, role: attrs.role, index: ordinal, identifier: attrs.identifier,
+                    title: attrs.title, subrole: attrs.subrole
+                )
             if Self.matchesFilter(attrs: attrs, role: role, title: title, value: value, exact: exact) {
                 matches.append(Match(element: element, info: Self.elementInfo(from: attrs, depth: depth), path: path))
                 if matches.count >= limit { return }
@@ -757,7 +771,10 @@ actor AccessibilityController {
             let attrs = AXAttributeBatch.fetch(element, includeChildren: true)
             let path = depth == 0
                 ? parentPath
-                : AXPath.appending(parentPath, role: attrs.role, index: ordinal, identifier: attrs.identifier)
+                : AXPath.appending(
+                    parentPath, role: attrs.role, index: ordinal, identifier: attrs.identifier,
+                    title: attrs.title, subrole: attrs.subrole
+                )
             let currentRole = attrs.role ?? "AXUnknown"
             let roleOk = Self.matches(regex: roleRegex, literal: rolePattern, candidate: currentRole)
             let titleOk = Self.matches(regex: titleRegex, literal: titlePattern, candidate: attrs.title ?? "")

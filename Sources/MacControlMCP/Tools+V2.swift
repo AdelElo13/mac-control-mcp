@@ -256,33 +256,42 @@ extension ToolRegistry {
             viewportOnly: budget.viewportOnly,
             windows: windows
         )
-        let remapped = AXPayload.remapChildren(nodes: shape, kept: kept)
-
         // One actor hop + one eviction pass for the whole tree (see
         // ElementCache.storeMany) instead of one per node.
         let ids = await elementCache.storeMany(withPaths: kept.map { (nodes[$0].element, nodes[$0].path) }, pid: pid)
-        var encoded: [JSONValue] = []
-        encoded.reserveCapacity(kept.count)
-        for (position, original) in kept.enumerated() {
-            encoded.append(
+
+        // Encode → measure → (if the cap bit) drop the tail and RE-MAP.
+        // Remapping has to happen against the surviving set, otherwise a
+        // truncated tree keeps child indices pointing past the end of
+        // the array it ships (review fix 3). Nodes are in preorder, so
+        // dropping a suffix always keeps the root.
+        func encode(_ survivors: [Int]) -> [JSONValue] {
+            let children = AXPayload.remapChildren(nodes: shape, kept: survivors)
+            return survivors.enumerated().map { position, original in
                 encodeTreeNode(
                     node: nodes[original],
                     id: ids[position],
-                    childIndices: remapped[position],
+                    childIndices: children[position],
                     fields: budget.fields
                 )
-            )
+            }
         }
-        let budgeted = AXPayload.applyByteBudget(encoded, maxBytes: budget.maxBytes)
+        var emitted = encode(kept)
+        let budgeted = AXPayload.applyByteBudget(emitted, maxBytes: budget.maxBytes)
+        if budgeted.truncated {
+            emitted = encode(Array(kept.prefix(budgeted.items.count)))
+        } else {
+            emitted = budgeted.items
+        }
 
         var payload: [String: JSONValue] = [
             "ok": .bool(true),
             "pid": .number(Double(pid)),
             "max_depth": .number(Double(maxDepth)),
-            "count": .number(Double(budgeted.items.count)),
+            "count": .number(Double(emitted.count)),
             "node_cap": .number(Double(nodeCap)),
             "node_cap_reached": .bool(nodes.count >= nodeCap),
-            "nodes": .array(budgeted.items)
+            "nodes": .array(emitted)
         ]
         budget.annotate(
             &payload,
@@ -291,7 +300,7 @@ extension ToolRegistry {
             truncated: budgeted.truncated || nodes.count >= nodeCap
         )
         return successResult(
-            "Walked \(nodes.count) nodes (max_depth=\(maxDepth)), returned \(budgeted.items.count).",
+            "Walked \(nodes.count) nodes (max_depth=\(maxDepth)), returned \(emitted.count).",
             payload
         )
     }
@@ -392,8 +401,11 @@ extension ToolRegistry {
         guard let id = arguments["element_id"]?.stringValue, !id.isEmpty else {
             return invalidArgument("get_element_attributes requires element_id.")
         }
-        guard let element = await elementCache.resolveLive(id) else {
-            return errorResult("Unknown or expired element_id.", ["ok": .bool(false), "element_id": .string(id)])
+        let element: AXUIElement
+        switch await elementCache.resolveLive(id) {
+        case .resolved(let resolved): element = resolved
+        case .unknown: return unknownElementResult(id)
+        case .stale(let reason): return staleElementResult(id, reason: reason)
         }
 
         // Codex v8 #10 — strict type check on `names`. If the key is
@@ -444,8 +456,11 @@ extension ToolRegistry {
         guard let value = arguments["value"] else {
             return invalidArgument("set_element_attribute requires value.")
         }
-        guard let element = await elementCache.resolveLive(id) else {
-            return errorResult("Unknown or expired element_id.", ["ok": .bool(false), "element_id": .string(id)])
+        let element: AXUIElement
+        switch await elementCache.resolveLive(id) {
+        case .resolved(let resolved): element = resolved
+        case .unknown: return unknownElementResult(id)
+        case .stale(let reason): return staleElementResult(id, reason: reason)
         }
 
         let status = await accessibility.setAttribute(element: element, name: name, value: value)
@@ -465,8 +480,11 @@ extension ToolRegistry {
         guard let id = arguments["element_id"]?.stringValue, !id.isEmpty else {
             return invalidArgument("perform_element_action requires element_id.")
         }
-        guard let element = await elementCache.resolveLive(id) else {
-            return errorResult("Unknown or expired element_id.", ["ok": .bool(false), "element_id": .string(id)])
+        let element: AXUIElement
+        switch await elementCache.resolveLive(id) {
+        case .resolved(let resolved): element = resolved
+        case .unknown: return unknownElementResult(id)
+        case .stale(let reason): return staleElementResult(id, reason: reason)
         }
 
         // Codex v8 #10 — strict type check on `action`. If the key is
@@ -645,6 +663,37 @@ extension ToolRegistry {
     }
 
     // MARK: - JSON encoders
+
+    /// The id was never ours (or has been evicted after 5 minutes idle).
+    func unknownElementResult(_ id: String) -> ToolCallResult {
+        errorResult(
+            "Unknown or expired element_id.",
+            [
+                "ok": .bool(false),
+                "element_id": .string(id),
+                "error_code": .string("unknown_element_id"),
+                "hint": .string("Element ids expire after 5 minutes idle. Re-run find_elements / find_element / get_ui_tree to get a current id.")
+            ]
+        )
+    }
+
+    /// v0.9 (C-5, review fix 1+2): the id WAS ours, but the element it
+    /// named is gone and could not be re-identified with certainty —
+    /// its process was replaced, or its AX path no longer matches the
+    /// fingerprint recorded at capture time. We refuse rather than act
+    /// on a plausible-looking neighbour.
+    func staleElementResult(_ id: String, reason: String) -> ToolCallResult {
+        errorResult(
+            "Stale element_id: \(reason).",
+            [
+                "ok": .bool(false),
+                "element_id": .string(id),
+                "error_code": .string("stale_element"),
+                "reason": .string(reason),
+                "hint": .string("The UI changed under this handle. Re-run find_elements (or get_ui_tree) and use the fresh id — the server deliberately does not guess at a replacement element.")
+            ]
+        )
+    }
 
     /// Store every match under a stable, content-addressed id (C-5) and
     /// encode it through the payload budget (C-9).

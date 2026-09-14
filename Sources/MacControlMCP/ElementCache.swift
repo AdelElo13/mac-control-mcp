@@ -21,7 +21,25 @@ actor ElementCache {
         ///   2. it lets `resolveLive` re-walk the path when the cached
         ///      handle has gone dead.
         let path: [AXPathComponent]?
+        /// Identity of the owning process at capture time. pids are
+        /// recycled; without this a stale id could resolve against a
+        /// completely unrelated process that inherited the number
+        /// (v0.9 C-5, review fix 2).
+        let identity: ProcessIdentity
         var lastAccess: Date
+    }
+
+    /// Outcome of resolving an element id. Distinguishing "never heard
+    /// of it" from "the element it named is gone" is the whole point:
+    /// the first is a caller bug, the second means re-run a search.
+    enum Resolution: Sendable {
+        case resolved(AXUIElement)
+        /// Unknown id, or evicted/expired from the cache.
+        case unknown
+        /// The id was ours, but the element behind it no longer exists
+        /// (or its process was replaced). Never a guess at a
+        /// replacement.
+        case stale(String)
     }
 
     private var entries: [String: Entry] = [:]
@@ -45,10 +63,21 @@ actor ElementCache {
     /// already has simply refreshes the entry. Producers that genuinely
     /// have no path (e.g. the system-wide focused element) still get a
     /// random id, exactly as before.
-    func store(_ element: AXUIElement, pid: pid_t, path: [AXPathComponent]? = nil) -> String {
+    func store(
+        _ element: AXUIElement,
+        pid: pid_t,
+        path: [AXPathComponent]? = nil,
+        identity: ProcessIdentity? = nil
+    ) -> String {
         evictExpired()
         evictIfOverCapacity()
-        return insert(element, pid: pid, path: path, now: Date())
+        return insert(
+            element,
+            pid: pid,
+            path: path,
+            identity: identity ?? ProcessIdentity.current(pid: pid),
+            now: Date()
+        )
     }
 
     /// Store a batch of elements (e.g. every node of a `get_ui_tree` walk)
@@ -89,30 +118,40 @@ actor ElementCache {
             evictOldest(count: min(overflow, entries.count))
         }
         let now = Date()
+        // One identity lookup for the whole batch — they all share a pid.
+        let identity = ProcessIdentity.current(pid: pid)
         return elements.enumerated().map { index, entry in
-            index < storable ? insert(entry.0, pid: pid, path: entry.1, now: now) : nil
+            index < storable
+                ? insert(entry.0, pid: pid, path: entry.1, identity: identity, now: now)
+                : nil
         }
     }
 
-    private func insert(_ element: AXUIElement, pid: pid_t, path: [AXPathComponent]?, now: Date) -> String {
+    private func insert(
+        _ element: AXUIElement,
+        pid: pid_t,
+        path: [AXPathComponent]?,
+        identity: ProcessIdentity,
+        now: Date
+    ) -> String {
         if let path {
             // Content-addressed: deterministic, so re-storing the same
             // element refreshes its entry instead of minting a twin.
             let id = AXPath.identifier(pid: pid, path: path)
-            entries[id] = Entry(element: element, pid: pid, path: path, lastAccess: now)
+            entries[id] = Entry(element: element, pid: pid, path: path, identity: identity, lastAccess: now)
             return id
         }
         for _ in 0..<8 {
             let id = Self.makeID()
             if entries[id] == nil {
-                entries[id] = Entry(element: element, pid: pid, path: nil, lastAccess: now)
+                entries[id] = Entry(element: element, pid: pid, path: nil, identity: identity, lastAccess: now)
                 return id
             }
         }
         // Extremely unlikely path. Fall back to a UUID-based ID so we
         // never silently overwrite an existing entry.
         let fallback = "el_\(UUID().uuidString.prefix(16).lowercased().replacingOccurrences(of: "-", with: ""))"
-        entries[fallback] = Entry(element: element, pid: pid, path: nil, lastAccess: now)
+        entries[fallback] = Entry(element: element, pid: pid, path: nil, identity: identity, lastAccess: now)
         return fallback
     }
 
@@ -140,13 +179,41 @@ actor ElementCache {
     /// This variant checks liveness and, when the handle is dead and we
     /// recorded a path, re-walks that path from the application root and
     /// caches the repaired handle under the same id.
-    func resolveLive(_ id: String) -> AXUIElement? {
-        guard let element = resolve(id) else { return nil }
-        if AXPath.isAlive(element) { return element }
-        guard let entry = entries[id], let path = entry.path,
-              let repaired = AXPath.resolve(path: path, pid: entry.pid) else { return nil }
-        entries[id] = Entry(element: repaired, pid: entry.pid, path: path, lastAccess: Date())
-        return repaired
+    /// Repair is strictly verified (review fixes 1 + 2):
+    ///   * the owning process must still be the same process — a
+    ///     recycled pid is `stale`, never a silent retarget;
+    ///   * every level of the re-walked path must match the fingerprint
+    ///     captured at store time, so inserting a sibling can never
+    ///     shift a handle onto a neighbouring control;
+    ///   * a repaired element is written back ONLY after that full
+    ///     verification; otherwise the entry is dropped.
+    func resolveLive(_ id: String) -> Resolution {
+        guard let element = resolve(id) else { return .unknown }
+        guard let entry = entries[id] else { return .unknown }
+
+        let identityNow = ProcessIdentity.current(pid: entry.pid)
+        guard entry.identity.matches(identityNow) else {
+            entries.removeValue(forKey: id)
+            return .stale(
+                "pid \(entry.pid) is no longer the process this element came from (the pid was reused or the app restarted)"
+            )
+        }
+
+        if AXPath.isAlive(element) { return .resolved(element) }
+
+        guard let path = entry.path else {
+            entries.removeValue(forKey: id)
+            return .stale("the element is gone and no AX path was recorded for it")
+        }
+        guard let repaired = AXPath.resolve(path: path, pid: entry.pid) else {
+            entries.removeValue(forKey: id)
+            return .stale("the element is gone and its AX path no longer matches any element in the app")
+        }
+        entries[id] = Entry(
+            element: repaired, pid: entry.pid, path: path,
+            identity: entry.identity, lastAccess: Date()
+        )
+        return .resolved(repaired)
     }
 
     /// The AX path recorded for an id, if any. Exposed for diagnostics
