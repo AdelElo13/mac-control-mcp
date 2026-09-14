@@ -60,17 +60,16 @@ actor GroundingController {
         let confidence: Double
     }
 
-    /// Default AX depth ceiling. Deliberately identical to
-    /// `AccessibilityController.findElements` (32): `ground` used to
-    /// hard-code 16, so elements at depth 17 — routine in Electron apps —
-    /// were invisible to `ground` while `find_elements` returned them
-    /// (A-2 / B-7).
-    static let defaultMaxDepth = 32
-    static let maxAllowedDepth = 64
+    /// Default AX depth ceiling — the project-wide `AXDepth.default`
+    /// (v0.9 D-2), shared with find_element(s) / query_elements /
+    /// list_elements / get_ui_tree. `ground` used to hard-code 16, so
+    /// elements at depth 17 — routine in Electron apps — were invisible
+    /// to `ground` while `find_elements` returned them (A-2 / B-7).
+    static let defaultMaxDepth = AXDepth.default
+    static let maxAllowedDepth = AXDepth.maxAllowed
 
     static func resolveMaxDepth(_ requested: Int?) -> Int {
-        guard let requested else { return defaultMaxDepth }
-        return max(1, min(requested, maxAllowedDepth))
+        AXDepth.resolve(requested)
     }
 
     /// Classify a window-capture failure so callers get an actionable
@@ -134,8 +133,9 @@ actor GroundingController {
             // (0, screen_height) with size (0,0) — those are technically
             // "AX-matched" but cannot be clicked.
             let mainBounds = CGDisplayBounds(CGMainDisplayID())
-            var survivors: [(element: AXUIElement, info: AccessibilityController.ElementInfo)] = []
-            for (element, info) in results {
+            var survivors: [AccessibilityController.Match] = []
+            for match in results {
+                let info = match.info
                 guard let pos = info.position, let size = info.size else { continue }
 
                 // Filter: AXApplication is a container, not a clickable
@@ -159,7 +159,7 @@ actor GroundingController {
                     continue
                 }
 
-                survivors.append((element, info))
+                survivors.append(match)
             }
 
             // Element ids for every surviving AX match, in ONE cache hop,
@@ -167,7 +167,9 @@ actor GroundingController {
             // perform_element_action) instead of only clicking a point.
             var ids: [String?] = Array(repeating: nil, count: survivors.count)
             if let elementCache {
-                ids = await elementCache.storeMany(survivors.map(\.element), pid: pid)
+                // Content-addressed ids (v0.9 C-5): ground now hands back the
+                // same id find_elements would for the same element.
+                ids = await elementCache.storeMany(withPaths: survivors.map { ($0.element, $0.path) }, pid: pid)
             }
 
             for (index, survivor) in survivors.enumerated() {

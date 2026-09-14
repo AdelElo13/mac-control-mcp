@@ -14,6 +14,13 @@ actor ElementCache {
     struct Entry {
         let element: AXUIElement
         let pid: pid_t
+        /// AX path from the application root, when the producer knew it
+        /// (every tree walk / search does). Two jobs:
+        ///   1. it makes the id content-addressed (same element → same
+        ///      id across calls and sessions — v0.9 C-5 / B-10);
+        ///   2. it lets `resolveLive` re-walk the path when the cached
+        ///      handle has gone dead.
+        let path: [AXPathComponent]?
         var lastAccess: Date
     }
 
@@ -31,10 +38,17 @@ actor ElementCache {
     /// to collide with an existing entry we retry up to 8 times before
     /// giving up — with an 8-byte ID (64 bits) collisions are astronomically
     /// rare, but we retry anyway to avoid silently overwriting live state.
-    func store(_ element: AXUIElement, pid: pid_t) -> String {
+    /// v0.9 (C-5 / B-10): when `path` is supplied the id is a
+    /// deterministic hash of (pid, path) — the same element gets the same
+    /// id on every call and in every session, so agents can dedupe,
+    /// cache, and correlate handles. Re-storing an element under an id it
+    /// already has simply refreshes the entry. Producers that genuinely
+    /// have no path (e.g. the system-wide focused element) still get a
+    /// random id, exactly as before.
+    func store(_ element: AXUIElement, pid: pid_t, path: [AXPathComponent]? = nil) -> String {
         evictExpired()
         evictIfOverCapacity()
-        return insert(element, pid: pid, now: Date())
+        return insert(element, pid: pid, path: path, now: Date())
     }
 
     /// Store a batch of elements (e.g. every node of a `get_ui_tree` walk)
@@ -61,6 +75,12 @@ actor ElementCache {
     /// get_ui_tree avoids the nil case entirely by capping its walk at
     /// `maxEntries` nodes.
     func storeMany(_ elements: [AXUIElement], pid: pid_t) -> [String?] {
+        storeMany(withPaths: elements.map { ($0, nil) }, pid: pid)
+    }
+
+    /// Path-carrying variant — `get_ui_tree` and the search tools use it
+    /// so every returned id is content-addressed (C-5).
+    func storeMany(withPaths elements: [(AXUIElement, [AXPathComponent]?)], pid: pid_t) -> [String?] {
         guard !elements.isEmpty else { return [] }
         evictExpired()
         let storable = min(elements.count, maxEntries)
@@ -69,23 +89,30 @@ actor ElementCache {
             evictOldest(count: min(overflow, entries.count))
         }
         let now = Date()
-        return elements.enumerated().map { index, element in
-            index < storable ? insert(element, pid: pid, now: now) : nil
+        return elements.enumerated().map { index, entry in
+            index < storable ? insert(entry.0, pid: pid, path: entry.1, now: now) : nil
         }
     }
 
-    private func insert(_ element: AXUIElement, pid: pid_t, now: Date) -> String {
+    private func insert(_ element: AXUIElement, pid: pid_t, path: [AXPathComponent]?, now: Date) -> String {
+        if let path {
+            // Content-addressed: deterministic, so re-storing the same
+            // element refreshes its entry instead of minting a twin.
+            let id = AXPath.identifier(pid: pid, path: path)
+            entries[id] = Entry(element: element, pid: pid, path: path, lastAccess: now)
+            return id
+        }
         for _ in 0..<8 {
             let id = Self.makeID()
             if entries[id] == nil {
-                entries[id] = Entry(element: element, pid: pid, lastAccess: now)
+                entries[id] = Entry(element: element, pid: pid, path: nil, lastAccess: now)
                 return id
             }
         }
         // Extremely unlikely path. Fall back to a UUID-based ID so we
         // never silently overwrite an existing entry.
         let fallback = "el_\(UUID().uuidString.prefix(16).lowercased().replacingOccurrences(of: "-", with: ""))"
-        entries[fallback] = Entry(element: element, pid: pid, lastAccess: now)
+        entries[fallback] = Entry(element: element, pid: pid, path: nil, lastAccess: now)
         return fallback
     }
 
@@ -101,6 +128,31 @@ actor ElementCache {
         entry.lastAccess = Date()
         entries[id] = entry
         return entry.element
+    }
+
+    /// Resolve an ID to a LIVE element (v0.9 C-5).
+    ///
+    /// `resolve` hands back whatever handle was stored, even if the app
+    /// has since rebuilt that part of its tree and the handle is dead —
+    /// every subsequent AX call then fails with
+    /// `kAXErrorInvalidUIElement` and the agent is told "unknown
+    /// element", which is wrong: the id is fine, the handle is stale.
+    /// This variant checks liveness and, when the handle is dead and we
+    /// recorded a path, re-walks that path from the application root and
+    /// caches the repaired handle under the same id.
+    func resolveLive(_ id: String) -> AXUIElement? {
+        guard let element = resolve(id) else { return nil }
+        if AXPath.isAlive(element) { return element }
+        guard let entry = entries[id], let path = entry.path,
+              let repaired = AXPath.resolve(path: path, pid: entry.pid) else { return nil }
+        entries[id] = Entry(element: repaired, pid: entry.pid, path: path, lastAccess: Date())
+        return repaired
+    }
+
+    /// The AX path recorded for an id, if any. Exposed for diagnostics
+    /// and for tools that want to re-resolve an element themselves.
+    func path(for id: String) -> [AXPathComponent]? {
+        entries[id]?.path
     }
 
     /// Resolve multiple IDs, dropping any that are unknown or expired.

@@ -4,16 +4,37 @@ import AppKit
 
 // MARK: - Tool definitions (v0.2.0)
 
+/// Shared tail for every tool that honours the v0.9 payload budget.
+let axPayloadBudgetDoc = "Every response also reports bytes (encoded size), max_depth_used, nodes_visited and truncated."
+
 extension ToolRegistry {
     static let definitionsV2: [MCPToolDefinition] = [
         MCPToolDefinition(
             name: "get_ui_tree",
-            description: "Walk the full accessibility tree of a process and return every node (including containers and static text) with child indices and stable element IDs for follow-up calls. Bounded by a 5 s budget and node_cap nodes (= element-cache capacity, 2000 by default, so every returned id stays valid); node_cap_reached=true means the tree was cut off — lower max_depth or use find_elements. "
-                + "The heaviest AX tool (tens of KB for a browser window) — when you know what you are looking for, find_elements / query_elements are far smaller and also return ids.",
+            description: "Walk the full accessibility tree of a process and return every node (including containers and static text) with child indices and element IDs for follow-up calls. Element IDs are content-addressed (pid + AX path), so the same node keeps the same id across calls and sessions. Bounded by a 5 s budget and node_cap nodes (= element-cache capacity, 2000 by default, so every returned id stays valid); node_cap_reached=true means the tree was cut off — lower max_depth or use find_elements. "
+                + "The heaviest AX tool (hundreds of KB for a browser or Finder window — 327 KB measured) — when you know what you are looking for, find_elements / query_elements are far smaller and also return ids. "
+                + "To make one look affordable, use interactive_only / viewport_only / fields / max_bytes. " + axPayloadBudgetDoc,
             inputSchema: schema(
                 properties: [
                     "pid": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Target process ID.")]),
-                    "max_depth": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Traversal depth limit (default 12, max 64).")])
+                    "max_depth": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Traversal depth limit. Default 24 (project-wide AX default), max 64.")]),
+                    "fields": .object([
+                        "type": .string("array"),
+                        "items": .object(["type": .string("string")]),
+                        "description": .string("Payload budget (v0.9): only emit these per-node keys. Default: all of id, role, title, value, position, size, depth, children.")
+                    ]),
+                    "interactive_only": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Payload budget: keep only actionable roles (buttons, links, fields, checkboxes, …) plus the ancestors needed to keep the tree connected. Default false.")
+                    ]),
+                    "viewport_only": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Payload budget: drop nodes whose frame lies outside the app's on-screen window bounds. Default false.")
+                    ]),
+                    "max_bytes": .object([
+                        "type": .array([.string("integer"), .string("string")]),
+                        "description": .string("Payload budget: soft cap on the encoded element/node bytes. Emission stops when the next item would exceed it and truncated=true is returned. Default: no cap.")
+                    ])
                 ],
                 required: ["pid"]
             )
@@ -22,15 +43,37 @@ extension ToolRegistry {
             name: "find_elements",
             description: "Find ALL matching elements (up to limit) by case-insensitive substring on role / title / value (title = AXTitle → AXDescription → AXIdentifier; unlike find_element it does not fall back to AXValue — use the value filter). "
                 + "Each match carries an element id for perform_element_action / get_element_attributes / set_element_attribute. "
-                + "Use find_element for a cheap first-match check without ids, query_elements when you need regex (anchors, alternation).",
+                + "Use find_element for a cheap first-match check, query_elements when you need regex (anchors, alternation). "
+                + "IDs are content-addressed (pid + AX path): the same element keeps the same id across calls and sessions. " + axPayloadBudgetDoc,
             inputSchema: schema(
                 properties: [
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "role": .object(["type": .string("string")]),
                     "title": .object(["type": .string("string")]),
                     "value": .object(["type": .string("string")]),
-                    "max_depth": .object(["type": .array([.string("integer"), .string("string")])]),
-                    "limit": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Max matches to return (default 100).")])
+                    "exact": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Match role/title/value by case-insensitive EQUALITY instead of substring. Default false — beware that role \"Button\" substring-matches AXRadioButton, AXMenuButton and AXPopUpButton.")
+                    ]),
+                    "max_depth": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Traversal depth limit. Default 24 (project-wide AX default), max 64.")]),
+                    "limit": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Max matches to return (default 100).")]),
+                    "fields": .object([
+                        "type": .string("array"),
+                        "items": .object(["type": .string("string")]),
+                        "description": .string("Payload budget (v0.9): only emit these per-node keys. Default: all of id, role, title, value, position, size, depth.")
+                    ]),
+                    "interactive_only": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Payload budget: keep only actionable roles (buttons, links, fields, checkboxes, …). Default false.")
+                    ]),
+                    "viewport_only": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Payload budget: drop nodes whose frame lies outside the app's on-screen window bounds. Default false.")
+                    ]),
+                    "max_bytes": .object([
+                        "type": .array([.string("integer"), .string("string")]),
+                        "description": .string("Payload budget: soft cap on the encoded element/node bytes. Emission stops when the next item would exceed it and truncated=true is returned. Default: no cap.")
+                    ])
                 ],
                 required: ["pid"]
             )
@@ -38,15 +81,32 @@ extension ToolRegistry {
         MCPToolDefinition(
             name: "query_elements",
             description: "Like find_elements, but role_regex / title_regex / value_regex are case-insensitive regular expressions (e.g. title_regex \"^Save$\" for an exact label, \"Save|Opslaan\" for alternatives). Invalid regex falls back to case-insensitive substring. Returns element ids. "
-                + "Prefer find_elements for plain substring matches.",
+                + "Prefer find_elements for plain substring matches. " + axPayloadBudgetDoc,
             inputSchema: schema(
                 properties: [
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "role_regex": .object(["type": .string("string")]),
                     "title_regex": .object(["type": .string("string")]),
                     "value_regex": .object(["type": .string("string")]),
-                    "max_depth": .object(["type": .array([.string("integer"), .string("string")])]),
-                    "limit": .object(["type": .array([.string("integer"), .string("string")])])
+                    "max_depth": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Traversal depth limit. Default 24 (project-wide AX default), max 64.")]),
+                    "limit": .object(["type": .array([.string("integer"), .string("string")])]),
+                    "fields": .object([
+                        "type": .string("array"),
+                        "items": .object(["type": .string("string")]),
+                        "description": .string("Payload budget (v0.9): only emit these per-node keys. Default: all of id, role, title, value, position, size, depth.")
+                    ]),
+                    "interactive_only": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Payload budget: keep only actionable roles (buttons, links, fields, checkboxes, …). Default false.")
+                    ]),
+                    "viewport_only": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Payload budget: drop nodes whose frame lies outside the app's on-screen window bounds. Default false.")
+                    ]),
+                    "max_bytes": .object([
+                        "type": .array([.string("integer"), .string("string")]),
+                        "description": .string("Payload budget: soft cap on the encoded element/node bytes. Emission stops when the next item would exceed it and truncated=true is returned. Default: no cap.")
+                    ])
                 ],
                 required: ["pid"]
             )
@@ -174,35 +234,72 @@ extension ToolRegistry {
             return invalidArgument("get_ui_tree requires a positive integer pid.")
         }
         if let dead = noSuchProcessResult(pid: pid, tool: "get_ui_tree") { return dead }
-        let maxDepth = max(1, min(arguments["max_depth"]?.intValue ?? 12, 64))
+        let maxDepth = AXDepth.resolve(arguments["max_depth"]?.intValue)
         // Node cap = element-cache capacity, so every returned node gets
         // a live id. (Before v0.8.3 the walk allowed 5000 nodes but the
         // 2000-entry cache evicted the first nodes' ids while storing the
         // rest, so ids beyond 2000 nodes were already dangling.)
         let nodeCap = elementCache.maxEntries
         let nodes = await accessibility.treeWalk(pid: pid, maxDepth: maxDepth, nodeCap: nodeCap)
+        let budget = PayloadOptions(arguments, known: AXPayload.treeFields)
+
+        // v0.9 (C-9): interactive_only / viewport_only shape the tree
+        // BEFORE ids are minted, so the cache isn't filled with nodes the
+        // caller will never see.
+        let windows = budget.viewportOnly ? await accessibility.windowFrames(pid: pid) : []
+        let shape = nodes.map {
+            AXPayload.ShapeNode(role: $0.role, frame: Self.frame(position: $0.position, size: $0.size), childIndices: $0.childIndices)
+        }
+        let kept = AXPayload.keptIndices(
+            nodes: shape,
+            interactiveOnly: budget.interactiveOnly,
+            viewportOnly: budget.viewportOnly,
+            windows: windows
+        )
+        let remapped = AXPayload.remapChildren(nodes: shape, kept: kept)
 
         // One actor hop + one eviction pass for the whole tree (see
         // ElementCache.storeMany) instead of one per node.
-        let ids = await elementCache.storeMany(nodes.map(\.element), pid: pid)
+        let ids = await elementCache.storeMany(withPaths: kept.map { (nodes[$0].element, nodes[$0].path) }, pid: pid)
         var encoded: [JSONValue] = []
-        encoded.reserveCapacity(nodes.count)
-        for (node, id) in zip(nodes, ids) {
-            encoded.append(encodeTreeNode(node: node, id: id))
+        encoded.reserveCapacity(kept.count)
+        for (position, original) in kept.enumerated() {
+            encoded.append(
+                encodeTreeNode(
+                    node: nodes[original],
+                    id: ids[position],
+                    childIndices: remapped[position],
+                    fields: budget.fields
+                )
+            )
         }
+        let budgeted = AXPayload.applyByteBudget(encoded, maxBytes: budget.maxBytes)
 
-        return successResult(
-            "Walked \(nodes.count) nodes (max_depth=\(maxDepth)).",
-            [
-                "ok": .bool(true),
-                "pid": .number(Double(pid)),
-                "max_depth": .number(Double(maxDepth)),
-                "count": .number(Double(nodes.count)),
-                "node_cap": .number(Double(nodeCap)),
-                "node_cap_reached": .bool(nodes.count >= nodeCap),
-                "nodes": .array(encoded)
-            ]
+        var payload: [String: JSONValue] = [
+            "ok": .bool(true),
+            "pid": .number(Double(pid)),
+            "max_depth": .number(Double(maxDepth)),
+            "count": .number(Double(budgeted.items.count)),
+            "node_cap": .number(Double(nodeCap)),
+            "node_cap_reached": .bool(nodes.count >= nodeCap),
+            "nodes": .array(budgeted.items)
+        ]
+        budget.annotate(
+            &payload,
+            maxDepthUsed: maxDepth,
+            nodesVisited: nodes.count,
+            truncated: budgeted.truncated || nodes.count >= nodeCap
         )
+        return successResult(
+            "Walked \(nodes.count) nodes (max_depth=\(maxDepth)), returned \(budgeted.items.count).",
+            payload
+        )
+    }
+
+    /// CGRect for a node's position+size, or nil when either is absent.
+    static func frame(position: AccessibilityController.Point?, size: AccessibilityController.Size?) -> CGRect? {
+        guard let position, let size else { return nil }
+        return CGRect(x: position.x, y: position.y, width: size.width, height: size.height)
     }
 
     func callFindElements(_ arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -213,27 +310,27 @@ extension ToolRegistry {
         let role = arguments["role"]?.stringValue
         let title = arguments["title"]?.stringValue
         let value = arguments["value"]?.stringValue
-        let maxDepth = max(1, min(arguments["max_depth"]?.intValue ?? 32, 64))
+        let maxDepth = AXDepth.resolve(arguments["max_depth"]?.intValue)
         let limit = max(1, min(arguments["limit"]?.intValue ?? 100, 500))
+        let exact = AXPayload.flag(arguments["exact"])
+        let budget = PayloadOptions(arguments, known: AXPayload.elementFields)
 
         let matches = await accessibility.findElements(
             pid: pid, role: role, title: title, value: value,
-            maxDepth: maxDepth, limit: limit
+            exact: exact, maxDepth: maxDepth, limit: limit
         )
 
-        var encoded: [JSONValue] = []
-        for (element, info) in matches {
-            let id = await elementCache.store(element, pid: pid)
-            encoded.append(encodeElement(info: info, id: id))
-        }
+        let encoded = await encodeMatches(matches, pid: pid, budget: budget)
+        let budgeted = AXPayload.applyByteBudget(encoded, maxBytes: budget.maxBytes)
 
         var payload: [String: JSONValue] = [
             "ok": .bool(true),
             "pid": .number(Double(pid)),
-            "count": .number(Double(matches.count)),
+            "count": .number(Double(budgeted.items.count)),
             "limit_reached": .bool(matches.count >= limit),
-            "elements": .array(encoded)
+            "elements": .array(budgeted.items)
         ]
+        budget.annotate(&payload, maxDepthUsed: maxDepth, nodesVisited: matches.count, truncated: budgeted.truncated)
         if let hint = await axEmptyHint(pid: pid, whenEmpty: matches.isEmpty) {
             payload["ax_tree_hint"] = .string(hint)
         }
@@ -247,8 +344,9 @@ extension ToolRegistry {
         let rolePattern = arguments["role_regex"]?.stringValue
         let titlePattern = arguments["title_regex"]?.stringValue
         let valuePattern = arguments["value_regex"]?.stringValue
-        let maxDepth = max(1, min(arguments["max_depth"]?.intValue ?? 32, 64))
+        let maxDepth = AXDepth.resolve(arguments["max_depth"]?.intValue)
         let limit = max(1, min(arguments["limit"]?.intValue ?? 200, 500))
+        let budget = PayloadOptions(arguments, known: AXPayload.elementFields)
 
         let result = await accessibility.queryElements(
             pid: pid,
@@ -260,18 +358,16 @@ extension ToolRegistry {
         )
         let matches = result.matches
 
-        var encoded: [JSONValue] = []
-        for (element, info) in matches {
-            let id = await elementCache.store(element, pid: pid)
-            encoded.append(encodeElement(info: info, id: id))
-        }
+        let encoded = await encodeMatches(matches, pid: pid, budget: budget)
+        let budgeted = AXPayload.applyByteBudget(encoded, maxBytes: budget.maxBytes)
 
         var payload: [String: JSONValue] = [
             "ok": .bool(true),
             "pid": .number(Double(pid)),
-            "count": .number(Double(matches.count)),
-            "elements": .array(encoded)
+            "count": .number(Double(budgeted.items.count)),
+            "elements": .array(budgeted.items)
         ]
+        budget.annotate(&payload, maxDepthUsed: maxDepth, nodesVisited: matches.count, truncated: budgeted.truncated)
         // v0.9 (A-13): surface exactly which pattern(s) failed to
         // compile as regex and fell back to substring matching, so a
         // typo'd pattern isn't indistinguishable from a genuine no-match.
@@ -296,7 +392,7 @@ extension ToolRegistry {
         guard let id = arguments["element_id"]?.stringValue, !id.isEmpty else {
             return invalidArgument("get_element_attributes requires element_id.")
         }
-        guard let element = await elementCache.resolve(id) else {
+        guard let element = await elementCache.resolveLive(id) else {
             return errorResult("Unknown or expired element_id.", ["ok": .bool(false), "element_id": .string(id)])
         }
 
@@ -348,7 +444,7 @@ extension ToolRegistry {
         guard let value = arguments["value"] else {
             return invalidArgument("set_element_attribute requires value.")
         }
-        guard let element = await elementCache.resolve(id) else {
+        guard let element = await elementCache.resolveLive(id) else {
             return errorResult("Unknown or expired element_id.", ["ok": .bool(false), "element_id": .string(id)])
         }
 
@@ -369,7 +465,7 @@ extension ToolRegistry {
         guard let id = arguments["element_id"]?.stringValue, !id.isEmpty else {
             return invalidArgument("perform_element_action requires element_id.")
         }
-        guard let element = await elementCache.resolve(id) else {
+        guard let element = await elementCache.resolveLive(id) else {
             return errorResult("Unknown or expired element_id.", ["ok": .bool(false), "element_id": .string(id)])
         }
 
@@ -550,13 +646,45 @@ extension ToolRegistry {
 
     // MARK: - JSON encoders
 
-    private func encodeElement(info: AccessibilityController.ElementInfo, id: String) -> JSONValue {
+    /// Store every match under a stable, content-addressed id (C-5) and
+    /// encode it through the payload budget (C-9).
+    func encodeMatches(
+        _ matches: [AccessibilityController.Match],
+        pid: pid_t,
+        budget: PayloadOptions
+    ) async -> [JSONValue] {
+        let filtered = matches.filter { match in
+            let passesRole = !budget.interactiveOnly || AXPayload.isInteractive(role: match.info.role)
+            return passesRole
+        }
+        let windows = budget.viewportOnly ? await accessibility.windowFrames(pid: pid) : []
+        let visible = budget.viewportOnly
+            ? filtered.filter {
+                AXPayload.isInViewport(
+                    frame: Self.frame(position: $0.info.position, size: $0.info.size),
+                    windows: windows
+                )
+            }
+            : filtered
+        let ids = await elementCache.storeMany(withPaths: visible.map { ($0.element, $0.path) }, pid: pid)
+        return zip(visible, ids).map { match, id in
+            encodeElement(info: match.info, id: id, fields: budget.fields)
+        }
+    }
+
+    func encodeElement(
+        info: AccessibilityController.ElementInfo,
+        id: String?,
+        fields: Set<String>? = nil
+    ) -> JSONValue {
         var dict: [String: JSONValue] = [
-            "id": .string(id),
             "role": info.role.map(JSONValue.string) ?? .null,
             "title": info.title.map(JSONValue.string) ?? .null,
             "value": info.value.map(JSONValue.string) ?? .null
         ]
+        // list_elements has never returned ids; omit the key entirely
+        // there rather than emitting a null an agent might try to use.
+        if let id { dict["id"] = .string(id) }
         if let p = info.position {
             dict["position"] = .object(["x": .number(p.x), "y": .number(p.y)])
         }
@@ -566,17 +694,22 @@ extension ToolRegistry {
         if let d = info.depth {
             dict["depth"] = .number(Double(d))
         }
-        return .object(dict)
+        return .object(AXPayload.project(dict, fields: fields))
     }
 
-    private func encodeTreeNode(node: AccessibilityController.TreeNode, id: String?) -> JSONValue {
+    private func encodeTreeNode(
+        node: AccessibilityController.TreeNode,
+        id: String?,
+        childIndices: [Int],
+        fields: Set<String>?
+    ) -> JSONValue {
         var dict: [String: JSONValue] = [
             "id": id.map(JSONValue.string) ?? .null,
             "role": node.role.map(JSONValue.string) ?? .null,
             "title": node.title.map(JSONValue.string) ?? .null,
             "value": node.value.map(JSONValue.string) ?? .null,
             "depth": .number(Double(node.depth)),
-            "children": .array(node.childIndices.map { .number(Double($0)) })
+            "children": .array(childIndices.map { .number(Double($0)) })
         ]
         if let p = node.position {
             dict["position"] = .object(["x": .number(p.x), "y": .number(p.y)])
@@ -584,6 +717,45 @@ extension ToolRegistry {
         if let s = node.size {
             dict["size"] = .object(["width": .number(s.width), "height": .number(s.height)])
         }
-        return .object(dict)
+        return .object(AXPayload.project(dict, fields: fields))
+    }
+}
+
+/// Parsed `fields` / `interactive_only` / `viewport_only` / `max_bytes`
+/// arguments plus the bookkeeping every budgeted response echoes
+/// (v0.9 C-9 / B-11). Defaults reproduce pre-v0.9 output exactly.
+struct PayloadOptions: Sendable {
+    let fields: Set<String>?
+    let unknownFields: [String]
+    let interactiveOnly: Bool
+    let viewportOnly: Bool
+    let maxBytes: Int?
+
+    init(_ arguments: [String: JSONValue], known: [String]) {
+        let resolved = AXPayload.resolveFields(arguments["fields"], known: known)
+        self.fields = resolved.fields
+        self.unknownFields = resolved.unknown
+        self.interactiveOnly = AXPayload.flag(arguments["interactive_only"])
+        self.viewportOnly = AXPayload.flag(arguments["viewport_only"])
+        self.maxBytes = AXPayload.resolveMaxBytes(arguments["max_bytes"])
+    }
+
+    /// Add `bytes` / `max_depth_used` / `nodes_visited` / `truncated` to
+    /// a finished payload. `bytes` is the encoded size of the response
+    /// payload itself (excluding the `bytes` field, which is added
+    /// last) — i.e. what this call cost the caller's context.
+    func annotate(
+        _ payload: inout [String: JSONValue],
+        maxDepthUsed: Int,
+        nodesVisited: Int,
+        truncated: Bool
+    ) {
+        payload["max_depth_used"] = .number(Double(maxDepthUsed))
+        payload["nodes_visited"] = .number(Double(nodesVisited))
+        payload["truncated"] = .bool(truncated)
+        if !unknownFields.isEmpty {
+            payload["unknown_fields"] = .array(unknownFields.map(JSONValue.string))
+        }
+        payload["bytes"] = .number(Double(AXPayload.encodedSize(.object(payload))))
     }
 }
