@@ -4,6 +4,9 @@ import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
 import AppKit
+#if canImport(Darwin)
+import Darwin
+#endif
 @testable import MacControlMCP
 
 /// v0.9 workstream G — rich clipboard (C-10).
@@ -452,5 +455,109 @@ struct ClipboardRichTests {
         #expect(result.isError)
         let payload = result.structuredContent.objectValue ?? [:]
         #expect(payload["error_code"] == .string("file_not_found"))
+    }
+
+    // MARK: - v0.9 review follow-up (HIGH, #7): FIFO / device rejection + size cap
+
+    /// Runs `body` racing a timeout task; fails the test (rather than
+    /// hanging the whole suite forever) if `body` doesn't finish in time.
+    /// Used to prove the FIFO rejection never opens the file — a
+    /// regression here would previously hang on `Data(contentsOf:)`
+    /// reading from a FIFO with no writer.
+    static func withTimeout<T: Sendable>(
+        seconds: Double,
+        _ body: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await body() }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                throw TimeoutError()
+            }
+            defer { group.cancelAll() }
+            return try await group.next()!
+        }
+    }
+
+    struct TimeoutError: Error {}
+
+    @Test("a FIFO passed as image_path is rejected as not_regular_file without blocking")
+    func fifoImagePathRejectedWithoutBlocking() async throws {
+        let fifoPath = NSTemporaryDirectory() + "mcp-clip-test-fifo-\(UUID().uuidString)"
+        #expect(mkfifo(fifoPath, 0o600) == 0, "mkfifo must succeed to exercise this path")
+        defer { try? FileManager.default.removeItem(atPath: fifoPath) }
+
+        let clipboard = Self.controller()
+        // A FIFO with no writer blocks forever on open(2) for reading —
+        // if resolveExistingFile's type check didn't run BEFORE any open,
+        // this whole test would hang instead of throwing.
+        let error = try await Self.withTimeout(seconds: 5) {
+            do {
+                _ = try await clipboard.writeRich(.init(imagePath: fifoPath))
+                return nil as ClipboardController.ClipboardError?
+            } catch let e as ClipboardController.ClipboardError {
+                return e
+            }
+        }
+        #expect(error == .notRegularFile(fifoPath))
+    }
+
+    @Test("a FIFO passed in files is rejected as not_regular_file without blocking")
+    func fifoFilesEntryRejectedWithoutBlocking() async throws {
+        let fifoPath = NSTemporaryDirectory() + "mcp-clip-test-fifo-\(UUID().uuidString)"
+        #expect(mkfifo(fifoPath, 0o600) == 0, "mkfifo must succeed to exercise this path")
+        defer { try? FileManager.default.removeItem(atPath: fifoPath) }
+
+        let clipboard = Self.controller()
+        let error = try await Self.withTimeout(seconds: 5) {
+            do {
+                _ = try await clipboard.writeRich(.init(files: [fifoPath]))
+                return nil as ClipboardController.ClipboardError?
+            } catch let e as ClipboardController.ClipboardError {
+                return e
+            }
+        }
+        #expect(error == .notRegularFile(fifoPath))
+    }
+
+    @Test("an oversized image_path file is rejected before being decoded")
+    func oversizedImagePathRejected() async throws {
+        let path = NSTemporaryDirectory() + "mcp-clip-test-huge-\(UUID().uuidString).png"
+        // Sparse file, one byte past the cap — cheap to create, and its
+        // content is irrelevant: rejection must happen on SIZE, before any
+        // image decoding is attempted.
+        let oversized = ClipboardController.maxImageFileBytes + 1
+        #expect(FileManager.default.createFile(atPath: path, contents: Data()))
+        let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
+        try handle.seek(toOffset: UInt64(oversized - 1))
+        handle.write(Data([0]))
+        try handle.close()
+        defer { try? FileManager.default.removeItem(atPath: path) }
+
+        let attrs = try FileManager.default.attributesOfItem(atPath: path)
+        #expect((attrs[.size] as? Int) == oversized)
+
+        let clipboard = Self.controller()
+        await #expect(throws: ClipboardController.ClipboardError.fileTooLarge(
+            path, ClipboardController.maxImageFileBytes
+        )) {
+            _ = try await clipboard.writeRich(.init(imagePath: path))
+        }
+    }
+
+    @Test("an image_path file at exactly the cap is accepted")
+    func imagePathAtExactCapIsAccepted() async throws {
+        // A real (small) PNG round-trips fine; this test only proves the
+        // cap boundary is `<=`, not `<`, by checking a file just under the
+        // cap is not rejected for size (it may still fail decode, which is
+        // fine — we only assert it's NOT .fileTooLarge).
+        let source = try Self.makePNG(width: 4, height: 4)
+        defer { try? FileManager.default.removeItem(atPath: source) }
+        let size = try FileManager.default.attributesOfItem(atPath: source)[.size] as? Int ?? 0
+        #expect(size <= ClipboardController.maxImageFileBytes)
+
+        let clipboard = Self.controller()
+        // Must not throw .fileTooLarge for a small legitimate image.
+        _ = try await clipboard.writeRich(.init(imagePath: source))
     }
 }

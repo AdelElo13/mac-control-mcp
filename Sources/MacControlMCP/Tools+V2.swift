@@ -722,14 +722,13 @@ extension ToolRegistry {
             }
             return successResult("Read clipboard (\(result.kind)).", payload)
         } catch let error as ClipboardController.ClipboardError {
-            return errorResult(
-                error.description,
-                [
-                    "ok": .bool(false),
-                    "kind": .string(kind.rawValue),
-                    "error_code": .string(Self.clipboardErrorCode(error))
-                ]
-            )
+            var payload: [String: JSONValue] = [
+                "ok": .bool(false),
+                "kind": .string(kind.rawValue),
+                "error_code": .string(Self.clipboardErrorCode(error))
+            ]
+            if let reason = error.reason { payload["reason"] = .string(reason) }
+            return errorResult(error.description, payload)
         } catch {
             return errorResult(
                 "clipboard_read failed: \(error)",
@@ -774,10 +773,12 @@ extension ToolRegistry {
             }
             return successResult("Clipboard updated (\(result.wrote.joined(separator: ", "))).", payload)
         } catch let error as ClipboardController.ClipboardError {
-            return errorResult(
-                error.description,
-                ["ok": .bool(false), "error_code": .string(Self.clipboardErrorCode(error))]
-            )
+            var payload: [String: JSONValue] = [
+                "ok": .bool(false),
+                "error_code": .string(Self.clipboardErrorCode(error))
+            ]
+            if let reason = error.reason { payload["reason"] = .string(reason) }
+            return errorResult(error.description, payload)
         } catch {
             return errorResult("clipboard_write failed: \(error)", ["ok": .bool(false)])
         }
@@ -785,6 +786,13 @@ extension ToolRegistry {
 
     /// Stable machine-readable codes for the clipboard failures, in the
     /// same spirit as the browser/permission error codes elsewhere.
+    ///
+    /// v0.9 review follow-up (HIGH, #7): `notRegularFile` and
+    /// `fileTooLarge` are surfaced as `invalid_argument` with a
+    /// distinguishing `reason` field (`not_regular_file` /
+    /// `file_too_large`) rather than their own error codes, per the
+    /// review's requested shape — the caller passed a bad argument
+    /// (a path that isn't usable input), not something server-internal.
     static func clipboardErrorCode(_ error: ClipboardController.ClipboardError) -> String {
         switch error {
         case .nothingToWrite: return "invalid_argument"
@@ -794,6 +802,8 @@ extension ToolRegistry {
         case .noData: return "no_such_representation"
         case .invalidPath: return "invalid_path"
         case .pasteboardRejectedWrite: return "pasteboard_rejected"
+        case .notRegularFile: return "invalid_argument"
+        case .fileTooLarge: return "invalid_argument"
         }
     }
 
