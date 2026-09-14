@@ -167,8 +167,23 @@ struct CodexR2RegressionTests {
         let controller = TextEditingBackendTests.controller(element)
         let outcome = try await controller.insertAtCaret(of: TextEditingBackendTests.dummyElement(), text: "abc")
         #expect(outcome.applied == nil)
-        #expect(outcome.verification == "unverified")
-        #expect(outcome.warning != nil)
+        // Codex r4: the count IS exposed — the diagnosis must not claim
+        // otherwise, and must not send the caller back to AXValue.
+        #expect(outcome.verification == "count_unusable")
+        #expect(outcome.warning?.contains("out of Int range") == true)
+        #expect(outcome.warning?.contains("text_get_value") == false)
+    }
+
+    @Test("count-based warnings never point at text_get_value (it reads the same unreadable AXValue)", arguments: [
+        "count_only", "count_unusable", "unverified"
+    ])
+    func warningsNameWorkingRoutes(verification: String) {
+        let outcome = TextEditingController.WriteOutcome(
+            range: .init(location: 0, length: 0), insertedCharacters: 3, selectionAfter: nil,
+            collapsedSelection: false, applied: nil, observedText: nil, verification: verification
+        )
+        #expect(outcome.warning?.contains("text_get_value") == false)
+        #expect(outcome.warning?.contains("capture_annotated") == true)
     }
 
     @Test("a count that moved by the wrong amount reports applied:false WITH a warning")

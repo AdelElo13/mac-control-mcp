@@ -176,29 +176,42 @@ actor TextEditingController {
         /// requested (so the caller can see what actually happened).
         let observedText: String?
         /// How the write was verified: "value" | "string_for_range" |
-        /// "count_only" | "unverified". "unverified" always pairs with
-        /// `applied == nil`; "count_only" pairs with nil (count moved as
-        /// requested) or false (count moved by a different amount).
+        /// "count_only" | "count_unusable" | "unverified". "unverified"
+        /// and "count_unusable" always pair with `applied == nil`;
+        /// "count_only" pairs with nil (count moved as requested) or false
+        /// (count moved by a different amount).
         let verification: String
         /// Why `applied` is not true, in words the caller can act on. Set
         /// for nil, and for false when there is no `observedText` to show
         /// (the count-only case — Codex r3).
+        ///
+        /// Codex r4: every count-based case is reached only AFTER AXValue
+        /// and AXStringForRange proved unreadable, so pointing the caller
+        /// at `text_get_value` (which reads the same AXValue) was a dead
+        /// end. The routes that still work are named instead.
         var warning: String? {
             if applied == false {
                 return observedText == nil
-                    ? "AXNumberOfCharacters moved, but not by the requested amount — the element applied something other than the requested edit. Read it back with text_get_value before continuing."
+                    ? "AXNumberOfCharacters moved, but not by the requested amount — the element applied something other than the requested edit. Its text is not readable over AX (neither AXValue nor AXStringForRange), so check the result \(Self.alternativeRoutes) before continuing."
                     : nil
             }
             guard applied == nil else { return nil }
             switch verification {
             case "count_only":
-                return "The element exposes no readable text, only AXNumberOfCharacters. The count moved by exactly the amount requested, but WHAT was written could not be read back — verify with text_get_value or by another route before relying on it."
+                return "The element exposes no readable text (neither AXValue nor AXStringForRange), only AXNumberOfCharacters. The count moved by exactly the amount requested, but WHAT was written could not be read back — confirm \(Self.alternativeRoutes) before relying on it."
+            case "count_unusable":
+                return "The element exposes no readable text, and the AXNumberOfCharacters it reports cannot be combined with this edit (out of Int range), so even the count could not be checked. AX reported success — confirm \(Self.alternativeRoutes) before relying on it."
             case "unverified":
-                return "The element exposes neither its value, nor AXStringForRange, nor AXNumberOfCharacters. AX reported success, but nothing could be read back to confirm the write landed — verify by another route before relying on it."
+                return "The element exposes neither its value, nor AXStringForRange, nor AXNumberOfCharacters. AX reported success, but nothing could be read back to confirm the write landed — confirm \(Self.alternativeRoutes) before relying on it."
             default:
                 return "The write could not be verified by reading the element back."
             }
         }
+
+        /// Verification routes that do not depend on the AX text
+        /// attributes that just failed.
+        static let alternativeRoutes =
+            "visually (capture_annotated / ocr_screen on the window) or via the clipboard (text_set_selection over the range, press_key cmd+c, clipboard_read)"
     }
 
     struct Value: Sendable {
@@ -569,7 +582,9 @@ actor TextEditingController {
             guard let expectedCount = Self.expectedCount(
                 before: beforeCount, replaced: range.length, inserted: text.utf16.count
             ) else {
-                return (nil, nil, "unverified")
+                // Codex r4: the count IS exposed, it is just unusable —
+                // say so, rather than "no AXNumberOfCharacters".
+                return (nil, nil, "count_unusable")
             }
             // The count moving as predicted is consistent with the write, but
             // says nothing about WHAT was written — report "unknown", never
