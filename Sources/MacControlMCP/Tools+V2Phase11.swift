@@ -71,13 +71,16 @@ extension ToolRegistry {
         guard let pane = arguments["pane"]?.stringValue else {
             return invalidArgument("open_permission_pane requires 'pane'.")
         }
+        // v0.8.4: routed through the main-actor variant — see
+        // locationPermissionStatusStringMainActor().
+        let locationStatus = await Self.locationPermissionStatusStringMainActor()
         let mapping: [String: (url: String, status: String?)] = [
             "accessibility":     ("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",    Self.axPermissionStatusString()),
             "screen_recording":  ("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",    Self.screenPermissionStatusString()),
             "calendar":          ("x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars",        Self.calendarPermissionStatusString()),
             "reminders":         ("x-apple.systempreferences:com.apple.preference.security?Privacy_Reminders",        Self.remindersPermissionStatusString()),
             "contacts":          ("x-apple.systempreferences:com.apple.preference.security?Privacy_Contacts",         Self.contactsPermissionStatusString()),
-            "location":          ("x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices", Self.locationPermissionStatusString()),
+            "location":          ("x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices", locationStatus),
             "microphone":        ("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",       Self.microphonePermissionStatusString()),
             "automation":        ("x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",       nil),
             "full_disk_access":  ("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",         nil)
@@ -235,27 +238,52 @@ extension ToolRegistry {
         #endif
     }
 
+    /// v0.8.4: previously reported only the system-wide `locationServicesEnabled()`
+    /// flag ("system_enabled (…)" / "system_disabled"), never the per-app
+    /// authorization — so a caller had no way to tell "not asked yet" from
+    /// "denied" from "granted" for THIS responsible process, and wifi_scan
+    /// had nothing reliable to check before deciding whether SSIDs would be
+    /// visible. `CLLocationManager().authorizationStatus` (the macOS 11+
+    /// instance property) gives the real per-app answer; guarded by
+    /// `hasInfoPlistKey`, same as calendar/reminders/contacts/microphone,
+    /// because constructing CLLocationManager() from a binary without
+    /// NSLocationWhenInUseUsageDescription in its Info.plist raises SIGABRT
+    /// — the XCTest bundle has no such key, so tests exercising this path
+    /// must stop here rather than take down the runner.
     static func locationPermissionStatusString() -> String {
         #if canImport(CoreLocation)
-        // Don't construct CLLocationManager() — doing so from a binary
-        // without NSLocationUsageDescription in its Info.plist raises
-        // SIGABRT on macOS. The XCTest bundle has no Info.plist, so
-        // tests exercising this path would crash the entire runner.
-        //
-        // Use the static `locationServicesEnabled()` instead which is
-        // safe from any bundle and returns a system-wide bool. Per-app
-        // authorization can still be inspected via
-        // `open_permission_pane(pane: "location")`.
-        if #available(macOS 11.0, *) {
-            return CLLocationManager.locationServicesEnabled()
-                ? "system_enabled (per-app grant visible via open_permission_pane)"
-                : "system_disabled"
-        } else {
-            return "unknown"
+        guard hasInfoPlistKey("NSLocationWhenInUseUsageDescription") else {
+            return "info_plist_missing"
+        }
+        guard CLLocationManager.locationServicesEnabled() else {
+            return "system_disabled"
+        }
+        switch CLLocationManager().authorizationStatus {
+        case .notDetermined:                            return "not_determined"
+        case .restricted:                                return "restricted"
+        case .denied:                                    return "denied"
+        case .authorizedAlways, .authorizedWhenInUse:    return "granted"
+        @unknown default:                                return "unknown"
         }
         #else
         return "unknown"
         #endif
+    }
+
+    /// Same status as `locationPermissionStatusString()`, but performed on
+    /// the main actor.
+    ///
+    /// v0.8.4 review fix: CoreLocation's documented thread contract is
+    /// really about delegate callbacks needing a run-looped thread, but to
+    /// avoid depending on whichever actor/thread happens to call in for
+    /// reading `CLLocationManager().authorizationStatus` too, route the
+    /// read through the one thread `main.swift` guarantees keeps an active
+    /// run loop (`RunLoop.main.run()`). Prefer this from async call sites
+    /// (`wifi_scan`, `permissions_status`, `open_permission_pane`); the
+    /// synchronous `locationPermissionStatusString()` stays available for
+    /// callers that can't await, with the same Info.plist-key guard.
+    static func locationPermissionStatusStringMainActor() async -> String {
+        await MainActor.run { locationPermissionStatusString() }
     }
 
     static func microphonePermissionStatusString() -> String {

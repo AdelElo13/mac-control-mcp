@@ -14,6 +14,9 @@ import AVFoundation
 #if canImport(CoreGraphics)
 import CoreGraphics
 #endif
+#if canImport(CoreLocation)
+import CoreLocation
+#endif
 
 // v0.8.3 — permissions_status + request_permissions.
 //
@@ -36,7 +39,7 @@ extension ToolRegistry {
 
     /// Categories request_permissions can prompt for.
     static let requestablePermissionCategories = [
-        "accessibility", "screen_recording", "calendar", "contacts", "microphone", "folders"
+        "accessibility", "screen_recording", "calendar", "contacts", "microphone", "location", "folders"
     ]
 
     /// Hardened-runtime entitlement each TCC category needs when this app is
@@ -51,13 +54,16 @@ extension ToolRegistry {
 
     func currentPermissionStatuses() async -> [PermissionStatusEntry] {
         let ax = await accessibility.checkPermission()
+        // v0.8.4 review fix: location is read on the main actor — see
+        // locationPermissionStatusStringMainActor().
+        let locationStatus = await Self.locationPermissionStatusStringMainActor()
         return [
             PermissionStatusEntry(name: "accessibility", status: ax ? "granted" : "not_granted"),
             PermissionStatusEntry(name: "screen_recording", status: Self.screenPermissionStatusString()),
             PermissionStatusEntry(name: "calendar", status: Self.calendarPermissionStatusString()),
             PermissionStatusEntry(name: "reminders", status: Self.remindersPermissionStatusString()),
             PermissionStatusEntry(name: "contacts", status: Self.contactsPermissionStatusString()),
-            PermissionStatusEntry(name: "location", status: Self.locationPermissionStatusString()),
+            PermissionStatusEntry(name: "location", status: locationStatus),
             PermissionStatusEntry(name: "microphone", status: Self.microphonePermissionStatusString())
         ]
     }
@@ -68,7 +74,7 @@ extension ToolRegistry {
         let granted: Set<String> = ["granted", "granted_when_in_use", "granted_always", "granted_legacy",
                                     "authorized_legacy", "limited"]
         // `location` can only report the system-wide services state.
-        return granted.contains(status) || status.hasPrefix("granted") || status.hasPrefix("system_enabled")
+        return granted.contains(status) || status.hasPrefix("granted")
     }
 
     /// Categories that will be refused WITHOUT a prompt: this app is the
@@ -229,6 +235,25 @@ extension ToolRegistry {
             guard status == "not_determined" else { return .skipped(status) }
             #if canImport(AVFoundation)
             AVCaptureDevice.requestAccess(for: .audio) { _ in }
+            return .triggered
+            #else
+            return .skipped("unsupported")
+            #endif
+
+        case "location":
+            // locationPermissionStatusStringMainActor() already returns
+            // "info_plist_missing" without ever touching CLLocationManager
+            // when the Info.plist key is absent (the XCTest bundle case),
+            // so this guard alone keeps that path crash-free.
+            let status = await Self.locationPermissionStatusStringMainActor()
+            guard status == "not_determined" else { return .skipped(status) }
+            #if canImport(CoreLocation)
+            // Fire-and-forget: don't hold up this call on a human answering
+            // a dialog. LocationAuthorizer self-retains until the delegate
+            // answers or its keep-alive elapses.
+            Task { @MainActor in
+                _ = await LocationAuthorizer().requestAndWaitForChange(keepAlive: HardwareController.locationPromptKeepAlive)
+            }
             return .triggered
             #else
             return .skipped("unsupported")
