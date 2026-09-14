@@ -177,6 +177,44 @@ struct AnnotatedElementIdentityTests {
         print("[annotated-identity] capture_annotated == find_elements → \(annotatedID) (\(role))")
     }
 
+    @Test("pruning AXMenuBar drops menu items without moving any other element's id")
+    func menuBarPruneKeepsIdsStable() async throws {
+        guard AXIsProcessTrusted(), let pid = Self.finderPID else {
+            print("[annotated-identity] skipped: no AX trust / no Finder")
+            return
+        }
+        let accessibility = AccessibilityController()
+        let full = await accessibility.treeWalk(pid: pid, maxDepth: 8, nodeCap: 2_000)
+        let pruned = await accessibility.treeWalk(
+            pid: pid, maxDepth: 8, nodeCap: 2_000, pruneRoles: ["AXMenuBar"]
+        )
+        guard full.contains(where: { $0.role == "AXMenuBar" }) else {
+            print("[annotated-identity] skipped: this Finder exposes no menu bar to prune")
+            return
+        }
+
+        // The menu bar NODE survives; its subtree does not.
+        #expect(pruned.contains { $0.role == "AXMenuBar" })
+        #expect(pruned.allSatisfy { $0.role != "AXMenuItem" })
+        #expect(pruned.count <= full.count)
+
+        // Every element that survives the prune keeps the id it had in the
+        // full walk — pruning must not renumber siblings.
+        let fullIDs = Dictionary(
+            full.map { (AXPath.identity(pid: pid, path: $0.path), AXPath.identifier(pid: pid, path: $0.path)) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var checked = 0
+        for node in pruned where node.role != "AXMenuBar" {
+            let identity = AXPath.identity(pid: pid, path: node.path)
+            guard let expected = fullIDs[identity] else { continue }
+            #expect(AXPath.identifier(pid: pid, path: node.path) == expected)
+            checked += 1
+        }
+        print("[annotated-identity] prune kept \(checked) element id(s) unchanged "
+              + "(\(full.count) nodes → \(pruned.count))")
+    }
+
     @Test("an id from capture_annotated resolves for a follow-up call")
     func idResolvesForFollowUpCalls() throws {
         guard let (driver, _, elements) = Self.liveSession() else { return }

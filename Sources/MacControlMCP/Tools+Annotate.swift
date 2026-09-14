@@ -132,8 +132,20 @@ extension ToolRegistry {
         // 1. Walk the AX tree once. The node cap is the element-cache
         //    capacity for the same reason get_ui_tree uses it: an id we
         //    hand out must still resolve.
+        //    AXMenuBar is pruned: a closed menu bar is hundreds to
+        //    thousands of AXMenuItem nodes (Safari 1031, Chrome 319) that
+        //    are walked BEFORE the windows and can consume the walk's
+        //    whole 5 s deadline, so the window being photographed never
+        //    gets reached — measured live: Safari walked 1095 nodes and
+        //    numbered 0 controls without this. Menu items are also never
+        //    drawable (a closed menu parks them off-screen at 0×0, gap
+        //    audit A-4). Pruning keeps the menu bar NODE and its ordinal,
+        //    so every other element's path-derived id is unchanged.
         let nodes = await accessibility.treeWalk(
-            pid: pid, maxDepth: maxDepth, nodeCap: elementCache.maxEntries
+            pid: pid,
+            maxDepth: maxDepth,
+            nodeCap: elementCache.maxEntries,
+            pruneRoles: ["AXMenuBar"]
         )
         let geometries = nodes.map { node -> ScreenAnnotator.ElementGeometry in
             let frame: CGRect

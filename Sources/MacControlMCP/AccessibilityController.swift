@@ -577,7 +577,27 @@ actor AccessibilityController {
     /// Walks the AX tree for an app and returns every node (including
     /// non-actionable containers) up to `maxDepth`. Each node's `childIndices`
     /// points into the returned array so the tree can be reconstructed.
-    func treeWalk(pid: pid_t, maxDepth: Int, nodeCap: Int = 5000) -> [TreeNode] {
+    ///
+    /// `pruneRoles` (v0.9 workstream F): roles whose SUBTREE is not worth
+    /// walking. The node itself is still emitted — and, crucially, its
+    /// ordinal among its siblings is unchanged, so every other node's AX
+    /// path and therefore its content-addressed element id stay identical
+    /// to an unpruned walk.
+    ///
+    /// `capture_annotated` prunes `AXMenuBar`: an app's closed menus are
+    /// hundreds to thousands of `AXMenuItem` nodes (Safari: 1031, Chrome:
+    /// 319) that are walked BEFORE the windows, cost one IPC round trip
+    /// each, and can eat the whole 5 s deadline before the walk ever
+    /// reaches the window whose screenshot is being annotated. They are
+    /// also never drawable: a closed menu's items are parked off-screen at
+    /// 0×0 (gap audit A-4). Default empty = every existing caller behaves
+    /// exactly as before.
+    func treeWalk(
+        pid: pid_t,
+        maxDepth: Int,
+        nodeCap: Int = 5000,
+        pruneRoles: Set<String> = []
+    ) -> [TreeNode] {
         enableManualAccessibility(pid: pid)
         let root = AXUIElementCreateApplication(pid)
         var visited = Set<AXKey>()
@@ -622,6 +642,9 @@ actor AccessibilityController {
             )
 
             guard descend else { return placeholderIndex }
+            // Pruned subtree: the node stays (and keeps its ordinal), its
+            // children are not walked.
+            if let role = attrs.role, pruneRoles.contains(role) { return placeholderIndex }
 
             var childIndices: [Int] = []
             for (childOrdinal, child) in attrs.children.enumerated() {
