@@ -23,7 +23,7 @@ struct Phase5ToolsTests {
         #expect(expected.isSubset(of: names))
     }
 
-    @Test("total tool count is 143 after v0.9 workstream C (-1 foundation_models_generate, +1 batch)")
+    @Test("total tool count after v0.9 workstreams C + AX-core + F")
     func totalToolCount() {
         // v0.2.6 baseline:      64
         // v0.3.0 Phase 6 adds:   6 (tiered perms + AX observer waits)  → 70
@@ -39,8 +39,12 @@ struct Phase5ToolsTests {
         //                          succeed, `LanguageModelSession`'s
         //                          real API was never wired up)          → 142
         // v0.9 workstream C adds: 1 (batch — see gap audit C-1)           → 143
+        // v0.9 AX-core adds:      1 (element_at_point — gap C-4)          → 144
+        // v0.9 workstream F adds: 1 (capture_annotated — gap C-13)        → 145
+        // Verified against a live `tools/list` on the merged binary:
+        // COUNT 145.
         let registry = ToolRegistry(accessibility: AccessibilityController())
-        #expect(registry.toolDefinitions.count == 143)
+        #expect(registry.toolDefinitions.count == 145)
     }
 
     @Test("set_volume requires volume argument")

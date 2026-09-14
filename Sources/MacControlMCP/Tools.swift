@@ -149,7 +149,7 @@ final class ToolRegistry: @unchecked Sendable {
             Self.definitionsV2Phase3 + Self.definitionsV2Phase4 + Self.definitionsV2Phase5 +
             Self.definitionsV2Phase6 + Self.definitionsV2Phase7 + Self.definitionsV2Phase8 +
             Self.definitionsV2Phase9 + Self.definitionsV2Phase10 + Self.definitionsV2Phase11 +
-            Self.definitionsBatch + Self.definitionsV0_9AXCore
+            Self.definitionsBatch + Self.definitionsV0_9AXCore + Self.definitionsAnnotate
     }
 
     // MARK: - Tool dispatch
@@ -205,7 +205,7 @@ final class ToolRegistry: @unchecked Sendable {
         case "list_menu_titles":
             return await callListMenuTitles(arguments)
         case "clipboard_read":
-            return await callClipboardRead()
+            return await callClipboardRead(arguments)
         case "clipboard_write":
             return await callClipboardWrite(arguments)
         case "permissions_status":
@@ -474,6 +474,9 @@ final class ToolRegistry: @unchecked Sendable {
         // MARK: - v0.9 workstream C — batch / composite call (C-1)
         case "batch":
             return await callBatch(arguments)
+        // MARK: - v0.9 workstream F — annotated screenshot (C-13)
+        case "capture_annotated":
+            return await callCaptureAnnotated(arguments)
         default:
             return errorResult("Unknown tool '\(name)'.")
         }

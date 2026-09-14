@@ -321,6 +321,87 @@ actor ScreenController {
         return try ImageEncoder.encode(image, options: effective)
     }
 
+    // MARK: - Annotated capture (v0.9 / C-13)
+
+    /// What `captureAnnotated` should photograph.
+    enum AnnotateTarget: Sendable, Equatable {
+        /// The app's best window, chosen by `selectWindow` (same rules as
+        /// capture_window).
+        case window(pid: pid_t, titleContains: String?)
+        case mainDisplay
+    }
+
+    struct AnnotatedCapture: Sendable {
+        let data: Data
+        let encoded: EncodedImage
+        /// Global-point frame of what was captured (window frame, or the
+        /// main display's bounds).
+        let pointBounds: CGRect
+        /// Indices into the `elements` array passed in, in draw order — so
+        /// index 0 of this array is the box labelled "1" on the image.
+        let drawnIndices: [Int]
+        /// False when the overlay could not be rendered (bitmap context
+        /// creation failed) and the plain capture was encoded instead.
+        let annotated: Bool
+    }
+
+    /// Capture → filter → draw numbered boxes → encode, all in one actor
+    /// hop, so no `CGImage` ever crosses an isolation boundary.
+    ///
+    /// The overlay is drawn at the CAPTURED resolution and `options`
+    /// (format / quality / max_width) are applied afterwards, so boxes
+    /// downscale with the content instead of being drawn at the wrong
+    /// scale.
+    ///
+    /// CAVEAT, deliberately not papered over: the caller walks the AX tree
+    /// BEFORE calling this, so if the window moves or its content scrolls
+    /// between the walk and the capture, the boxes are stale by exactly
+    /// that change — the same "geometry read before capture" caveat
+    /// `capture_window` documents. Re-capture before clicking if the UI is
+    /// animating.
+    func captureAnnotated(
+        target: AnnotateTarget,
+        elements: [ScreenAnnotator.ElementGeometry],
+        limit: Int,
+        options: ImageOutputOptions
+    ) async throws -> AnnotatedCapture {
+        let image: CGImage
+        let bounds: CGRect
+        switch target {
+        case .window(let pid, let titleContains):
+            let (captured, selected) = try await windowImage(ownerPID: pid, titleContains: titleContains)
+            image = captured
+            bounds = selected.bounds
+        case .mainDisplay:
+            let id = CGMainDisplayID()
+            image = try displayImage(id)
+            bounds = CGDisplayBounds(id)
+        }
+
+        let geometry = ScreenAnnotator.Geometry(
+            origin: bounds.origin,
+            pointSize: bounds.size,
+            pixelWidth: image.width,
+            pixelHeight: image.height
+        )
+        let picked = ScreenAnnotator.filterInteractive(
+            elements, captureRect: geometry.captureRect, limit: limit
+        )
+        let boxes = picked.enumerated().map { offset, elementIndex in
+            ScreenAnnotator.AnnotationBox(index: offset + 1, globalRect: elements[elementIndex].frame)
+        }
+
+        let overlay = ScreenAnnotator.draw(boxes: boxes, on: image, geometry: geometry)
+        let (data, encoded) = try ImageEncoder.encode(overlay ?? image, options: options)
+        return AnnotatedCapture(
+            data: data,
+            encoded: encoded,
+            pointBounds: bounds,
+            drawnIndices: picked,
+            annotated: overlay != nil
+        )
+    }
+
     /// Capture a specific on-screen window.
     ///
     /// CGWindowListCopyWindowInfo bridges numeric CF values into NSNumber
