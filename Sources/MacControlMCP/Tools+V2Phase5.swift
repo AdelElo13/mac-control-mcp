@@ -317,7 +317,11 @@ extension ToolRegistry {
                 switch screenError {
                 case .noMatchingWindow:
                     errorCode = "not_found"
-                    hint = "No window belonging to this pid matched title_contains. Call list_windows to see available titles for this pid."
+                    if let title, !title.isEmpty {
+                        hint = "No window belonging to this pid matched title_contains=\"\(title)\". Call list_windows to see available titles for this pid."
+                    } else {
+                        hint = "No capturable window was found for this pid. Call list_windows to confirm the app has an open window."
+                    }
                 case .permissionDenied(_, let window):
                     errorCode = "permission_missing"
                     payload["pane"] = .string("screen_recording")

@@ -112,6 +112,33 @@ struct WindowSelectionTests {
         #expect(picked == nil)
     }
 
+    @Test("No title filter and no candidates returns nil")
+    func noTitleFilterAndNoCandidatesReturnsNil() {
+        // Distinct from `emptyCandidatesReturnsNil` above: this exercises
+        // the "pid has zero windows at all" case explicitly, which is the
+        // scenario the capture_window error message needs to describe
+        // differently from "title_contains matched nothing."
+        let picked = ScreenController.selectWindow(from: [], titleContains: nil)
+        #expect(picked == nil)
+    }
+
+    @Test("Equal-area candidates tie-break to the frontmost (first) one")
+    func equalAreaTiesBreakToFrontmost() {
+        // Two windows with IDENTICAL area, both onscreen/layer0/matching
+        // title. CGWindowListCopyWindowInfo lists windows front-to-back,
+        // so `front` (listed first) is the frontmost window and must win
+        // the tie — see the `largest(in:)` doc comment in
+        // ScreenController.selectWindow for why `Array.max(by:)` picks
+        // the FIRST of equal elements.
+        let front = Self.window(id: 1, name: "mac-control-mcp — Editing a.swift", width: 1000, height: 800)
+        let back = Self.window(id: 2, name: "mac-control-mcp — Editing b.swift", width: 1000, height: 800)
+
+        let candidates = [front, back]
+        let picked = ScreenController.selectWindow(from: candidates, titleContains: "mac-control-mcp")
+
+        #expect(Self.id(of: picked) == 1)
+    }
+
     @Test("Title match is case-insensitive")
     func titleMatchIsCaseInsensitive() {
         let real = Self.window(id: 1, name: "MAC-CONTROL-MCP — Editing script.swift", width: 1200, height: 800)

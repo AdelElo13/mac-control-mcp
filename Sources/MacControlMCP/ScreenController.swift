@@ -65,8 +65,11 @@ actor ScreenController {
         case windowNotOnCurrentSpace(window: SelectedWindowInfo)
         /// No CGWindowListCopyWindowInfo entry matched the given pid +
         /// title_contains filter at all — distinct from "matched a window
-        /// but every capture strategy failed on it" below.
-        case noMatchingWindow
+        /// but every capture strategy failed on it" below. Carries the
+        /// title filter that was in effect (nil when none was given) so
+        /// the message doesn't claim a title_contains mismatch when the
+        /// real problem is "this pid has zero capturable windows".
+        case noMatchingWindow(titleContains: String?)
         /// A window WAS selected (see `SelectedWindowInfo`) but every
         /// capture strategy (ScreenCaptureKit, legacy CG, region crop)
         /// failed on it.
@@ -84,8 +87,11 @@ actor ScreenController {
                 return base + " Selected window: \(window.debugDescription)."
             case .windowNotOnCurrentSpace(let window):
                 return "Window exists but is on a different macOS Space. Bring it to the foreground (or switch Spaces) before capturing. Selected window: \(window.debugDescription)."
-            case .noMatchingWindow:
-                return "No window belonging to this pid matched the given title_contains filter."
+            case .noMatchingWindow(let title):
+                if let title, !title.isEmpty {
+                    return "No window belonging to this pid matched title_contains=\"\(title)\"."
+                }
+                return "No capturable window was found for this pid."
             case .windowCaptureFailed(let window, let underlying):
                 return "Screen capture failed. Selected window: \(window.debugDescription). Underlying error: \(underlying)"
             }
@@ -120,6 +126,11 @@ actor ScreenController {
     ///   4. Without a title filter, the same ranking applies over ALL of
     ///      the pid's windows (so "no title" behaves like "give me the
     ///      biggest real window").
+    ///   5. Tie-break: if two candidates have exactly equal area, the
+    ///      FIRST one in `candidates`' order wins (see the `largest`
+    ///      helper below for why). `CGWindowListCopyWindowInfo` returns
+    ///      windows front-to-back, so ties resolve to the frontmost
+    ///      window of that size.
     static func selectWindow(
         from candidates: [[String: Any]],
         titleContains: String?,
@@ -162,6 +173,15 @@ actor ScreenController {
             let s = size(d)
             return s.w >= minSize && s.h >= minSize
         }
+        // Tie-break: `Array.max(by:)` walks the sequence and only replaces
+        // its running maximum when a LATER element is strictly greater
+        // (`area(current) < area(candidate)`); on an exact tie it leaves
+        // the earlier element in place. So when two candidates have equal
+        // area, the FIRST one in `list`'s order wins. CGWindowListCopyWindowInfo
+        // returns windows front-to-back (topmost/frontmost first), so a
+        // tie resolves to the frontmost window — the more likely intended
+        // target when we can't otherwise distinguish two same-sized
+        // windows.
         func largest(in list: [[String: Any]]) -> [String: Any]? {
             list.max { area($0) < area($1) }
         }
@@ -297,7 +317,7 @@ actor ScreenController {
         }
 
         guard let match = Self.selectWindow(from: candidates, titleContains: titleContains) else {
-            throw ScreenError.noMatchingWindow
+            throw ScreenError.noMatchingWindow(titleContains: titleContains)
         }
         let selected = Self.selectedWindowInfo(from: match)
 
