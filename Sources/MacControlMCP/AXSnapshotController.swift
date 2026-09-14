@@ -107,7 +107,7 @@ actor AXSnapshotController {
         let id: String
         let pid: Int32
         let ts: Date
-        let byKey: [String: NodeSnapshot]
+        let nodes: [FlatNode]
     }
 
     // LRU of recent snapshots. 16 is large enough for normal agent flow,
@@ -128,11 +128,11 @@ actor AXSnapshotController {
         var visited = Set<AXKey>()
         let raw = buildRaw(element: root, depth: 0, maxDepth: maxDepth,
                            budget: &budget, visited: &visited)
-        let flat = Self.flatten(raw, screenHeight: Double(CGDisplayBounds(CGMainDisplayID()).height))
+        let flat = Self.flatten(raw, displays: Self.activeDisplayBounds())
 
         let id = "snap_" + String(UUID().uuidString.prefix(12)).lowercased()
         let now = Date()
-        let snap = Snapshot(id: id, pid: Int32(pid), ts: now, byKey: flat)
+        let snap = Snapshot(id: id, pid: Int32(pid), ts: now, nodes: flat)
         snapshots.append(snap)
         if snapshots.count > maxSnapshots { snapshots.removeFirst() }
         return SnapshotTaken(
@@ -150,56 +150,124 @@ actor AXSnapshotController {
               let b = snapshots.first(where: { $0.id == to }) else {
             return nil
         }
-        return Self.computeDiff(from: a.byKey, to: b.byKey, fromID: from, toID: to)
+        return Self.computeDiff(from: a.nodes, to: b.nodes, fromID: from, toID: to)
     }
 
     // MARK: - Pure identity / flattening / diff rules
 
-    /// True when a node is a parked, non-interactable artefact rather than
-    /// a real piece of UI:
-    ///   * zero size (nothing can be clicked or seen), or
-    ///   * the classic macOS hidden-menu park at `x ≈ 0, y ≈ screen_height`.
-    /// Nodes with no geometry at all are NOT treated as parked — absence of
-    /// a frame is not evidence of parking.
-    static func isParked(
-        x: Double?, y: Double?, width: Double?, height: Double?,
-        screenHeight: Double
-    ) -> Bool {
-        if let w = width, let h = height, w < 1, h < 1 { return true }
-        if let x, let y, abs(x) < 1, abs(y - screenHeight) < 1 { return true }
-        return false
+    /// One flattened node plus everything the matcher needs. `key` is only
+    /// a human-readable label for the response; matching never depends on
+    /// it (see `computeDiff`).
+    struct FlatNode: Sendable {
+        let key: String
+        /// Identity bucket: parent bucket path + role + identifier/title.
+        /// Deliberately index-free — see `computeDiff`.
+        let bucketPath: String
+        /// The parent's bucket path, for the title-change rescue pass.
+        let parentPath: String
+        let role: String?
+        let identifier: String?
+        let title: String?
+        let value: String?
+        let x: Double?
+        let y: Double?
+        let width: Double?
+        let height: Double?
+        /// Position among siblings in the same bucket. Fallback ordering
+        /// only, used when frames are unavailable.
+        let index: Int
+
+        var snapshot: NodeSnapshot {
+            NodeSnapshot(key: key, role: role, title: title, value: value,
+                         x: x, y: y, width: width, height: height)
+        }
+
+        var hasFrame: Bool { x != nil && y != nil && width != nil && height != nil }
     }
 
-    /// Flatten a raw tree into `identity path → NodeSnapshot`, dropping
+    /// Bounds of every active display, in the same top-left global point
+    /// space as AX frames.
+    ///
+    /// Deliberately CoreGraphics rather than `NSScreen.screens`: NSScreen
+    /// frames use AppKit's bottom-left origin, so comparing an AX y against
+    /// them would be wrong on every non-main display — and NSScreen is
+    /// AppKit, which this actor must not touch off the main thread.
+    static func activeDisplayBounds() -> [CGRect] {
+        var count: UInt32 = 0
+        guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else {
+            return [CGDisplayBounds(CGMainDisplayID())]
+        }
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetActiveDisplayList(count, &ids, &count) == .success else {
+            return [CGDisplayBounds(CGMainDisplayID())]
+        }
+        let bounds = ids.prefix(Int(count)).map { CGDisplayBounds($0) }
+        return bounds.isEmpty ? [CGDisplayBounds(CGMainDisplayID())] : Array(bounds)
+    }
+
+    /// True when a node is a parked, non-interactable artefact rather than
+    /// a real piece of UI: it has **zero size** AND sits outside every
+    /// display — either at/below a display's bottom edge (the classic
+    /// macOS hidden-menu park at `y == screen_height`) or off all display
+    /// bounds entirely.
+    ///
+    /// Both halves are required. A zero-size node inside a visible window
+    /// is a real (if collapsed) control and is kept, and a node with a real
+    /// frame is kept wherever it sits — parking is not inferred from
+    /// position alone. Nodes with no geometry at all are never parked:
+    /// absence of a frame is not evidence.
+    static func isParked(
+        x: Double?, y: Double?, width: Double?, height: Double?,
+        displays: [CGRect]
+    ) -> Bool {
+        guard let w = width, let h = height, w < 1, h < 1 else { return false }
+        guard let x, let y else { return false }
+        let point = CGPoint(x: x, y: y)
+        // At or below the bottom edge of any display — the park signature.
+        if displays.contains(where: { y >= $0.maxY - 0.5 && x >= $0.minX - 0.5 && x <= $0.maxX + 0.5 }) {
+            return true
+        }
+        // Off every display entirely.
+        return !displays.contains { $0.insetBy(dx: -0.5, dy: -0.5).contains(point) }
+    }
+
+    /// Flatten a raw tree into an ordered list of `FlatNode`s, dropping
     /// parked nodes. Children of a parked node are still traversed (and
-    /// still keyed beneath it) so that a temporarily zero-sized container
-    /// does not shift the identity of everything below it.
-    static func flatten(_ root: RawNode, screenHeight: Double) -> [String: NodeSnapshot] {
-        var out: [String: NodeSnapshot] = [:]
+    /// still keyed beneath it) so a temporarily zero-sized container does
+    /// not shift the identity of everything below it.
+    static func flatten(_ root: RawNode, displays: [CGRect]) -> [FlatNode] {
+        var out: [FlatNode] = []
 
         func visit(_ node: RawNode, parentPath: String, siblingCounts: inout [String: Int]) {
-            let segmentBase = identitySegment(role: node.role,
-                                              identifier: node.identifier,
-                                              title: node.title)
-            let index = siblingCounts[segmentBase, default: 0]
-            siblingCounts[segmentBase] = index + 1
-            let path = "\(parentPath)/\(segmentBase)[\(index)]"
+            let segment = identitySegment(role: node.role,
+                                          identifier: node.identifier,
+                                          title: node.title)
+            let bucketPath = "\(parentPath)/\(segment)"
+            let index = siblingCounts[bucketPath, default: 0]
+            siblingCounts[bucketPath] = index + 1
 
             if !isParked(x: node.x, y: node.y, width: node.width, height: node.height,
-                         screenHeight: screenHeight) {
-                out[path] = NodeSnapshot(
-                    key: path,
+                         displays: displays) {
+                out.append(FlatNode(
+                    key: "\(bucketPath)[\(index)]",
+                    bucketPath: bucketPath,
+                    parentPath: parentPath,
                     role: node.role,
+                    identifier: node.identifier,
                     title: node.title,
                     value: node.value,
                     x: node.x, y: node.y,
-                    width: node.width, height: node.height
-                )
+                    width: node.width, height: node.height,
+                    index: index
+                ))
             }
 
             var childCounts: [String: Int] = [:]
+            // The child's parent path carries the parent's own index so
+            // two same-identity parents don't merge their subtrees.
+            let childParentPath = "\(bucketPath)[\(index)]"
             for child in node.children {
-                visit(child, parentPath: path, siblingCounts: &childCounts)
+                visit(child, parentPath: childParentPath, siblingCounts: &childCounts)
             }
         }
 
@@ -220,43 +288,149 @@ actor AXSnapshotController {
         return "\(roleName)#\(identity)"
     }
 
+    /// Diff two flattened snapshots.
+    ///
+    /// Matching is deliberately NOT by key. A key contains the node's
+    /// sibling index, and an index is unstable: inserting one row at the
+    /// top of a list of untitled rows shifts every later index, which would
+    /// report the whole list as removed+added. Instead:
+    ///
+    ///   1. Group both sides into index-free identity buckets
+    ///      (parent path + role + identifier/title).
+    ///   2. Within a bucket, pair old and new nodes by NEAREST FRAME
+    ///      (greedy, closest pair first) when both sides carry frames, and
+    ///      only fall back to sibling index when they do not.
+    ///   3. Rescue pass: a node whose *title* changed lands in a different
+    ///      bucket and would otherwise read as removed+added. Any leftover
+    ///      removed/added pair sharing parent path, role and frame (±1 pt)
+    ///      is reported as one `changed` instead. Nodes with a stable
+    ///      AXIdentifier never need this — their identity ignores the title.
     static func computeDiff(
-        from a: [String: NodeSnapshot],
-        to b: [String: NodeSnapshot],
+        from a: [FlatNode],
+        to b: [FlatNode],
         fromID: String,
         toID: String
     ) -> Diff {
-        let aKeys = Set(a.keys)
-        let bKeys = Set(b.keys)
+        var unmatchedOld: [FlatNode] = []
+        var unmatchedNew: [FlatNode] = []
+        var pairs: [(old: FlatNode, new: FlatNode)] = []
 
-        let added = bKeys.subtracting(aKeys).compactMap { b[$0] }
-        let removed = aKeys.subtracting(bKeys).compactMap { a[$0] }
+        let oldBuckets = Dictionary(grouping: a, by: \.bucketPath)
+        let newBuckets = Dictionary(grouping: b, by: \.bucketPath)
+
+        for bucket in Set(oldBuckets.keys).union(newBuckets.keys) {
+            let olds = oldBuckets[bucket] ?? []
+            let news = newBuckets[bucket] ?? []
+            let (matched, leftoverOld, leftoverNew) = pairWithinBucket(olds: olds, news: news)
+            pairs.append(contentsOf: matched)
+            unmatchedOld.append(contentsOf: leftoverOld)
+            unmatchedNew.append(contentsOf: leftoverNew)
+        }
+
+        // Title-change rescue.
+        var stillRemoved: [FlatNode] = []
+        var claimedNew = Set<String>()
+        for old in unmatchedOld {
+            let hit = unmatchedNew.first { candidate in
+                !claimedNew.contains(candidate.key)
+                    && candidate.parentPath == old.parentPath
+                    && candidate.role == old.role
+                    && sameFrame(old, candidate)
+            }
+            if let hit {
+                claimedNew.insert(hit.key)
+                pairs.append((old, hit))
+            } else {
+                stillRemoved.append(old)
+            }
+        }
+        let stillAdded = unmatchedNew.filter { !claimedNew.contains($0.key) }
 
         var changed: [ChangedNode] = []
-        for key in aKeys.intersection(bKeys) {
-            guard let oldN = a[key], let newN = b[key] else { continue }
+        for pair in pairs {
+            let oldN = pair.old, newN = pair.new
             var diffs: [String: String] = [:]
             if oldN.role != newN.role { diffs["role"] = "\(oldN.role ?? "nil") → \(newN.role ?? "nil")" }
             if oldN.title != newN.title { diffs["title"] = "\(oldN.title ?? "nil") → \(newN.title ?? "nil")" }
             if oldN.value != newN.value { diffs["value"] = "\(oldN.value ?? "nil") → \(newN.value ?? "nil")" }
-            // Position / size: only flag if they moved more than 1px (avoid
+            // Position / size: only flag if they moved more than 1pt (avoid
             // subpixel layout jitter noise).
             if let a1 = oldN.x, let b1 = newN.x, abs(a1 - b1) > 1.0 { diffs["x"] = "\(a1) → \(b1)" }
             if let a1 = oldN.y, let b1 = newN.y, abs(a1 - b1) > 1.0 { diffs["y"] = "\(a1) → \(b1)" }
             if let a1 = oldN.width, let b1 = newN.width, abs(a1 - b1) > 1.0 { diffs["width"] = "\(a1) → \(b1)" }
             if let a1 = oldN.height, let b1 = newN.height, abs(a1 - b1) > 1.0 { diffs["height"] = "\(a1) → \(b1)" }
             if !diffs.isEmpty {
-                changed.append(.init(key: key, role: newN.role, title: newN.title, changes: diffs))
+                changed.append(.init(key: newN.key, role: newN.role, title: newN.title, changes: diffs))
             }
         }
 
         return Diff(
             fromSnapshotID: fromID,
             toSnapshotID: toID,
-            added: added,
-            removed: removed,
+            added: stillAdded.map(\.snapshot),
+            removed: stillRemoved.map(\.snapshot),
             changed: changed
         )
+    }
+
+    /// Pair the members of one identity bucket. Frames first (greedy
+    /// closest-pair), sibling index only when a frame is missing.
+    private static func pairWithinBucket(
+        olds: [FlatNode], news: [FlatNode]
+    ) -> (matched: [(old: FlatNode, new: FlatNode)], leftoverOld: [FlatNode], leftoverNew: [FlatNode]) {
+        if olds.isEmpty || news.isEmpty { return ([], olds, news) }
+
+        var matched: [(old: FlatNode, new: FlatNode)] = []
+        var usedOld = Set<Int>()
+        var usedNew = Set<Int>()
+
+        let framesUsable = olds.allSatisfy(\.hasFrame) && news.allSatisfy(\.hasFrame)
+        if framesUsable {
+            var candidates: [(distance: Double, oldIndex: Int, newIndex: Int)] = []
+            for (i, old) in olds.enumerated() {
+                for (j, new) in news.enumerated() {
+                    candidates.append((frameDistance(old, new), i, j))
+                }
+            }
+            // Ties broken by sibling-index proximity so equal-frame nodes
+            // (rare, but possible for stacked zero-area rows) stay in order.
+            candidates.sort {
+                $0.distance == $1.distance
+                    ? abs(olds[$0.oldIndex].index - news[$0.newIndex].index)
+                        < abs(olds[$1.oldIndex].index - news[$1.newIndex].index)
+                    : $0.distance < $1.distance
+            }
+            for candidate in candidates {
+                if usedOld.contains(candidate.oldIndex) || usedNew.contains(candidate.newIndex) { continue }
+                usedOld.insert(candidate.oldIndex)
+                usedNew.insert(candidate.newIndex)
+                matched.append((olds[candidate.oldIndex], news[candidate.newIndex]))
+            }
+        } else {
+            // No usable geometry — fall back to sibling index.
+            let newByIndex = Dictionary(news.enumerated().map { ($1.index, $0) },
+                                        uniquingKeysWith: { first, _ in first })
+            for (i, old) in olds.enumerated() {
+                guard let j = newByIndex[old.index], !usedNew.contains(j) else { continue }
+                usedOld.insert(i)
+                usedNew.insert(j)
+                matched.append((old, news[j]))
+            }
+        }
+
+        let leftoverOld = olds.enumerated().filter { !usedOld.contains($0.offset) }.map(\.element)
+        let leftoverNew = news.enumerated().filter { !usedNew.contains($0.offset) }.map(\.element)
+        return (matched, leftoverOld, leftoverNew)
+    }
+
+    private static func frameDistance(_ lhs: FlatNode, _ rhs: FlatNode) -> Double {
+        abs((lhs.x ?? 0) - (rhs.x ?? 0)) + abs((lhs.y ?? 0) - (rhs.y ?? 0))
+            + abs((lhs.width ?? 0) - (rhs.width ?? 0)) + abs((lhs.height ?? 0) - (rhs.height ?? 0))
+    }
+
+    private static func sameFrame(_ lhs: FlatNode, _ rhs: FlatNode) -> Bool {
+        guard lhs.hasFrame, rhs.hasFrame else { return false }
+        return frameDistance(lhs, rhs) <= 1.0
     }
 
     // MARK: - Walk helpers

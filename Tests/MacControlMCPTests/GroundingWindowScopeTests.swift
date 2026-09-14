@@ -91,4 +91,31 @@ struct GroundingWindowScopeTests {
             for: ScreenCaptureKitBridge.BridgeError.windowNotFound(42)
         ) == "not_found")
     }
+
+    @Test("every other capture failure classifies, none fall through unlabelled")
+    func captureFailureFallthroughCodes() {
+        let window = ScreenController.SelectedWindowInfo(
+            windowID: 7, title: "Start Page",
+            bounds: CGRect(x: 0, y: 39, width: 1800, height: 1056),
+            isOnscreen: false
+        )
+        // A window that exists but sits on another Space is "not here",
+        // not a permission problem.
+        #expect(GroundingController.errorCode(
+            for: ScreenController.ScreenError.windowNotOnCurrentSpace(window: window)
+        ) == "not_found")
+        // A window was picked but every capture strategy failed on it.
+        #expect(GroundingController.errorCode(
+            for: ScreenController.ScreenError.windowCaptureFailed(window: window, underlying: "SCK returned nil")
+        ) == "capture_failed")
+        #expect(GroundingController.errorCode(
+            for: ScreenController.ScreenError.captureFailed
+        ) == "capture_failed")
+        #expect(GroundingController.errorCode(
+            for: ScreenCaptureKitBridge.BridgeError.captureFailed("stream stopped")
+        ) == "capture_failed")
+        // An unrelated error still gets an honest code rather than nil.
+        struct Unknown: Error {}
+        #expect(GroundingController.errorCode(for: Unknown()) == "capture_failed")
+    }
 }
