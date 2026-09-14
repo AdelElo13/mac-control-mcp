@@ -176,11 +176,19 @@ actor TextEditingController {
         /// requested (so the caller can see what actually happened).
         let observedText: String?
         /// How the write was verified: "value" | "string_for_range" |
-        /// "count_only" | "unverified". The last two always pair with
-        /// `applied == nil`.
+        /// "count_only" | "unverified". "unverified" always pairs with
+        /// `applied == nil`; "count_only" pairs with nil (count moved as
+        /// requested) or false (count moved by a different amount).
         let verification: String
-        /// Why `applied` is nil, in words the caller can act on.
+        /// Why `applied` is not true, in words the caller can act on. Set
+        /// for nil, and for false when there is no `observedText` to show
+        /// (the count-only case — Codex r3).
         var warning: String? {
+            if applied == false {
+                return observedText == nil
+                    ? "AXNumberOfCharacters moved, but not by the requested amount — the element applied something other than the requested edit. Read it back with text_get_value before continuing."
+                    : nil
+            }
             guard applied == nil else { return nil }
             switch verification {
             case "count_only":
@@ -554,7 +562,15 @@ actor TextEditingController {
         }
 
         if let beforeCount, let afterCount {
-            let expectedCount = beforeCount - range.length + text.utf16.count
+            // Codex r3: `beforeCount` is app-reported. An element answering
+            // AXNumberOfCharacters with Int.max made the plain arithmetic
+            // here trap the server. A count the arithmetic cannot follow is
+            // no evidence either way — fall through to "unverified".
+            guard let expectedCount = Self.expectedCount(
+                before: beforeCount, replaced: range.length, inserted: text.utf16.count
+            ) else {
+                return (nil, nil, "unverified")
+            }
             // The count moving as predicted is consistent with the write, but
             // says nothing about WHAT was written — report "unknown", never
             // "applied" (Codex review 6).
@@ -572,6 +588,16 @@ actor TextEditingController {
 
         // Nothing readable at all. AX said success; that is all we know.
         return (nil, nil, "unverified")
+    }
+
+    /// `before - replaced + inserted` with overflow checking (Codex r3):
+    /// nil when the app-reported `before` cannot be combined with the
+    /// requested edit inside an Int — never a trap.
+    static func expectedCount(before: Int, replaced: Int, inserted: Int) -> Int? {
+        let (afterRemoval, underflowed) = before.subtractingReportingOverflow(replaced)
+        guard !underflowed else { return nil }
+        let (total, overflowed) = afterRemoval.addingReportingOverflow(inserted)
+        return overflowed ? nil : total
     }
 
     // MARK: - Guards

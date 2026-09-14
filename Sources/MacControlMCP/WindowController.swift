@@ -319,6 +319,15 @@ actor WindowController {
             let match: WindowIdentity.Entry?
             if let exactEntry {
                 match = exactEntry
+            } else if window.axWindowID != nil {
+                // Codex r3 #1: this row KNOWS its window-server id and the
+                // snapshot does not carry it (the window closed between the
+                // AX read and the CG read, or the id belongs to another
+                // pid). Falling through to frame/title would hand it the id
+                // of an identical-looking neighbour — exactly the retarget
+                // the exact pass exists to prevent. A stale row reports
+                // `window_id: null`; the next call sees the truth.
+                match = nil
             } else {
                 let sameFrame: (WindowIdentity.Entry) -> Bool = { entry in
                     entry.pid == window.pid

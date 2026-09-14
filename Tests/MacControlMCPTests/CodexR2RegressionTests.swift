@@ -120,4 +120,63 @@ struct CodexR2RegressionTests {
         defer { try? FileManager.default.removeItem(atPath: path) }
         #expect(try ClipboardController.boundedReadForImage(at: path, originalPath: path) == payload)
     }
+
+    // MARK: - Codex r3
+
+    /// A row that knows its own window-server id but whose id is missing
+    /// from the snapshot (window closed between the AX and CG reads) must
+    /// NOT fall back to frame/title — that would hand it an identical
+    /// neighbour's id.
+    @Test("enrich: a stale exact id never falls back to a same-frame neighbour's id")
+    func staleExactIDDoesNotBorrow() {
+        let cg = [WindowTargetingTests.entry(id: 300, title: "Untitled", z: 0)]
+        // Row A's window (id 299) is gone; window B (id 300) has the same
+        // frame and title. Old code: A takes 300 and B is left with nil.
+        let rows = [
+            WindowTargetingTests.row(title: "Untitled", index: 0, axID: 299),
+            WindowTargetingTests.row(title: "Untitled", index: 1, axID: 300)
+        ]
+        let out = WindowController.enrich(windows: rows, cgEntries: cg, displays: [])
+        #expect(out.map(\.windowID) == [nil, 300])
+    }
+
+    @Test("enrich: rows without any id still use the frame/title fallback")
+    func idLessRowsStillFallBack() {
+        let cg = [WindowTargetingTests.entry(id: 310, title: "Doc", z: 0)]
+        let rows = [WindowTargetingTests.row(title: "Doc", index: 0)]
+        let out = WindowController.enrich(windows: rows, cgEntries: cg, displays: [])
+        #expect(out.map(\.windowID) == [310])
+    }
+
+    @Test("expectedCount refuses to overflow", arguments: [
+        (Int.max, 0, 1), (Int.min, 1, 0), (Int.max, -1, 0)
+    ])
+    func expectedCountOverflow(before: Int, replaced: Int, inserted: Int) {
+        #expect(TextEditingController.expectedCount(before: before, replaced: replaced, inserted: inserted) == nil)
+        #expect(TextEditingController.expectedCount(before: 10, replaced: 2, inserted: 3) == 11)
+    }
+
+    /// End to end: an element exposing only a nonsense AXNumberOfCharacters
+    /// (Int.max) used to trap the server on `before - length + inserted`.
+    @Test("an Int.max character count during verification is reported as unverified, not trapped")
+    func hugeCharacterCountDoesNotTrap() async throws {
+        let element = TextEditingBackendTests.FakeElement(value: "hello", selection: .init(location: 0, length: 0))
+        element.exposesValue = false
+        element.exposesStringForRange = false
+        element.forcedCharacterCount = Int.max
+        let controller = TextEditingBackendTests.controller(element)
+        let outcome = try await controller.insertAtCaret(of: TextEditingBackendTests.dummyElement(), text: "abc")
+        #expect(outcome.applied == nil)
+        #expect(outcome.verification == "unverified")
+        #expect(outcome.warning != nil)
+    }
+
+    @Test("a count that moved by the wrong amount reports applied:false WITH a warning")
+    func wrongCountMoveHasWarning() {
+        let outcome = TextEditingController.WriteOutcome(
+            range: .init(location: 0, length: 0), insertedCharacters: 3, selectionAfter: nil,
+            collapsedSelection: false, applied: false, observedText: nil, verification: "count_only"
+        )
+        #expect(outcome.warning?.contains("not by the requested amount") == true)
+    }
 }

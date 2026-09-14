@@ -37,6 +37,9 @@ struct TextEditingBackendTests {
         var exposesStringForRange = true
         /// Hide AXNumberOfCharacters so nothing at all can be verified.
         var exposesCharacterCount = true
+        /// Report THIS as AXNumberOfCharacters instead of the real count —
+        /// models an app whose count is nonsense (Codex r3: Int.max).
+        var forcedCharacterCount: Int?
         var selectedTextWriteStatus: AXError = .success
         var rangeWriteStatus: AXError = .success
 
@@ -86,7 +89,7 @@ struct TextEditingBackendTests {
 
         func intAttribute(_: AXUIElement, _ name: String) -> Int? {
             guard name == "AXNumberOfCharacters", element.exposesCharacterCount else { return nil }
-            return element.value.utf16.count
+            return element.forcedCharacterCount ?? element.value.utf16.count
         }
 
         func rangeAttribute(_: AXUIElement, _ name: String) -> TextEditingController.TextRange? {
