@@ -112,34 +112,50 @@ struct WindowIdentityTests {
         #expect(!WindowIdentity.framesMatch(cg, CGRect(x: 40, y: 39, width: 1800, height: 1056)))
     }
 
-    @Test("matchIndex picks the AX window whose frame equals the CG bounds")
-    func matchIndexResolvesAXWindow() {
-        let frames: [CGRect?] = [
-            CGRect(x: 0, y: 39, width: 1800, height: 1056),
-            nil,                                                    // AX gave no frame
-            CGRect(x: 410, y: 158, width: 980, height: 600)
-        ]
-        #expect(WindowIdentity.matchIndex(bounds: CGRect(x: 410, y: 158, width: 980, height: 600), in: frames) == 2)
-        #expect(WindowIdentity.matchIndex(bounds: CGRect(x: 0, y: 39, width: 1800, height: 1056), in: frames) == 0)
-        // Two identical 500x500 untitled windows: first match wins, deterministically.
-        let dupes: [CGRect?] = [CGRect(x: 0, y: 0, width: 500, height: 500),
-                                CGRect(x: 0, y: 0, width: 500, height: 500)]
-        #expect(WindowIdentity.matchIndex(bounds: CGRect(x: 0, y: 0, width: 500, height: 500), in: dupes) == 0)
-        #expect(WindowIdentity.matchIndex(bounds: CGRect(x: 5, y: 5, width: 100, height: 100), in: frames) == nil)
+    // NOTE (v0.9.0, Codex r1 #1): the `matchIndex` cases that used to live
+    // here moved to `WindowTargetingTests`, which covers the same ground
+    // plus the frame-tie, z-order and refusal behaviour that replaced
+    // "first match wins". Two cases are kept here in their new form
+    // because they are about window IDENTITY rather than targeting policy.
+
+    @Test("a frame that matches no AX window resolves to no AX window at all")
+    func unmatchedFrameResolvesToNothing() {
+        let target = WindowTargetingTests.entry(
+            id: 1, title: "Doc", rect: CGRect(x: 5, y: 5, width: 100, height: 100)
+        )
+        let outcome = WindowTargeting.resolve(
+            entry: target,
+            siblings: [target],
+            axWindows: [
+                WindowTargetingTests.ax("w0", index: 0, rect: CGRect(x: 0, y: 39, width: 1800, height: 1056)),
+                WindowTargetingTests.ax("w2", index: 1, rect: CGRect(x: 410, y: 158, width: 980, height: 600))
+            ]
+        )
+        if case .noAXWindow = outcome {} else { Issue.record("expected .noAXWindow, got \(outcome)") }
     }
 
-    @Test("a minimized window whose AX frame drifted from its CG bounds resolves to no AX index")
+    @Test("a minimized window whose AX frame drifted from its CG bounds resolves to no AX window")
     func minimizedFrameDrift() {
         // A minimized window keeps a stale window-server rect while its AX
         // frame follows the genie/Dock position — the two no longer agree,
-        // so there is no honest AX index to act on. matchIndex must say
-        // nil rather than pick a neighbouring window.
-        let cgBoundsOfMinimizedWindow = CGRect(x: 410, y: 158, width: 980, height: 600)
-        let axFrames: [CGRect?] = [
-            CGRect(x: 0, y: 39, width: 1800, height: 1056),      // the app's other, visible window
-            CGRect(x: 1520, y: 1130, width: 128, height: 40)     // minimized: parked near the Dock
-        ]
-        #expect(WindowIdentity.matchIndex(bounds: cgBoundsOfMinimizedWindow, in: axFrames) == nil)
+        // so there is no honest AX window to act on. Resolution must say
+        // "none" rather than pick a neighbouring window.
+        let minimized = WindowTargetingTests.entry(
+            id: 2, title: "Doc",
+            rect: CGRect(x: 410, y: 158, width: 980, height: 600),
+            z: nil, onscreen: false
+        )
+        let outcome = WindowTargeting.resolve(
+            entry: minimized,
+            siblings: [minimized],
+            axWindows: [
+                // the app's other, visible window
+                WindowTargetingTests.ax("visible", index: 0, rect: CGRect(x: 0, y: 39, width: 1800, height: 1056)),
+                // minimized: parked near the Dock
+                WindowTargetingTests.ax("parked", index: 1, rect: CGRect(x: 1520, y: 1130, width: 128, height: 40))
+            ]
+        )
+        if case .noAXWindow = outcome {} else { Issue.record("expected .noAXWindow, got \(outcome)") }
     }
 
     // MARK: - Multi-display containment (C-14)

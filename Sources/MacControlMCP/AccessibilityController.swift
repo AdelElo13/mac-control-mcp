@@ -72,6 +72,34 @@ actor AccessibilityController {
         let path: [AXPathComponent]
     }
 
+    /// Where a tree walk / element search STARTS, when it should not start
+    /// at the application element.
+    ///
+    /// v0.9.0 blocker fix (Codex r1 #2): window-scoped grounding and
+    /// annotation used to walk the whole pid tree and filter by geometry,
+    /// so with two overlapping windows of one app an element of the window
+    /// BEHIND was a valid match. Rooting the walk at the resolved
+    /// `AXWindow` element makes the other window's subtree unreachable
+    /// rather than merely unlikely.
+    ///
+    /// `path` is the root's OWN AX path as seen from the application
+    /// element, so every node's content-addressed element id (v0.9 C-5) is
+    /// byte-identical to the one an app-rooted walk would produce — a
+    /// window-scoped `capture_annotated` and a plain `find_elements` still
+    /// agree about ids.
+    ///
+    /// Note that `maxDepth` is then measured FROM this root: depth 0 is the
+    /// window itself, not the application.
+    struct WalkRoot: Sendable {
+        let element: AXUIElement
+        let path: [AXPathComponent]
+
+        init(element: AXUIElement, path: [AXPathComponent]) {
+            self.element = element
+            self.path = path
+        }
+    }
+
     /// A search hit: the live handle, its describable attributes, and the
     /// AX path that gives it a stable id (v0.9 C-5).
     struct Match: Sendable {
@@ -592,14 +620,21 @@ actor AccessibilityController {
     /// also never drawable: a closed menu's items are parked off-screen at
     /// 0×0 (gap audit A-4). Default empty = every existing caller behaves
     /// exactly as before.
+    ///
+    /// `root` (v0.9.0, Codex r1 #2): start somewhere other than the
+    /// application element — in practice the `AXWindow` a `window_id`
+    /// resolved to, so a sibling window's subtree is never walked. Element
+    /// ids are unchanged because the root carries its own AX path.
     func treeWalk(
         pid: pid_t,
+        root axRoot: WalkRoot? = nil,
         maxDepth: Int,
         nodeCap: Int = 5000,
         pruneRoles: Set<String> = []
     ) -> [TreeNode] {
         enableManualAccessibility(pid: pid)
-        let root = AXUIElementCreateApplication(pid)
+        let root = axRoot?.element ?? AXUIElementCreateApplication(pid)
+        let rootPath = axRoot?.path ?? []
         var visited = Set<AXKey>()
         var nodes: [TreeNode] = []
         // Wall-clock deadline + node cap. Without these, large AX trees
@@ -668,14 +703,35 @@ actor AccessibilityController {
             return placeholderIndex
         }
 
-        _ = recurse(element: root, depth: 0, parentPath: [], ordinal: 0)
+        _ = recurse(element: root, depth: 0, parentPath: rootPath, ordinal: 0)
         return nodes
+    }
+
+    /// The `WalkRoot` for one of an app's windows: the window element plus
+    /// the AX path an app-rooted walk would have given it.
+    ///
+    /// `index` is the window's ordinal in `kAXWindowsAttribute` — the same
+    /// ordinal the app-rooted walk uses — so ids match exactly.
+    func windowWalkRoot(element: AXUIElement, index: Int) -> WalkRoot {
+        let attrs = AXAttributeBatch.fetch(element, includeChildren: false)
+        return WalkRoot(
+            element: element,
+            path: AXPath.appending(
+                [], role: attrs.role ?? "AXWindow", index: index,
+                identifier: attrs.identifier, title: attrs.title, subrole: attrs.subrole
+            )
+        )
     }
 
     /// Returns all elements matching the given filters. Unlike `findElement`
     /// which returns only the first match.
+    ///
+    /// `root` (v0.9.0, Codex r1 #2): search a single window's subtree
+    /// instead of the whole app, so `ground(window_id:)` cannot return an
+    /// element belonging to an overlapping window of the same app.
     func findElements(
         pid: pid_t,
+        root axRoot: WalkRoot? = nil,
         role: String?,
         title: String?,
         value: String?,
@@ -697,7 +753,8 @@ actor AccessibilityController {
         // queryElements / findElement for the same pattern.
         let deadline = Date().addingTimeInterval(5.0)
         enableManualAccessibility(pid: pid)
-        let root = AXUIElementCreateApplication(pid)
+        let root = axRoot?.element ?? AXUIElementCreateApplication(pid)
+        let rootPath = axRoot?.path ?? []
         var visited = Set<AXKey>()
         var matches: [Match] = []
 
@@ -725,7 +782,7 @@ actor AccessibilityController {
             }
         }
 
-        recurse(element: root, depth: 0, parentPath: [], ordinal: 0)
+        recurse(element: root, depth: 0, parentPath: rootPath, ordinal: 0)
         return matches
     }
 

@@ -1,5 +1,6 @@
 import Foundation
 import CoreGraphics
+import ApplicationServices
 
 // MARK: - v0.9 (C-2): `window_id` as a target on every window-scoped tool
 
@@ -121,6 +122,30 @@ extension ToolRegistry {
                 payload
             )))
         }
+        // v0.9.0 blocker fix (Codex r1 #1): several AX windows of this app
+        // are indistinguishable (same frame, same title, no usable
+        // z-order). Acting would be a coin flip, so refuse and hand back
+        // the candidates.
+        if requiresAXWindow, let candidates = resolved.ambiguousCandidates {
+            var payload: [String: JSONValue] = [
+                "ok": .bool(false),
+                "error_code": .string("ambiguous_window"),
+                "candidate_count": .number(Double(candidates.count)),
+                "candidates": .array(candidates.map { .object($0.payload) }),
+                "hint": .string(
+                    "window_id \(id) matches \(candidates.count) Accessibility windows of \(resolved.ownerName) "
+                    + "with the same frame and title, and none is frontmost, so this call will not guess which "
+                    + "one to act on. Raise or retitle the window you mean, or target it directly with "
+                    + "pid=\(resolved.pid) plus one of the ax_index values listed here."
+                )
+            ]
+            payload.merge(resolved.payload) { existing, _ in existing }
+            return .failure(ToolCallResultBox(result: errorResult(
+                "\(tool): window_id \(id) is ambiguous — \(candidates.count) Accessibility windows of "
+                + "\(resolved.ownerName) (pid \(resolved.pid)) are indistinguishable.",
+                payload
+            )))
+        }
         if requiresAXWindow, resolved.index == nil {
             var payload: [String: JSONValue] = [
                 "ok": .bool(false),
@@ -195,7 +220,9 @@ extension ToolRegistry {
                 ownerName: resolved.ownerName,
                 title: resolved.title,
                 bounds: resolved.bounds,
-                isOnscreen: resolved.isOnscreen
+                isOnscreen: resolved.isOnscreen,
+                axElement: resolved.element,
+                axIndex: resolved.index
             ))
         }
     }
@@ -208,6 +235,14 @@ extension ToolRegistry {
         let resolved: WindowController.ResolvedWindow?
 
         var windowID: CGWindowID? { resolved?.windowID }
+
+        /// v0.9.0 blocker fix (Codex r1 #1): the concrete AX window the
+        /// action must be performed on. Non-nil exactly when the caller
+        /// targeted a `window_id`; the legacy `pid` + `index` path has no
+        /// element and keeps its (inherently index-based, inherently
+        /// racy) behaviour, which is why `window_id` is the documented
+        /// way to name a window.
+        var element: AXUIElement? { resolved?.element }
 
         /// Echo for the response payload: pid/index always, plus the full
         /// identity (window_id, owner_pid, owner_name, title) when the
@@ -222,6 +257,45 @@ extension ToolRegistry {
                 out.merge(resolved.payload) { existing, _ in existing }
             }
             return out
+        }
+    }
+
+    /// Post-action identity check for a `window_id`-targeted mutation
+    /// (v0.9.0, Codex r1 #1).
+    ///
+    /// Re-reads the window-server entry for the id and the AX element's own
+    /// frame/title and asks whether they still describe the same window.
+    /// Returns the payload keys to merge into the response plus, when the
+    /// element demonstrably is NOT that window any more, the reason —
+    /// which the caller turns into `error_code: window_mismatch`.
+    ///
+    /// Legacy `pid` + `index` calls have no element and no id to check
+    /// against; they get `identity_verified: false` with reason
+    /// `no_window_id` and are never failed on it.
+    func verifyWindowIdentity(_ handle: WindowHandle) async
+        -> (payload: [String: JSONValue], mismatch: String?) {
+        guard let element = handle.element, let windowID = handle.windowID else {
+            return (["identity_verified": .bool(false),
+                     "identity_check": .string("no_window_id")], nil)
+        }
+        switch await windows.verify(element: element, windowID: windowID) {
+        case .verified:
+            return (["identity_verified": .bool(true),
+                     "identity_check": .string("verified")], nil)
+        case .indeterminate(let reason):
+            return (["identity_verified": .bool(false),
+                     "identity_check": .string(reason)], nil)
+        case .mismatch(let reason):
+            return ([
+                "identity_verified": .bool(false),
+                "identity_check": .string(reason),
+                "error_code": .string("window_mismatch"),
+                "hint": .string(
+                    "The Accessibility window that was acted on no longer matches window_id \(windowID) "
+                    + "(\(reason) diverged). The window list changed during the call — call list_windows "
+                    + "and retry with a current window_id."
+                )
+            ], reason)
         }
     }
 

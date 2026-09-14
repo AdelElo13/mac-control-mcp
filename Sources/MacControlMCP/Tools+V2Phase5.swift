@@ -868,8 +868,13 @@ extension ToolRegistry {
             )
         }
         let target = list[displayIdx]
-        let ok = await windows.moveWindow(pid: handle.pid, index: handle.index,
-                                          to: CGPoint(x: target.x, y: target.y))
+        let ok = await {
+            if let element = handle.element {
+                return await windows.moveWindow(element: element, to: CGPoint(x: target.x, y: target.y))
+            }
+            return await windows.moveWindow(pid: handle.pid, index: handle.index,
+                                            to: CGPoint(x: target.x, y: target.y))
+        }()
         var payload: [String: JSONValue] = [
             "ok": .bool(ok),
             "display_index": .number(Double(displayIdx)),
@@ -877,6 +882,15 @@ extension ToolRegistry {
             "y": .number(target.y)
         ]
         payload.merge(handle.payload) { existing, _ in existing }
+        let verification = await verifyWindowIdentity(handle)
+        payload.merge(verification.payload) { _, new in new }
+        if let reason = verification.mismatch {
+            payload["ok"] = .bool(false)
+            return errorResult(
+                "move_window_to_display acted on a window that no longer matches the requested window_id (\(reason)).",
+                payload
+            )
+        }
         return ok
             ? successResult("Window moved to display \(displayIdx).", payload)
             : errorResult("Window move failed.", payload)

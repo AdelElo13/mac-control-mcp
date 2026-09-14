@@ -27,28 +27,39 @@ extension ToolRegistry {
             name: "capture_annotated",
             description: """
                 Screenshot + numbered interactive elements in ONE call. \
-                Captures an app window (pid, optional title_contains — same \
-                window selection as capture_window) or the main display \
-                (target="display"), walks that app's AX tree for interactive \
-                controls (buttons, links, text fields, checkboxes, \
-                pop-ups, sliders…), draws a numbered box over each, and \
-                returns the image plus `elements`: \
+                Captures ONE window (window_id — preferred; or pid + optional \
+                title_contains, same selection as capture_window) or the main \
+                display (target="display"), walks THAT WINDOW's AX subtree \
+                for interactive controls (buttons, links, text fields, \
+                checkboxes, pop-ups, sliders…), draws a numbered box over \
+                each, and returns the image plus `elements`: \
                 [{index, element_id, role, title, x, y, width, height, \
-                center}] in GLOBAL SCREEN POINTS. Indices are 1-based and \
-                are what is drawn on the image; `element_id` is live in the \
-                element cache, so it can be passed straight to \
-                perform_element_action / get_element_attributes, and \
-                `center` is click-ready for `click`. Defaults: max_depth 24, \
-                max_elements 200, artifact path (inline=true adds base64), \
-                png (format/quality/max_width behave as in \
-                capture_screen_v2). The response reports pixels_per_point \
-                and scale for mapping image pixels back to points. NOTE: the \
-                AX walk happens just before the capture — if the window moves \
-                or scrolls in between, the boxes are stale by that much; \
-                re-capture before clicking in an animating UI.
+                center, visible, fully_visible}] in GLOBAL SCREEN POINTS. \
+                Indices are 1-based and are what is drawn on the image; \
+                `element_id` is live in the element cache, so it can be \
+                passed straight to perform_element_action / \
+                get_element_attributes. `center` is click-ready: it is the \
+                centre of the element's VISIBLE part (clipped to the \
+                captured window and to the displays), so it is GUARANTEED to \
+                lie inside the returned image — `visible` reports that \
+                clipped rect and `fully_visible` says whether any clipping \
+                happened. Elements with under 4 pt² visible are dropped. \
+                `ax_scope` is "window_subtree" when the walk really was \
+                scoped to the captured window, and "app_root" when the app \
+                publishes no Accessibility window (Chrome browser windows, \
+                parts of Electron) and only a geometric filter applied — in \
+                that case an overlapping window of the same app can still \
+                contribute a box. Defaults: max_depth 24, max_elements 200, \
+                artifact path (inline=true adds base64), png \
+                (format/quality/max_width behave as in capture_screen_v2). \
+                The response reports pixels_per_point and scale for mapping \
+                image pixels back to points. NOTE: the AX walk happens just \
+                before the capture — if the window moves or scrolls in \
+                between, the boxes are stale by that much; re-capture before \
+                clicking in an animating UI.
                 """,
             inputSchema: schema(
-                properties: withImageOutputProperties([
+                properties: ToolRegistry.withWindowIDProperty(withImageOutputProperties([
                     "pid": .object([
                         "type": .array([.string("integer"), .string("string")]),
                         "description": .string("App whose window is captured and whose elements are numbered. Defaults to the frontmost app.")
@@ -78,7 +89,7 @@ extension ToolRegistry {
                         "type": .array([.string("integer"), .string("string")]),
                         "description": .string("Reject the artifact if it is still larger than this after encoding (default 4 MB).")
                     ])
-                ])
+                ]))
             )
         )
     ]
@@ -86,11 +97,23 @@ extension ToolRegistry {
     // MARK: - Handler
 
     func callCaptureAnnotated(_ arguments: [String: JSONValue]) async -> ToolCallResult {
-        // Target app: explicit pid, else the frontmost app. The AX walk
-        // needs a pid either way — an annotated screenshot of a display
-        // with nobody's elements on it would be a plain screenshot.
+        // v0.9.0 (Codex r1 #2): `window_id` names the window to photograph
+        // AND the AX subtree to number. Codex filed this as a 0.9.1 item,
+        // but it is the same change as scoping the walk, so it lands here.
+        let targeted: WindowController.ResolvedWindow?
+        switch await resolveWindowTarget(arguments, tool: "capture_annotated") {
+        case .success(let resolved): targeted = resolved
+        case .failure(let box): return box.result
+        }
+
+        // Target app: the window_id's owner, else an explicit pid, else the
+        // frontmost app. The AX walk needs a pid either way — an annotated
+        // screenshot of a display with nobody's elements on it would be a
+        // plain screenshot.
         let pid: pid_t
-        if arguments["pid"] != nil && arguments["pid"] != .null {
+        if let targeted {
+            pid = targeted.pid
+        } else if arguments["pid"] != nil && arguments["pid"] != .null {
             guard let parsed = parsePID(arguments["pid"]) else {
                 return invalidArgument("capture_annotated: pid must be a positive integer.")
             }
@@ -107,11 +130,7 @@ extension ToolRegistry {
 
         let rawTarget = (arguments["target"]?.stringValue ?? "window").lowercased()
         let titleContains = arguments["title_contains"]?.stringValue
-        let target: ScreenController.AnnotateTarget
-        switch rawTarget {
-        case "window": target = .window(pid: pid, titleContains: titleContains)
-        case "display": target = .mainDisplay
-        default:
+        guard rawTarget == "window" || rawTarget == "display" else {
             return invalidArgument("capture_annotated: target must be \"window\" or \"display\" (got \"\(rawTarget)\").")
         }
 
@@ -129,6 +148,54 @@ extension ToolRegistry {
         case .failure(let box): return box.result
         }
 
+        // Select the window BEFORE the AX walk, so the walk can be rooted
+        // at that window's AX element (v0.9.0, Codex r1 #2). Previously the
+        // walk ran over the whole pid tree and the capture picked its own
+        // window afterwards, so with two overlapping windows of one app a
+        // box could carry the element_id of the window BEHIND the one in
+        // the picture.
+        var selected: ScreenController.SelectedWindowInfo?
+        if rawTarget == "window" {
+            if let targeted {
+                selected = Self.selectedWindow(targeted)
+            } else {
+                do {
+                    selected = try await screen.selectWindowInfo(ownerPID: pid, titleContains: titleContains)
+                } catch let error as ScreenController.ScreenError {
+                    return errorResult(
+                        "capture_annotated failed: \(error.description)",
+                        [
+                            "ok": .bool(false),
+                            "pid": .number(Double(pid)),
+                            "error_code": .string(Self.annotateErrorCode(error))
+                        ]
+                    )
+                } catch {
+                    return errorResult(
+                        "capture_annotated failed: \(error)",
+                        ["ok": .bool(false), "pid": .number(Double(pid))]
+                    )
+                }
+            }
+        }
+
+        // The AX window element behind the selected window, when the app
+        // publishes one. Chrome browser windows and parts of Electron do
+        // not, and a minimized window's AX frame no longer matches its
+        // window-server bounds — those fall back to the app root plus the
+        // geometric filter, reported as ax_scope: "app_root".
+        var walkRoot: AccessibilityController.WalkRoot?
+        if let selected {
+            let resolved = targeted?.element != nil
+                ? targeted
+                : await windows.resolve(windowID: selected.windowID)
+            if let element = resolved?.element {
+                walkRoot = await accessibility.windowWalkRoot(element: element, index: resolved?.index ?? 0)
+            }
+        }
+
+        let target: ScreenController.AnnotateTarget = selected.map { .selectedWindow($0) } ?? .mainDisplay
+
         // 1. Walk the AX tree once. The node cap is the element-cache
         //    capacity for the same reason get_ui_tree uses it: an id we
         //    hand out must still resolve.
@@ -143,6 +210,7 @@ extension ToolRegistry {
         //    so every other element's path-derived id is unchanged.
         let nodes = await accessibility.treeWalk(
             pid: pid,
+            root: walkRoot,
             maxDepth: maxDepth,
             nodeCap: elementCache.maxEntries,
             pruneRoles: ["AXMenuBar"]
@@ -210,6 +278,12 @@ extension ToolRegistry {
         for (offset, nodeIndex) in capture.drawnIndices.enumerated() {
             let node = nodes[nodeIndex]
             let frame = geometries[nodeIndex].frame
+            // v0.9.0 (Codex r1 #2): `center` is the centre of the VISIBLE
+            // part, clipped to the captured window and the display union,
+            // so it is always inside the returned image. The raw frame is
+            // still reported (x/y/width/height) alongside `visible`, so a
+            // caller can see how much of the element is cut off.
+            let visible = ScreenAnnotator.visibleRect(of: frame, clippedTo: capture.clipRects) ?? frame
             var entry: [String: JSONValue] = [
                 "index": .number(Double(offset + 1)),
                 "role": node.role.map(JSONValue.string) ?? .null,
@@ -219,9 +293,16 @@ extension ToolRegistry {
                 "width": .number(Double(frame.width)),
                 "height": .number(Double(frame.height)),
                 "center": .object([
-                    "x": .number(Double(frame.midX)),
-                    "y": .number(Double(frame.midY))
-                ])
+                    "x": .number(Double(visible.midX)),
+                    "y": .number(Double(visible.midY))
+                ]),
+                "visible": .object([
+                    "x": .number(Double(visible.origin.x)),
+                    "y": .number(Double(visible.origin.y)),
+                    "width": .number(Double(visible.width)),
+                    "height": .number(Double(visible.height))
+                ]),
+                "fully_visible": .bool(visible == frame)
             ]
             entry["element_id"] = ids.indices.contains(offset)
                 ? (ids[offset].map(JSONValue.string) ?? .null)
@@ -262,8 +343,17 @@ extension ToolRegistry {
                 "width": .number(Double(bounds.width)),
                 "height": .number(Double(bounds.height))
             ]),
-            "geometry_source": .string("ax_frames_before_capture")
+            "geometry_source": .string("ax_frames_before_capture"),
+            // Did the AX walk actually run inside the captured window's
+            // subtree, or over the whole app with only a geometric filter?
+            // "app_root" means an overlapping window of the same app could
+            // still contribute an element (v0.9.0, Codex r1 #2).
+            "ax_scope": .string(walkRoot != nil ? "window_subtree" : "app_root")
         ]
+        if let selected {
+            payload["window_id"] = .number(Double(selected.windowID))
+            payload["window_title"] = .string(selected.title)
+        }
         if let ppp = ImageEncoder.pixelsPerPoint(
             outputWidth: capture.encoded.width, pointWidth: Double(bounds.width)
         ) {

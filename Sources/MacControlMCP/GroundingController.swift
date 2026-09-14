@@ -104,6 +104,40 @@ actor GroundingController {
         let title: String
         let bounds: CGRect
         let isOnscreen: Bool
+        /// v0.9.0 blocker fix (Codex r1 #2): the resolved `AXWindow`
+        /// element, used as the AX search ROOT. Scoping by frame alone let
+        /// an element of an overlapping window of the SAME app match;
+        /// rooting the search here makes that window's subtree
+        /// unreachable. nil for apps that publish no AX window (Chrome
+        /// browser windows), where the geometric filter remains the only
+        /// defence — reported as `ax_scope: "frame_only"`.
+        let axElement: AXUIElement?
+        /// That window's ordinal in `kAXWindowsAttribute`, needed to seed
+        /// the AX path so element ids stay identical to an app-rooted walk.
+        let axIndex: Int?
+
+        init(
+            windowID: CGWindowID,
+            pid: pid_t,
+            ownerName: String,
+            title: String,
+            bounds: CGRect,
+            isOnscreen: Bool,
+            axElement: AXUIElement? = nil,
+            axIndex: Int? = nil
+        ) {
+            self.windowID = windowID
+            self.pid = pid
+            self.ownerName = ownerName
+            self.title = title
+            self.bounds = bounds
+            self.isOnscreen = isOnscreen
+            self.axElement = axElement
+            self.axIndex = axIndex
+        }
+
+        /// Did the AX search actually run inside this window's subtree?
+        var axScope: String { axElement != nil ? "window_subtree" : "frame_only" }
 
         /// Identity echo for the tool response — which window the id
         /// actually resolved to (ids are recycled after a window closes).
@@ -153,8 +187,23 @@ actor GroundingController {
         // 1. AX attempt. `findElements` returns [(AXUIElement, ElementInfo)]
         var axCandidates: [Candidate] = []
         if wantsAX {
+            // v0.9.0 blocker fix (Codex r1 #2): with a window_id the search
+            // starts AT that AXWindow, so an element of an overlapping
+            // window of the same app is not merely filtered out by
+            // geometry — it is never visited. The geometric filter below
+            // stays as the second line of defence (and as the only one for
+            // apps with no AX window).
+            let walkRoot: AccessibilityController.WalkRoot?
+            if let window, let element = window.axElement {
+                walkRoot = await accessibility.windowWalkRoot(
+                    element: element, index: window.axIndex ?? 0
+                )
+            } else {
+                walkRoot = nil
+            }
             let results = await accessibility.findElements(
                 pid: pid,
+                root: walkRoot,
                 role: nil,
                 title: target,
                 value: nil,

@@ -119,18 +119,13 @@ enum WindowIdentity {
         abs(Double(a.height - b.height)) <= tolerance
     }
 
-    /// Index of the first frame in `frames` that equals `bounds`. `frames`
-    /// is index-aligned with an app's AX window list (nil where AX gave no
-    /// geometry), so the result is exactly the `index` argument the
-    /// existing window tools take. First match wins, so two windows with
-    /// identical frames resolve deterministically to the earlier one.
-    static func matchIndex(bounds: CGRect, in frames: [CGRect?], tolerance: Double = frameTolerance) -> Int? {
-        for (index, frame) in frames.enumerated() {
-            guard let frame else { continue }
-            if framesMatch(bounds, frame, tolerance: tolerance) { return index }
-        }
-        return nil
-    }
+    // NOTE (v0.9.0, Codex r1 #1): `matchIndex(bounds:in:)` used to live
+    // here — "the index of the FIRST AX window whose frame matches". It was
+    // deleted, not deprecated, because it is exactly the release blocker:
+    // two windows of one pid with identical frames both resolved to AX
+    // index 0, so focus/move/resize/set_window_state mutated the wrong one.
+    // Resolution now goes through `WindowTargeting.resolve`, which
+    // disambiguates by title and z-order and REFUSES rather than guessing.
 
     // MARK: - Displays (C-14)
 
