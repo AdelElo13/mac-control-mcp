@@ -47,6 +47,12 @@ actor GroundingController {
         let candidates: [Candidate]
         let error: String?
         let errorCode: String?
+        /// Codex r2 #2: set when a window scope was given but the AX
+        /// strategy did NOT run because the window has no attributable
+        /// AXWindow ("no_ax_window" / "ambiguous_window"). nil whenever AX
+        /// ran (or was not asked for). Lets a caller tell "AX found
+        /// nothing" from "AX was never consulted".
+        let axSkippedReason: String?
     }
 
     struct Candidate: Codable, Sendable {
@@ -109,12 +115,18 @@ actor GroundingController {
         /// an element of an overlapping window of the SAME app match;
         /// rooting the search here makes that window's subtree
         /// unreachable. nil for apps that publish no AX window (Chrome
-        /// browser windows), where the geometric filter remains the only
-        /// defence — reported as `ax_scope: "frame_only"`.
+        /// browser windows) — and then (Codex r2 #2) the AX strategy is
+        /// SKIPPED rather than run app-wide behind a geometric filter,
+        /// because a frame filter cannot tell this window's elements from
+        /// an overlapping sibling's.
         let axElement: AXUIElement?
         /// That window's ordinal in `kAXWindowsAttribute`, needed to seed
         /// the AX path so element ids stay identical to an app-rooted walk.
         let axIndex: Int?
+        /// Codex r2 #2: the indistinguishable AX windows the resolver
+        /// found, when it found several. Carried so `ground` can report
+        /// `ambiguous_window` with the candidates instead of `no_ax_window`.
+        let ambiguousCandidates: [WindowTargeting.Candidate]?
 
         init(
             windowID: CGWindowID,
@@ -124,7 +136,8 @@ actor GroundingController {
             bounds: CGRect,
             isOnscreen: Bool,
             axElement: AXUIElement? = nil,
-            axIndex: Int? = nil
+            axIndex: Int? = nil,
+            ambiguousCandidates: [WindowTargeting.Candidate]? = nil
         ) {
             self.windowID = windowID
             self.pid = pid
@@ -134,10 +147,26 @@ actor GroundingController {
             self.isOnscreen = isOnscreen
             self.axElement = axElement
             self.axIndex = axIndex
+            self.ambiguousCandidates = ambiguousCandidates
         }
 
-        /// Did the AX search actually run inside this window's subtree?
-        var axScope: String { axElement != nil ? "window_subtree" : "frame_only" }
+        /// The scope decision for this window: a scope always means a
+        /// window was requested, so the only outcomes are the subtree
+        /// walk or a withheld AX pass (Codex r2 #2).
+        var scopeDecision: AXScopePolicy.Decision {
+            AXScopePolicy.decide(
+                windowRequested: true,
+                hasAXWindow: axElement != nil,
+                ambiguous: ambiguousCandidates != nil
+            )
+        }
+
+        /// Did the AX search actually run inside this window's subtree
+        /// ("window_subtree"), or was it withheld ("none")?
+        var axScope: String { scopeDecision.axScope }
+
+        /// "no_ax_window" / "ambiguous_window" when AX is withheld, else nil.
+        var axSkippedReason: String? { scopeDecision.reason?.rawValue }
 
         /// Identity echo for the tool response — which window the id
         /// actually resolved to (ids are recycled after a window closes).
@@ -180,9 +209,36 @@ actor GroundingController {
         window: WindowScope? = nil
     ) async -> GroundResult {
         let pid = window?.pid ?? rawPID
-        let wantsAX = strategy == .ax || strategy == .auto
-        let wantsOCR = strategy == .ocr || strategy == .auto
         let depth = Self.resolveMaxDepth(maxDepth)
+
+        // Codex r2 #2: a window scope with no attributable AXWindow means
+        // the AX strategy cannot keep its promise, so it does not run at
+        // all. Before this, `walkRoot = nil` silently degraded the search
+        // to the whole app behind a frame filter, and a match from an
+        // overlapping window of the same app came back with `ok: true`.
+        let axSkippedReason: String? = window?.axSkippedReason
+        let wantsAX = (strategy == .ax || strategy == .auto) && axSkippedReason == nil
+        let wantsOCR = strategy == .ocr || strategy == .auto
+
+        // strategy "ax" was asked for explicitly and cannot be honoured:
+        // fail with the resolver's own code rather than answer from a
+        // tree the caller did not ask about. The tool layer attaches the
+        // ambiguity candidates from the scope.
+        if strategy == .ax, let axSkippedReason, let window {
+            let reason = AXScopePolicy.WithheldReason(rawValue: axSkippedReason) ?? .noAXWindow
+            return GroundResult(
+                ok: false, strategyUsed: "none",
+                x: nil, y: nil, bounds: nil, elementId: nil, confidence: 0,
+                maxDepthUsed: depth,
+                candidates: [],
+                error: AXScopePolicy.withheldHint(
+                    tool: "ground", reason: reason,
+                    windowID: window.windowID, ownerName: window.ownerName
+                ),
+                errorCode: axSkippedReason,
+                axSkippedReason: axSkippedReason
+            )
+        }
 
         // 1. AX attempt. `findElements` returns [(AXUIElement, ElementInfo)]
         var axCandidates: [Candidate] = []
@@ -191,8 +247,10 @@ actor GroundingController {
             // starts AT that AXWindow, so an element of an overlapping
             // window of the same app is not merely filtered out by
             // geometry — it is never visited. The geometric filter below
-            // stays as the second line of defence (and as the only one for
-            // apps with no AX window).
+            // stays as the second line of defence. Without a window scope
+            // the root is the app (an honest app-wide search, not a window
+            // claim); a scope WITHOUT an element never reaches this branch
+            // (Codex r2 #2, see `axSkippedReason` above).
             let walkRoot: AccessibilityController.WalkRoot?
             if let window, let element = window.axElement {
                 walkRoot = await accessibility.windowWalkRoot(
@@ -305,7 +363,8 @@ actor GroundingController {
                     maxDepthUsed: depth,
                     candidates: axCandidates,
                     error: nil,
-                    errorCode: nil
+                    errorCode: nil,
+                    axSkippedReason: axSkippedReason
                 )
             }
             if strategy == .ax {
@@ -315,7 +374,8 @@ actor GroundingController {
                     maxDepthUsed: depth,
                     candidates: [],
                     error: "no AX match at depth \(depth)",
-                    errorCode: "not_found"
+                    errorCode: "not_found",
+                    axSkippedReason: axSkippedReason
                 )
             }
         }
@@ -348,7 +408,8 @@ actor GroundingController {
                 maxDepthUsed: depth,
                 candidates: all,
                 error: nil,
-                errorCode: nil
+                errorCode: nil,
+                axSkippedReason: axSkippedReason
             )
         }
 
@@ -362,7 +423,8 @@ actor GroundingController {
                 maxDepthUsed: depth,
                 candidates: [],
                 error: ocrFailure.message,
-                errorCode: ocrFailure.code
+                errorCode: ocrFailure.code,
+                axSkippedReason: axSkippedReason
             )
         }
 
@@ -372,7 +434,8 @@ actor GroundingController {
             maxDepthUsed: depth,
             candidates: [],
             error: "no grounding candidate from \(strategy.rawValue)",
-            errorCode: "not_found"
+            errorCode: "not_found",
+            axSkippedReason: axSkippedReason
         )
     }
 

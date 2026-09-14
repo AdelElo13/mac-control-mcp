@@ -44,12 +44,24 @@ extension ToolRegistry {
                 lie inside the returned image — `visible` reports that \
                 clipped rect and `fully_visible` says whether any clipping \
                 happened. Elements with under 4 pt² visible are dropped. \
-                `ax_scope` is "window_subtree" when the walk really was \
-                scoped to the captured window, and "app_root" when the app \
-                publishes no Accessibility window (Chrome browser windows, \
-                parts of Electron) and only a geometric filter applied — in \
-                that case an overlapping window of the same app can still \
-                contribute a box. Defaults: max_depth 24, max_elements 200, \
+                `ax_scope` says which AX tree the boxes come from: \
+                "window_subtree" when the walk was rooted at the captured \
+                window's Accessibility window (the only scope under which \
+                every box belongs to the pictured window); "app_root" only \
+                for target="display", where the whole pid tree is walked \
+                behind a geometric filter and no single-window claim is \
+                made; "none" when a window WAS targeted but has no \
+                attributable Accessibility window (Chrome browser windows, \
+                parts of Electron, minimized windows, or several \
+                indistinguishable AX windows) — then the image is still \
+                returned but `elements` is EMPTY, `annotated` is false, \
+                `ax_scope_reason` is "no_ax_window" or "ambiguous_window" \
+                (with `candidates`), and `hint` names the alternatives \
+                (ocr_screen with the same window_id, or element_at_point). \
+                AX elements are never taken from an app-wide walk for a \
+                targeted window, because a box over this window's pixels \
+                could then carry the element_id of an overlapping window of \
+                the same app. Defaults: max_depth 24, max_elements 200, \
                 artifact path (inline=true adds base64), png \
                 (format/quality/max_width behave as in capture_screen_v2). \
                 The response reports pixels_per_point and scale for mapping \
@@ -93,6 +105,37 @@ extension ToolRegistry {
             )
         )
     ]
+
+    // MARK: - Withheld-AX payload (Codex r2 #2)
+
+    /// The response fields for a window that was targeted but has no
+    /// attributable AXWindow: the image still comes back, the AX side is
+    /// explicitly empty, and the reason + escape routes are spelled out.
+    /// Pure, so the shape is unit-tested without a capture.
+    static func withheldAnnotateFields(
+        reason: AXScopePolicy.WithheldReason,
+        windowID: CGWindowID?,
+        ownerName: String,
+        candidates: [WindowTargeting.Candidate]?
+    ) -> [String: JSONValue] {
+        var fields: [String: JSONValue] = [
+            "annotated": .bool(false),
+            "element_cap_reached": .bool(false),
+            "nodes_walked": .number(0),
+            "count": .number(0),
+            "elements": .array([]),
+            "ax_scope": .string(AXScopePolicy.Decision.withheld(reason).axScope),
+            "ax_scope_reason": .string(reason.rawValue),
+            "hint": .string(AXScopePolicy.withheldHint(
+                tool: "capture_annotated", reason: reason, windowID: windowID, ownerName: ownerName
+            ))
+        ]
+        if let candidates {
+            fields["candidate_count"] = .number(Double(candidates.count))
+            fields["candidates"] = .array(candidates.map { .object($0.payload) })
+        }
+        return fields
+    }
 
     // MARK: - Handler
 
@@ -180,25 +223,42 @@ extension ToolRegistry {
         }
 
         // The AX window element behind the selected window, when the app
-        // publishes one. Chrome browser windows and parts of Electron do
-        // not, and a minimized window's AX frame no longer matches its
-        // window-server bounds — those fall back to the app root plus the
-        // geometric filter, reported as ax_scope: "app_root".
+        // publishes one. `targeted` already went through the resolver when
+        // a window_id was given; a pid/title selection resolves here.
+        // Chrome browser windows and parts of Electron publish no AX
+        // window, and a minimized window's AX frame no longer matches its
+        // window-server bounds.
+        var resolved: WindowController.ResolvedWindow?
         var walkRoot: AccessibilityController.WalkRoot?
         if let selected {
-            let resolved = targeted?.element != nil
-                ? targeted
-                : await windows.resolve(windowID: selected.windowID)
+            if let targeted {
+                resolved = targeted
+            } else {
+                resolved = await windows.resolve(windowID: selected.windowID)
+            }
             if let element = resolved?.element {
                 walkRoot = await accessibility.windowWalkRoot(element: element, index: resolved?.index ?? 0)
             }
         }
 
+        // Codex r2 #2: a selected window IS a window claim. If it has no
+        // attributable AXWindow, the AX side is withheld — never degraded
+        // to an app-root walk behind a geometric filter, which could box
+        // this window's pixels with an overlapping sibling's element_id.
+        // Only target="display" (no window selected) walks the app root,
+        // and it says so.
+        let decision = AXScopePolicy.decide(
+            windowRequested: selected != nil,
+            hasAXWindow: walkRoot != nil,
+            ambiguous: resolved?.ambiguousCandidates != nil
+        )
+
         let target: ScreenController.AnnotateTarget = selected.map { .selectedWindow($0) } ?? .mainDisplay
 
-        // 1. Walk the AX tree once. The node cap is the element-cache
-        //    capacity for the same reason get_ui_tree uses it: an id we
-        //    hand out must still resolve.
+        // 1. Walk the AX tree once — unless the scope decision withheld
+        //    it, in which case there is nothing to number. The node cap is
+        //    the element-cache capacity for the same reason get_ui_tree
+        //    uses it: an id we hand out must still resolve.
         //    AXMenuBar is pruned: a closed menu bar is hundreds to
         //    thousands of AXMenuItem nodes (Safari 1031, Chrome 319) that
         //    are walked BEFORE the windows and can consume the walk's
@@ -208,13 +268,18 @@ extension ToolRegistry {
         //    drawable (a closed menu parks them off-screen at 0×0, gap
         //    audit A-4). Pruning keeps the menu bar NODE and its ordinal,
         //    so every other element's path-derived id is unchanged.
-        let nodes = await accessibility.treeWalk(
-            pid: pid,
-            root: walkRoot,
-            maxDepth: maxDepth,
-            nodeCap: elementCache.maxEntries,
-            pruneRoles: ["AXMenuBar"]
-        )
+        let nodes: [AccessibilityController.TreeNode]
+        if decision.reason == nil {
+            nodes = await accessibility.treeWalk(
+                pid: pid,
+                root: walkRoot,
+                maxDepth: maxDepth,
+                nodeCap: elementCache.maxEntries,
+                pruneRoles: ["AXMenuBar"]
+            )
+        } else {
+            nodes = []
+        }
         let geometries = nodes.map { node -> ScreenAnnotator.ElementGeometry in
             let frame: CGRect
             if let p = node.position, let s = node.size {
@@ -227,7 +292,8 @@ extension ToolRegistry {
         }
 
         // 2. Capture + filter + draw + encode (one actor hop; no CGImage
-        //    crosses an isolation boundary).
+        //    crosses an isolation boundary). With no geometries this is a
+        //    plain capture of the window.
         let capture: ScreenController.AnnotatedCapture
         do {
             capture = try await screen.captureAnnotated(
@@ -311,6 +377,18 @@ extension ToolRegistry {
         }
 
         let bounds = capture.pointBounds
+        // Split out of the literal below: the type checker times out on
+        // the full dictionary once it also has to infer these.
+        let scaleValue = ImageEncoder.scale(
+            outputWidth: capture.encoded.width, sourceWidth: capture.encoded.sourceWidth
+        )
+        let captureBounds: JSONValue = .object([
+            "x": .number(Double(bounds.origin.x)),
+            "y": .number(Double(bounds.origin.y)),
+            "width": .number(Double(bounds.width)),
+            "height": .number(Double(bounds.height))
+        ])
+        let capReached = capture.drawnIndices.count >= maxElements
         var payload: [String: JSONValue] = [
             "ok": .bool(true),
             "pid": .number(Double(pid)),
@@ -325,34 +403,39 @@ extension ToolRegistry {
             "height": .number(Double(capture.encoded.height)),
             "source_width": .number(Double(capture.encoded.sourceWidth)),
             "source_height": .number(Double(capture.encoded.sourceHeight)),
-            "scale": .number(ImageEncoder.scale(
-                outputWidth: capture.encoded.width, sourceWidth: capture.encoded.sourceWidth
-            )),
+            "scale": .number(scaleValue),
             "annotated": .bool(capture.annotated),
             "max_depth": .number(Double(maxDepth)),
             "max_elements": .number(Double(maxElements)),
-            "element_cap_reached": .bool(capture.drawnIndices.count >= maxElements),
+            "element_cap_reached": .bool(capReached),
             "nodes_walked": .number(Double(nodes.count)),
             "count": .number(Double(encodedElements.count)),
             "elements": .array(encodedElements),
             // Origin + extent of what was captured, so image pixels map
             // back to global points: point = origin + pixel / pixels_per_point.
-            "capture_bounds": .object([
-                "x": .number(Double(bounds.origin.x)),
-                "y": .number(Double(bounds.origin.y)),
-                "width": .number(Double(bounds.width)),
-                "height": .number(Double(bounds.height))
-            ]),
+            "capture_bounds": captureBounds,
             "geometry_source": .string("ax_frames_before_capture"),
-            // Did the AX walk actually run inside the captured window's
-            // subtree, or over the whole app with only a geometric filter?
-            // "app_root" means an overlapping window of the same app could
-            // still contribute an element (v0.9.0, Codex r1 #2).
-            "ax_scope": .string(walkRoot != nil ? "window_subtree" : "app_root")
+            // Which AX tree the boxes come from: the captured window's
+            // subtree, the app root (target="display" only — an honest
+            // app-wide walk, not a window claim), or none at all when a
+            // targeted window has no attributable AXWindow (Codex r2 #2).
+            "ax_scope": .string(decision.axScope)
         ]
         if let selected {
             payload["window_id"] = .number(Double(selected.windowID))
             payload["window_title"] = .string(selected.title)
+        }
+        if let reason = decision.reason {
+            // Codex r2 #2: the withheld case overrides the AX-side fields
+            // (elements/count/annotated/...) with the explicit empty shape
+            // plus reason, hint and any ambiguity candidates.
+            let withheld = Self.withheldAnnotateFields(
+                reason: reason,
+                windowID: selected?.windowID,
+                ownerName: resolved?.ownerName ?? "the app",
+                candidates: resolved?.ambiguousCandidates
+            )
+            payload.merge(withheld) { _, new in new }
         }
         if let ppp = ImageEncoder.pixelsPerPoint(
             outputWidth: capture.encoded.width, pointWidth: Double(bounds.width)
@@ -362,14 +445,15 @@ extension ToolRegistry {
         if inline {
             payload["inline_base64"] = .string(capture.data.base64EncodedString())
         }
-        if encodedElements.isEmpty, let hint = await axEmptyHint(pid: pid, whenEmpty: true) {
+        if decision.reason == nil, encodedElements.isEmpty,
+           let hint = await axEmptyHint(pid: pid, whenEmpty: true) {
             payload["ax_tree_hint"] = .string(hint)
         }
 
-        return successResult(
-            "Captured \(artifact.contentRef) with \(encodedElements.count) numbered elements.",
-            payload
-        )
+        let summary = decision.reason == nil
+            ? "Captured \(artifact.contentRef) with \(encodedElements.count) numbered elements."
+            : "Captured \(artifact.contentRef); AX elements withheld (\(decision.reason?.rawValue ?? "")) — see hint."
+        return successResult(summary, payload)
     }
 
     static func annotateErrorCode(_ error: ScreenController.ScreenError) -> String {

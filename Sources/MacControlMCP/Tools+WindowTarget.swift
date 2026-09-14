@@ -222,7 +222,11 @@ extension ToolRegistry {
                 bounds: resolved.bounds,
                 isOnscreen: resolved.isOnscreen,
                 axElement: resolved.element,
-                axIndex: resolved.index
+                axIndex: resolved.index,
+                // Codex r2 #2: carry the ambiguity through, so the
+                // grounding layer can withhold AX with the right reason
+                // (and the candidates) instead of walking the app root.
+                ambiguousCandidates: resolved.ambiguousCandidates
             ))
         }
     }
