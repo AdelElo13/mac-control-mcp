@@ -204,7 +204,7 @@ final class ToolRegistry: @unchecked Sendable {
         case "list_menu_titles":
             return await callListMenuTitles(arguments)
         case "clipboard_read":
-            return await callClipboardRead()
+            return await callClipboardRead(arguments)
         case "clipboard_write":
             return await callClipboardWrite(arguments)
         case "permissions_status":

@@ -133,17 +133,46 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "clipboard_read",
-            description: "Read the current clipboard as text and list all available pasteboard types.",
-            inputSchema: schema(properties: [:])
+            description: "Read the clipboard. type=text (default) returns the plain-text flattening; rtf / html return those flavours as strings; image writes the pasteboard image as a PNG and returns {path, width, height, bytes} (inline=true adds base64); files returns the file-URL paths; all inventories every available UTI with its byte size (plus text/rtf/html/files when present, but no PNG — ask for type=image for that). Always returns the raw `types` list.",
+            inputSchema: schema(
+                properties: [
+                    "type": .object([
+                        "type": .string("string"),
+                        "enum": .array([
+                            .string("text"), .string("rtf"), .string("html"),
+                            .string("image"), .string("files"), .string("all")
+                        ]),
+                        "description": .string("Which representation to read. Default \"text\".")
+                    ]),
+                    "inline": .object([
+                        "type": .string("boolean"),
+                        "description": .string("type=image only: also return the PNG as base64. Off by default — a Retina screenshot easily blows past the client's context limit.")
+                    ]),
+                    "output_path": .object([
+                        "type": .string("string"),
+                        "description": .string("type=image only: where to write the PNG. Must be under an allowed root (TMPDIR, ~/Desktop, ~/Documents, ~/Downloads, ~/Pictures). Defaults to a temp file.")
+                    ])
+                ]
+            )
         ),
         MCPToolDefinition(
             name: "clipboard_write",
-            description: "Replace the clipboard with plain text.",
+            description: "Replace the clipboard with any combination of text, html, rtf, an image file (image_path — PNG/JPEG, published as both public.png and public.tiff) and file URLs (files: absolute paths, what Finder and file-drop targets expect). Multiple representations may be given at once and land in a single transaction, so a paste target picks the richest flavour it understands. At least one is required; a bad path fails before the clipboard is touched.",
             inputSchema: schema(
                 properties: [
-                    "text": .object(["type": .string("string")])
-                ],
-                required: ["text"]
+                    "text": .object(["type": .string("string")]),
+                    "html": .object(["type": .string("string")]),
+                    "rtf": .object(["type": .string("string")]),
+                    "image_path": .object([
+                        "type": .string("string"),
+                        "description": .string("Path to a PNG or JPEG file to put on the pasteboard as an image.")
+                    ]),
+                    "files": .object([
+                        "type": .string("array"),
+                        "items": .object(["type": .string("string")]),
+                        "description": .string("Absolute paths of existing files to put on the pasteboard as file URLs.")
+                    ])
+                ]
             )
         ),
         MCPToolDefinition(
@@ -526,26 +555,128 @@ extension ToolRegistry {
         )
     }
 
-    func callClipboardRead() async -> ToolCallResult {
-        let result = await clipboard.read()
-        return successResult(
-            "Read clipboard.",
-            [
+    /// v0.9 (C-10): `type` selects the representation. Absent/`text` keeps
+    /// the pre-0.9 response shape byte-for-byte (`ok`, `text`, `types`) so
+    /// existing callers are unaffected.
+    func callClipboardRead(_ arguments: [String: JSONValue]) async -> ToolCallResult {
+        let rawType = arguments["type"]?.stringValue
+        guard let kind = ClipboardController.ReadKind.parse(rawType) else {
+            return invalidArgument(
+                "clipboard_read: unknown type \"\(rawType ?? "")\". Valid values: \(ClipboardController.ReadKind.allNames)."
+            )
+        }
+        let inline = arguments["inline"]?.boolValue ?? false
+        let outputPath = arguments["output_path"]?.stringValue
+
+        do {
+            let result = try await clipboard.readRich(kind: kind, inline: inline, outputPath: outputPath)
+            var payload: [String: JSONValue] = [
                 "ok": .bool(true),
-                "text": result.text.map(JSONValue.string) ?? .null,
+                "kind": .string(result.kind),
                 "types": .array(result.types.map(JSONValue.string))
             ]
-        )
+            // `text` stays present-but-null for the default read so the
+            // v0.8 response shape is unchanged.
+            if kind == .text || kind == .all {
+                payload["text"] = result.text.map(JSONValue.string) ?? .null
+            }
+            if let rtf = result.rtf { payload["rtf"] = .string(rtf) }
+            if let html = result.html { payload["html"] = .string(html) }
+            if let files = result.files {
+                payload["files"] = .array(files.map(JSONValue.string))
+                payload["file_count"] = .number(Double(files.count))
+            }
+            if let image = result.image {
+                var imagePayload: [String: JSONValue] = [
+                    "width": .number(Double(image.width)),
+                    "height": .number(Double(image.height)),
+                    "bytes": .number(Double(image.bytes)),
+                    "format": .string("png")
+                ]
+                imagePayload["path"] = image.path.map(JSONValue.string) ?? .null
+                if let base64 = image.base64 { imagePayload["inline_base64"] = .string(base64) }
+                payload["image"] = .object(imagePayload)
+            }
+            if let available = result.available {
+                payload["available"] = .array(available.map { info in
+                    .object(["uti": .string(info.uti), "bytes": .number(Double(info.bytes))])
+                })
+            }
+            return successResult("Read clipboard (\(result.kind)).", payload)
+        } catch let error as ClipboardController.ClipboardError {
+            return errorResult(
+                error.description,
+                [
+                    "ok": .bool(false),
+                    "kind": .string(kind.rawValue),
+                    "error_code": .string(Self.clipboardErrorCode(error))
+                ]
+            )
+        } catch {
+            return errorResult(
+                "clipboard_read failed: \(error)",
+                ["ok": .bool(false), "kind": .string(kind.rawValue)]
+            )
+        }
     }
 
     func callClipboardWrite(_ arguments: [String: JSONValue]) async -> ToolCallResult {
-        guard let text = arguments["text"]?.stringValue else {
-            return invalidArgument("clipboard_write requires text.")
+        var request = ClipboardController.WriteRequest(
+            text: arguments["text"]?.stringValue,
+            html: arguments["html"]?.stringValue,
+            rtf: arguments["rtf"]?.stringValue,
+            imagePath: arguments["image_path"]?.stringValue
+        )
+        if let raw = arguments["files"], raw != .null {
+            guard let array = raw.arrayValue else {
+                return invalidArgument("clipboard_write: files must be an array of file paths.")
+            }
+            let paths = array.compactMap { $0.stringValue }
+            guard paths.count == array.count else {
+                return invalidArgument("clipboard_write: every entry in files must be a string path.")
+            }
+            request.files = paths
         }
-        let ok = await clipboard.write(text: text)
-        return ok
-            ? successResult("Clipboard updated.", ["ok": .bool(true), "length": .number(Double(text.count))])
-            : errorResult("Pasteboard rejected the write.", ["ok": .bool(false)])
+
+        guard !request.isEmpty else {
+            return invalidArgument(
+                "clipboard_write requires at least one of: text, html, rtf, image_path, files."
+            )
+        }
+
+        do {
+            let result = try await clipboard.writeRich(request)
+            var payload: [String: JSONValue] = [
+                "ok": .bool(true),
+                "wrote": .array(result.wrote.map(JSONValue.string)),
+                "types": .array(result.types.map(JSONValue.string))
+            ]
+            if let text = request.text {
+                payload["length"] = .number(Double(text.count))
+            }
+            return successResult("Clipboard updated (\(result.wrote.joined(separator: ", "))).", payload)
+        } catch let error as ClipboardController.ClipboardError {
+            return errorResult(
+                error.description,
+                ["ok": .bool(false), "error_code": .string(Self.clipboardErrorCode(error))]
+            )
+        } catch {
+            return errorResult("clipboard_write failed: \(error)", ["ok": .bool(false)])
+        }
+    }
+
+    /// Stable machine-readable codes for the clipboard failures, in the
+    /// same spirit as the browser/permission error codes elsewhere.
+    static func clipboardErrorCode(_ error: ClipboardController.ClipboardError) -> String {
+        switch error {
+        case .nothingToWrite: return "invalid_argument"
+        case .fileNotFound: return "file_not_found"
+        case .unreadableImage: return "unreadable_image"
+        case .imageEncodeFailed: return "image_encode_failed"
+        case .noData: return "no_such_representation"
+        case .invalidPath: return "invalid_path"
+        case .pasteboardRejectedWrite: return "pasteboard_rejected"
+        }
     }
 
     // MARK: - JSON encoders
