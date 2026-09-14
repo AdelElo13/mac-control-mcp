@@ -193,6 +193,13 @@ struct CodexR2RegressionTests {
         // real arguments.
         #expect(outcome.warning?.contains("activate_app") == true)
         #expect(outcome.warning?.contains("key: \"c\", modifiers: [\"cmd\"]") == true)
+        // Codex r7: AXSelectedTextRange does not move keyboard focus; with
+        // two documents open Cmd-C copies from the focused one. The route
+        // must focus the element before selecting.
+        #expect(outcome.warning?.contains("\"AXFocused\"") == true)
+        let focusAt = outcome.warning?.range(of: "AXFocused")?.lowerBound
+        let selectAt = outcome.warning?.range(of: "text_set_selection")?.lowerBound
+        #expect(focusAt != nil && selectAt != nil && focusAt! < selectAt!)
     }
 
     @Test("a count that moved by the wrong amount reports applied:false WITH a warning")

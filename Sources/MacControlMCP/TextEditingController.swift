@@ -216,9 +216,13 @@ actor TextEditingController {
         /// selection is set on the element, but `press_key` goes to the
         /// FRONTMOST app, so without it Cmd-C would copy from whatever is
         /// in front and clipboard_read would "verify" the wrong text
-        /// (Codex r6). Tool arguments are spelled as the schema takes them.
+        /// (Codex r6). Cmd-C also goes to the FOCUSED FIELD of that app,
+        /// and AXSelectedTextRange does not move keyboard focus — with two
+        /// documents open, the copy could come from the other one — so the
+        /// element is focused explicitly (`AXFocused`) before selecting
+        /// (Codex r7). Tool arguments are spelled as the schema takes them.
         var alternativeRoutes: String {
-            "visually (capture_annotated / ocr_screen on the window) or via the clipboard (activate_app on the element's pid; text_set_selection location: \(range.location), length: \(insertedCharacters); press_key key: \"c\", modifiers: [\"cmd\"]; clipboard_read)"
+            "visually (capture_annotated / ocr_screen on the window) or via the clipboard (activate_app on the element's pid; set_element_attribute element_id, attribute: \"AXFocused\", value: true; text_set_selection location: \(range.location), length: \(insertedCharacters); press_key key: \"c\", modifiers: [\"cmd\"]; clipboard_read)"
         }
     }
 
