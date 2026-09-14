@@ -124,11 +124,24 @@ enum ToolTimeouts {
         "speech_to_text": 180
     ]
 
+    /// v0.9 (`batch` tool, C-1): a batch's own `tools/call` timeout — the
+    /// one `main.swift` wraps `callTool(name: "batch", ...)` in — must
+    /// cover however long its sequential sub-calls will actually take,
+    /// or the outer wrapper fires a generic timeout while the batch
+    /// handler keeps running underneath it (per `AsyncTimeout.run`'s
+    /// "late result discarded" semantics). Sum each sub-call's own limit
+    /// (computed the same way a standalone `tools/call` would) plus the
+    /// inter-call `delay_ms` overhead, capped at `batchCap`.
+    static let batchCap: TimeInterval = 300
+
     static func limit(
         for name: String,
         arguments: [String: JSONValue],
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> TimeInterval {
+        if name == "batch" {
+            return batchLimit(arguments: arguments, environment: environment)
+        }
         var base = perToolLimit[name] ?? defaultLimit
         if let raw = environment[environmentKey], let value = Double(raw), value > 0 {
             base = value
@@ -139,6 +152,33 @@ enum ToolTimeouts {
             .max()
         guard let requested else { return base }
         return max(base, requested + slack)
+    }
+
+    private static func batchLimit(
+        arguments: [String: JSONValue],
+        environment: [String: String]
+    ) -> TimeInterval {
+        guard let calls = arguments["calls"]?.arrayValue, !calls.isEmpty else {
+            return defaultLimit
+        }
+
+        let rawDelay = arguments["delay_ms"]?.doubleValue ?? 0
+        let delayMs = rawDelay.isFinite ? min(max(rawDelay, 0), 5000) : 0
+        let delayOverhead = (delayMs / 1000) * Double(max(0, calls.count - 1))
+
+        let sum = calls.reduce(TimeInterval(0)) { total, call in
+            guard let object = call.objectValue, let subName = object["name"]?.stringValue else {
+                return total
+            }
+            // A nested "batch" entry is rejected outright by the handler
+            // before it ever runs — don't recurse into it, just budget the
+            // default so a deeply/self-nested payload can't blow the stack.
+            guard subName != "batch" else { return total + defaultLimit }
+            let subArguments = object["arguments"]?.objectValue ?? [:]
+            return total + limit(for: subName, arguments: subArguments, environment: environment)
+        }
+
+        return min(batchCap, sum + delayOverhead)
     }
 
     static func timeoutResult(name: String, limit: TimeInterval) -> ToolCallResult {

@@ -21,10 +21,10 @@ struct GroundingWindowScopeTests {
 
     // MARK: - A-2 depth
 
-    @Test("ground's default AX depth matches find_elements (32), not 16")
+    @Test("ground's default AX depth is the project-wide AXDepth.default, not 16")
     func defaultDepthMatchesFindElements() {
-        #expect(GroundingController.defaultMaxDepth == 32)
-        #expect(GroundingController.resolveMaxDepth(nil) == 32)
+        #expect(GroundingController.defaultMaxDepth == AXDepth.default)
+        #expect(GroundingController.resolveMaxDepth(nil) == AXDepth.default)
     }
 
     @Test("caller-supplied max_depth is honoured and clamped to a sane range")
