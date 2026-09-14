@@ -60,6 +60,15 @@ Input tools accept optional `expected_app` / `expected_window`. If another app c
 - Capture tools accept opt-in `format` (png/jpeg), `quality`, `max_width` and report `scale` / `pixels_per_point`.
 - Tool descriptions state when to use which of the overlapping capture and element-lookup tools.
 
+## Precision and honest failures, from a live audit of all read-only tools (#19, #20)
+
+- `ground` (OCR) and `ax_tree_augmented` now look at the **target window** (per-window ScreenCaptureKit capture) instead of the main display. A covered window could previously get labels from the window on top, at confidence 0.8, and could not be grounded at all.
+- `ground` (AX) searches 32 levels deep like `find_elements` (was 16, which missed elements in Electron apps), accepts `max_depth`, and returns `bounds` + `element_id`.
+- `ax_snapshot_diff` no longer reports changes on an idle app: nodes are matched by structural identity and frame, parked zero-size menu nodes are excluded, title changes show as `changed`.
+- `foundation_models_generate` removed: it could never succeed. 142 tools.
+- `reminders_list` / `reminders_create` report the real cause when they cannot read (Automation permission, app not running, timeout) and return `lists`, `count` and `eventkit_authorization` instead of a silent empty list.
+- A pid that is not running returns `no_such_process`; an out-of-range display returns `no_such_display` with the valid range; `query_elements` reports an invalid regex; `network_info` shows when the SSID is redacted; `battery_status` no longer reports "0 minutes remaining" when charged.
+
 ## Docs
 
 `docs/TOOLS.md` is generated from the registered tools and a test fails on drift. The README install links follow the latest release (#15).
@@ -67,6 +76,7 @@ Input tools accept optional `expected_app` / `expected_window`. If another app c
 ## Upgrade notes
 
 - After installing, macOS may ask again for Calendar, Contacts and Microphone. That is expected: those prompts could not appear before.
+- `foundation_models_generate` no longer exists; `reminders_list` returns `lists`/`count` and errors instead of an empty list without access.
 - `wifi_scan`: `ssid` can now be `null` (redacted) instead of the string "(hidden)".
 - `request_permissions` returns immediately. Call `permissions_status` after answering the dialogs.
 - Responses to concurrent requests can arrive out of order; they are matched by JSON-RPC id, as the spec requires.
