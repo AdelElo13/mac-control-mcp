@@ -115,10 +115,6 @@ actor GroundingController {
     private let accessibility: AccessibilityController
     private let screen: ScreenController
     private let elementCache: ElementCache?
-    /// Display geometry for the on-screen filter. v0.9 (C-14): the filter
-    /// used `CGDisplayBounds(CGMainDisplayID())`, so every AX element on a
-    /// secondary display was dropped as "off-screen".
-    private let displays = DisplayController()
 
     init(accessibility: AccessibilityController, screen: ScreenController, elementCache: ElementCache? = nil) {
         self.accessibility = accessibility
@@ -166,12 +162,12 @@ actor GroundingController {
             // measured the parked-menu-item signature against the main
             // display's height only. `parkedHeights` keeps that signature
             // check per display.
-            let displayList = await displays.list()
+            let displayList = WindowIdentity.displayBounds()
             let visibleBounds = WindowIdentity.unionBounds(of: displayList)
                 ?? CGDisplayBounds(CGMainDisplayID())
             let parkedHeights: [Double] = displayList.isEmpty
                 ? [Double(CGDisplayBounds(CGMainDisplayID()).height)]
-                : displayList.map { $0.y + $0.height }
+                : WindowIdentity.bottomEdges(of: displayList)
             var survivors: [(element: AXUIElement, info: AccessibilityController.ElementInfo)] = []
             for (element, info) in results {
                 guard let pos = info.position, let size = info.size else { continue }

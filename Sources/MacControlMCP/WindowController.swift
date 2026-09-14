@@ -260,14 +260,20 @@ actor WindowController {
     /// window-server (front-to-back) order. A window with no matching
     /// entry keeps `window_id: null` rather than borrowing a neighbour's.
     ///
-    /// Pure: no AX, no CG calls. `cgEntries`, `displays` and
-    /// `frontmostPID` are supplied by the caller.
+    /// Pure: no AX, no CG, no AppKit calls. `cgEntries` and `displays`
+    /// are supplied by the caller.
+    ///
+    /// `frontmostPID` defaults to the owner of the frontmost on-screen
+    /// window IN `cgEntries` — the window server already knows which app
+    /// has focus, so the hot path needs no `NSWorkspace` MainActor hop.
+    /// Pass it explicitly to pin the value (tests).
     static func enrich(
         windows: [WindowInfo],
         cgEntries: [WindowIdentity.Entry],
-        displays: [DisplayController.DisplayInfo],
-        frontmostPID: pid_t?
+        displays: [WindowIdentity.DisplayBounds],
+        frontmostPID: pid_t? = nil
     ) -> [WindowInfo] {
+        let frontPID = frontmostPID ?? WindowIdentity.frontmostOwnerPID(in: cgEntries)
         var used = Set<CGWindowID>()
         return windows.map { window in
             var out = window
@@ -284,7 +290,7 @@ actor WindowController {
             out.displayIndex = WindowIdentity.displayIndex(containing: frame, displays: displays)
             // "Focused" == the main window of the frontmost app: the one
             // that receives keystrokes. A minimized window never is.
-            out.isFocused = !window.minimized && window.main && frontmostPID == window.pid
+            out.isFocused = !window.minimized && window.main && frontPID == window.pid
             return out
         }
     }
@@ -296,10 +302,39 @@ actor WindowController {
     struct ResolvedWindow: Sendable {
         let windowID: CGWindowID
         let pid: pid_t
+        /// Owning application name, from `kCGWindowOwnerName`.
+        let ownerName: String
         let title: String
         let bounds: CGRect
         let isOnscreen: Bool
         let index: Int?
+
+        /// Identity echo for a tool response: enough for the caller to
+        /// see WHICH window an id resolved to. CGWindowIDs are recycled
+        /// by the window server after a window closes, so a stale id can
+        /// resolve to a different window — this is how a caller notices.
+        var payload: [String: JSONValue] {
+            [
+                "window_id": .number(Double(windowID)),
+                "owner_pid": .number(Double(pid)),
+                "owner_name": .string(ownerName),
+                "title": .string(title)
+            ]
+        }
+
+        /// Does this window satisfy the caller's `expect_pid` /
+        /// `expect_title_contains` guards? Returns the failing field, or
+        /// nil when everything matches (or nothing was asserted).
+        func mismatch(expectPID: pid_t?, expectTitleContains: String?) -> (field: String, expected: String, actual: String)? {
+            if let expectPID, expectPID != pid {
+                return ("expect_pid", String(expectPID), String(pid))
+            }
+            if let expectTitleContains, !expectTitleContains.isEmpty,
+               !title.localizedCaseInsensitiveContains(expectTitleContains) {
+                return ("expect_title_contains", expectTitleContains, title)
+            }
+            return nil
+        }
     }
 
     /// Resolve a `CGWindowID` to its owning pid + AX window index.
@@ -326,6 +361,7 @@ actor WindowController {
         return ResolvedWindow(
             windowID: entry.windowID,
             pid: entry.pid,
+            ownerName: entry.ownerName,
             title: entry.title,
             bounds: entry.bounds,
             isOnscreen: entry.isOnscreen,
@@ -343,8 +379,14 @@ actor WindowController {
     /// at most `maxConcurrentAXApps` at a time, each bounded by
     /// `axDeadline`. An app that doesn't answer in time is reported from
     /// the Window Server list with `ax_timeout: true` instead of blocking
-    /// the call. The Window Server list is fetched at most once. Apps stay
-    /// in `runningApplications` order.
+    /// the call. Apps stay in `runningApplications` order.
+    ///
+    /// PERF (v0.9): window identity (window_id / z_order / display_index /
+    /// is_focused) adds no round trips. The Window Server list is fetched
+    /// EXACTLY ONCE per call and shared by the AX fallback and the
+    /// identity pass; display geometry comes from CoreGraphics on this
+    /// thread (no DisplayController actor hop) and the focused app from
+    /// that same window-server snapshot (no NSWorkspace MainActor hop).
     func listWindows() async -> [WindowInfo] {
         // NSWorkspace.runningApplications is main-actor-affine under strict
         // concurrency — snapshot the (pid, name) pairs on MainActor, then
@@ -375,37 +417,26 @@ actor WindowController {
             if outcome.value != nil { manualAccessibilityEnabled.insert(apps[i].pid) }
         }
 
-        // One window-server snapshot serves BOTH the AX fallback and the
-        // v0.9 identity enrichment (window_id / z_order), so adding
-        // identity costs no extra CGWindowListCopyWindowInfo call.
-        var snapshot: [[String: Any]]?
-        func windowServerList() -> [[String: Any]] {
-            if let snapshot { return snapshot }
-            let fetched = Self.copyWindowServerList()
-            snapshot = fetched
-            return fetched
-        }
-
+        // ONE window-server snapshot per call, shared by the AX fallback
+        // (apps that expose no AX windows) and the identity pass.
+        let snapshot = Self.copyWindowServerList()
         let assembled = Self.assemble(
             apps: apps.map { (pid: $0.pid, name: $0.name) },
             outcomes: outcomes,
-            windowServerList: windowServerList
+            windowServerList: { snapshot }
         )
-        return await enriched(assembled, windowServerList: windowServerList())
+        return Self.enriched(assembled, windowServerList: snapshot)
     }
 
     /// Shared tail of both list calls: attach window_id / z_order /
-    /// display_index / is_focused.
-    private func enriched(_ windows: [WindowInfo], windowServerList: [[String: Any]]) async -> [WindowInfo] {
-        let frontmost: pid_t? = await MainActor.run {
-            NSWorkspace.shared.frontmostApplication?.processIdentifier
-        }
-        let displays = await DisplayController().list()
-        return Self.enrich(
+    /// display_index / is_focused. Synchronous and hop-free — display
+    /// geometry is read from CoreGraphics here, the focused app comes out
+    /// of the snapshot itself.
+    private static func enriched(_ windows: [WindowInfo], windowServerList: [[String: Any]]) -> [WindowInfo] {
+        enrich(
             windows: windows,
             cgEntries: WindowIdentity.entries(from: windowServerList),
-            displays: displays,
-            frontmostPID: frontmost
+            displays: WindowIdentity.displayBounds()
         )
     }
 
@@ -423,7 +454,7 @@ actor WindowController {
             // Chrome / apps with no AX-exposed windows.
             ? Self.cgWindows(from: snapshot, pid: pid, appName: name)
             : real
-        return await enriched(list, windowServerList: snapshot)
+        return Self.enriched(list, windowServerList: snapshot)
     }
 
     /// Bring a window to the front. Raises the app first, then the window.

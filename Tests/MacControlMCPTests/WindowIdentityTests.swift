@@ -22,7 +22,8 @@ struct WindowIdentityTests {
         title: String? = nil,
         x: Double = 0, y: Double = 100, w: Double = 500, h: Double = 400,
         onscreen: Bool = true,
-        layer: Int = 0
+        layer: Int = 0,
+        owner: String? = nil
     ) -> [String: Any] {
         var dict: [String: Any] = [
             kCGWindowNumber as String: NSNumber(value: id),
@@ -35,14 +36,15 @@ struct WindowIdentityTests {
             kCGWindowIsOnscreen as String: NSNumber(value: onscreen)
         ]
         if let title { dict[kCGWindowName as String] = title }
+        if let owner { dict[kCGWindowOwnerName as String] = owner }
         return dict
     }
 
     static func display(index: Int, x: Double, y: Double, w: Double, h: Double, main: Bool = false)
-        -> DisplayController.DisplayInfo {
-        DisplayController.DisplayInfo(
-            id: UInt32(1000 + index), index: index,
-            x: x, y: y, width: w, height: h, scale: 2.0, main: main
+        -> WindowIdentity.DisplayBounds {
+        WindowIdentity.DisplayBounds(
+            index: index,
+            rect: CGRect(x: x, y: y, width: w, height: h)
         )
     }
 
@@ -74,6 +76,20 @@ struct WindowIdentityTests {
         let entries = WindowIdentity.entries(from: info)
         #expect(entries.map(\.zOrder) == [nil, 0, nil, 1])
         #expect(entries.map(\.layer) == [25, 0, 0, 0])
+    }
+
+    @Test("entries() carries the owning app name, and the frontmost owner comes from the snapshot")
+    func ownerAndFrontmost() {
+        let info = [
+            Self.cgEntry(id: 1, pid: 10, title: "menubar", layer: 25, owner: "SystemUIServer"),
+            Self.cgEntry(id: 2, pid: 20, title: "front", owner: "Claude"),
+            Self.cgEntry(id: 3, pid: 30, title: "behind", owner: "Safari")
+        ]
+        let entries = WindowIdentity.entries(from: info)
+        #expect(entries.map(\.ownerName) == ["SystemUIServer", "Claude", "Safari"])
+        // The frontmost ON-SCREEN layer-0 window's owner — not the overlay's.
+        #expect(WindowIdentity.frontmostOwnerPID(in: entries) == 20)
+        #expect(WindowIdentity.frontmostOwnerPID(in: []) == nil)
     }
 
     @Test("entry(id:) finds a window and reports nil for an unknown id")
@@ -110,6 +126,20 @@ struct WindowIdentityTests {
                                 CGRect(x: 0, y: 0, width: 500, height: 500)]
         #expect(WindowIdentity.matchIndex(bounds: CGRect(x: 0, y: 0, width: 500, height: 500), in: dupes) == 0)
         #expect(WindowIdentity.matchIndex(bounds: CGRect(x: 5, y: 5, width: 100, height: 100), in: frames) == nil)
+    }
+
+    @Test("a minimized window whose AX frame drifted from its CG bounds resolves to no AX index")
+    func minimizedFrameDrift() {
+        // A minimized window keeps a stale window-server rect while its AX
+        // frame follows the genie/Dock position — the two no longer agree,
+        // so there is no honest AX index to act on. matchIndex must say
+        // nil rather than pick a neighbouring window.
+        let cgBoundsOfMinimizedWindow = CGRect(x: 410, y: 158, width: 980, height: 600)
+        let axFrames: [CGRect?] = [
+            CGRect(x: 0, y: 39, width: 1800, height: 1056),      // the app's other, visible window
+            CGRect(x: 1520, y: 1130, width: 128, height: 40)     // minimized: parked near the Dock
+        ]
+        #expect(WindowIdentity.matchIndex(bounds: cgBoundsOfMinimizedWindow, in: axFrames) == nil)
     }
 
     // MARK: - Multi-display containment (C-14)
@@ -166,6 +196,24 @@ struct WindowIdentityTests {
 
     // MARK: - list_windows enrichment
 
+    @Test("is_focused follows the window server's own front window, with no NSWorkspace hop")
+    func focusFromSnapshot() {
+        let front = WindowController.WindowInfo(
+            app: "Claude", pid: 20, title: "Claude", x: 0, y: 39, width: 800, height: 600,
+            minimized: false, main: true, index: 0
+        )
+        let behind = WindowController.WindowInfo(
+            app: "Safari", pid: 30, title: "Safari", x: 0, y: 39, width: 900, height: 600,
+            minimized: false, main: true, index: 0
+        )
+        let cg = WindowIdentity.entries(from: [
+            Self.cgEntry(id: 2, pid: 20, title: "Claude", x: 0, y: 39, w: 800, h: 600),
+            Self.cgEntry(id: 3, pid: 30, title: "Safari", x: 0, y: 39, w: 900, h: 600)
+        ])
+        let out = WindowController.enrich(windows: [front, behind], cgEntries: cg, displays: [])
+        #expect(out.map(\.isFocused) == [true, false])
+    }
+
     @Test("enrich attaches window_id / z_order / display_index / is_focused by frame match")
     func enrichWindows() {
         let safari = WindowController.WindowInfo(
@@ -183,7 +231,7 @@ struct WindowIdentityTests {
         let displays = [Self.display(index: 0, x: 0, y: 0, w: 1800, h: 1169, main: true)]
 
         let out = WindowController.enrich(
-            windows: [safari, music], cgEntries: cg, displays: displays, frontmostPID: 681
+            windows: [safari, music], cgEntries: cg, displays: displays
         )
         #expect(out.map(\.windowID) == [42, 77])
         #expect(out.map(\.zOrder) == [0, 1])
@@ -209,7 +257,7 @@ struct WindowIdentityTests {
             Self.cgEntry(id: 1, pid: 6, x: 0, y: 0, w: 500, h: 500),
             Self.cgEntry(id: 2, pid: 6, x: 0, y: 0, w: 500, h: 500)
         ])
-        let out = WindowController.enrich(windows: [ghost, a, b], cgEntries: cg, displays: [], frontmostPID: nil)
+        let out = WindowController.enrich(windows: [ghost, a, b], cgEntries: cg, displays: [], frontmostPID: 999)
         #expect(out[0].windowID == nil)
         #expect(out[0].displayIndex == nil)
         // Two identical windows of one pid must get DIFFERENT ids.

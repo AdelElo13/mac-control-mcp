@@ -463,7 +463,10 @@ extension ToolRegistry {
         } else {
             global = point
         }
-        let containing = WindowIdentity.displayIndex(containing: global, displays: displayList)
+        let containing = WindowIdentity.displayIndex(
+            containing: global,
+            displays: WindowIdentity.displayBounds(of: displayList)
+        )
         return successResult(
             "Coordinates converted.",
             [

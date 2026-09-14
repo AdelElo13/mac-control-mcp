@@ -24,6 +24,11 @@ enum WindowIdentity {
         /// lacks Screen Recording), which made `title` disappear from
         /// `list_windows` output rather than come back empty.
         let title: String
+        /// `kCGWindowOwnerName` — the owning application's name, straight
+        /// from the window-server entry. Taken here rather than from
+        /// NSRunningApplication so nothing in this path needs AppKit or a
+        /// MainActor hop.
+        let ownerName: String
         let bounds: CGRect
         let isOnscreen: Bool
         let layer: Int
@@ -73,6 +78,7 @@ enum WindowIdentity {
                 windowID: CGWindowID(idNum.uint32Value),
                 pid: pidNum.int32Value,
                 title: (dict[kCGWindowName as String] as? String) ?? "",
+                ownerName: (dict[kCGWindowOwnerName as String] as? String) ?? "",
                 bounds: CGRect(x: x, y: y, width: w, height: h),
                 isOnscreen: onscreen,
                 layer: layer,
@@ -91,6 +97,17 @@ enum WindowIdentity {
 
     static func entry(id: CGWindowID, in entries: [Entry]) -> Entry? {
         entries.first { $0.windowID == id }
+    }
+
+    /// pid of the application owning the frontmost on-screen normal
+    /// window, i.e. the app that has keyboard focus.
+    ///
+    /// The window server already knows this — the first layer-0 on-screen
+    /// entry of the snapshot IS the front window — so `list_windows` does
+    /// not need `NSWorkspace.frontmostApplication`, which is MainActor
+    /// affine and cost a hop off the AX work queue on every call.
+    static func frontmostOwnerPID(in entries: [Entry]) -> pid_t? {
+        entries.first { $0.zOrder == 0 }?.pid
     }
 
     // MARK: - Frame matching (CG entry ↔ AX window)
@@ -117,17 +134,47 @@ enum WindowIdentity {
 
     // MARK: - Displays (C-14)
 
-    static func rect(of display: DisplayController.DisplayInfo) -> CGRect {
-        CGRect(x: display.x, y: display.y, width: display.width, height: display.height)
+    /// One display's index + bounds in global points. Deliberately NOT
+    /// `DisplayController.DisplayInfo`: this is read straight from
+    /// CoreGraphics on the calling thread (`CGGetActiveDisplayList` +
+    /// `CGDisplayBounds`, both cheap and thread-safe), so the hot
+    /// `list_windows` path needs neither an actor hop nor AppKit.
+    struct DisplayBounds: Sendable, Equatable {
+        let index: Int
+        let rect: CGRect
     }
 
-    static func displayIndex(containing point: CGPoint, displays: [DisplayController.DisplayInfo]) -> Int? {
-        displays.first { rect(of: $0).contains(point) }?.index
+    /// Live display geometry, without going through `DisplayController`.
+    static func displayBounds() -> [DisplayBounds] {
+        var count: UInt32 = 0
+        CGGetActiveDisplayList(0, nil, &count)
+        guard count > 0 else { return [] }
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        var actual: UInt32 = 0
+        CGGetActiveDisplayList(count, &ids, &actual)
+        return ids.prefix(Int(actual)).enumerated().map {
+            DisplayBounds(index: $0.offset, rect: CGDisplayBounds($0.element))
+        }
+    }
+
+    /// Adapter for callers that already hold a `DisplayController` list
+    /// (convert_coordinates), so display geometry is never read twice.
+    static func displayBounds(of displays: [DisplayController.DisplayInfo]) -> [DisplayBounds] {
+        displays.map {
+            DisplayBounds(
+                index: $0.index,
+                rect: CGRect(x: $0.x, y: $0.y, width: $0.width, height: $0.height)
+            )
+        }
+    }
+
+    static func displayIndex(containing point: CGPoint, displays: [DisplayBounds]) -> Int? {
+        displays.first { $0.rect.contains(point) }?.index
     }
 
     /// Which display a window is "on", decided by its CENTER — a window
     /// straddling the seam belongs to the display showing most of it.
-    static func displayIndex(containing windowRect: CGRect, displays: [DisplayController.DisplayInfo]) -> Int? {
+    static func displayIndex(containing windowRect: CGRect, displays: [DisplayBounds]) -> Int? {
         displayIndex(
             containing: CGPoint(x: windowRect.midX, y: windowRect.midY),
             displays: displays
@@ -139,9 +186,15 @@ enum WindowIdentity {
     /// deciding whether an AX element is on screen at all (C-14): a
     /// control on a secondary display sits outside the main display's
     /// bounds and was previously dropped as "off-screen".
-    static func unionBounds(of displays: [DisplayController.DisplayInfo]) -> CGRect? {
+    static func unionBounds(of displays: [DisplayBounds]) -> CGRect? {
         guard let first = displays.first else { return nil }
-        return displays.dropFirst().reduce(rect(of: first)) { $0.union(rect(of: $1)) }
+        return displays.dropFirst().reduce(first.rect) { $0.union($1.rect) }
+    }
+
+    /// Bottom edge of every display, for the "parked off-screen menu
+    /// item" signature (x≈0, y≈bottom of some display).
+    static func bottomEdges(of displays: [DisplayBounds]) -> [Double] {
+        displays.map { Double($0.rect.maxY) }
     }
 
     /// Is `inner` contained in `outer` (edges inclusive, `tolerance` of
