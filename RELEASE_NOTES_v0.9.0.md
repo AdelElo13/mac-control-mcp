@@ -43,7 +43,7 @@ Built from a live audit of every read-only tool against the shipped v0.8.3 (`doc
 
 ## Install with npm
 
-- `npx -y mac-control-mcp` — the package downloads the notarized app for its version from GitHub Releases, verifies the SHA-256 and the Developer ID signature (Team A3W973JZ49), and launches it. `mac-control-mcp --app-path` prints the bundle to grant permissions to. Registered in the MCP Registry as an npm package next to the `.mcpb`.
+- `npx -y mac-control-mcp` — the package downloads the notarized app for its version from GitHub Releases into a staging directory, verifies the SHA-256, `codesign --strict`, the Developer ID team (A3W973JZ49), bundle id, version and Gatekeeper (`spctl`), and only then moves it into place. An app already on disk gets the same five checks on every install; one that fails is moved aside (`MacControlMCP.app.rejected-<time>`) and re-downloaded. `mac-control-mcp --app-path` prints the bundle to grant permissions to. Registered in the MCP Registry as an npm package next to the `.mcpb`. `MAC_CONTROL_MCP_RELEASE_BASE_URL` (https only) points the download at a mirror for tests or an enterprise proxy; no check is skipped.
 
 ## Also in this release
 
