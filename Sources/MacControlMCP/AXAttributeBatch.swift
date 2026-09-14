@@ -44,6 +44,10 @@ enum AXAttributeBatch {
         /// AXTitle → AXDescription → AXIdentifier, skipping empty /
         /// whitespace-only strings (BUG-FIX v0.2.6 #4 semantics).
         let title: String?
+        /// `AXIdentifier` verbatim (not folded into `title`). v0.9 (C-5)
+        /// uses it as the strongest component of a stable element path;
+        /// it costs nothing extra since the batch already fetches it.
+        let identifier: String?
         let value: String?
         let position: CGPoint?
         let size: CGSize?
@@ -88,6 +92,7 @@ enum AXAttributeBatch {
         return Values(
             role: string(slot(0)),
             title: nonEmpty(1) ?? nonEmpty(2) ?? nonEmpty(3),
+            identifier: nonEmpty(3),
             value: string(slot(4)),
             position: point(slot(5)),
             size: size(slot(6)),
