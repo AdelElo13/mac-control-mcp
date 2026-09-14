@@ -178,22 +178,63 @@ function assertSafeArchivePaths(paths, root = ARCHIVE_ROOT) {
 }
 
 /**
- * Reject link members whose target could escape the extraction directory.
+ * First column of a `tar -tv` line: the type flag plus the nine permission
+ * bits, optionally followed by an xattr (`@`) / ACL (`+`) / MAC-label (`.`)
+ * marker. BSD tar on macOS prints `l` for a symlink and `h` for a hardlink;
+ * `b`/`c`/`p`/`s` are device, FIFO and socket members.
+ */
+const TAR_MODE_RE = /^([-dlhbcpsL])([rwxsStT-]{9})[@+.]?(?:\s|$)/;
+
+/** Type flags a legitimate .app bundle listing may contain. */
+const ALLOWED_TYPE_FLAGS = new Set(['-', 'd']);
+
+/**
+ * Reject every link member in the archive before a byte is extracted.
  *
  * A symlink is the other half of the tar-slip trick: the path stays innocent
- * while the target points at `/` or climbs out with `..`. Today's bundle has
- * no links at all, so anything but a strictly-contained relative target is
- * refused.
+ * while the target points at `/` or climbs out with `..`. A hardlink is the
+ * quieter variant — `tar -tv` prints it as `h... a/b link to a/c`, the old
+ * ` -> ` scan never saw it, and on extraction it can be aimed at a file that a
+ * later member then rewrites in place. Device, FIFO and socket members are
+ * refused for the same reason: nothing in a signed .app needs them.
+ *
+ * The real bundle contains only directories and regular files, so this is a
+ * whitelist rather than a target-sanitising exercise: any link member at all
+ * means the archive is not the artifact we published, and it is rejected as a
+ * whole. Path containment itself is enforced separately by
+ * {@link assertSafeArchivePaths} over the `tar -tzf` listing, which sees every
+ * member name without the ambiguity of parsing verbose columns.
  *
  * @param {string[]} verboseLines output lines of `tar -tvzf`
  */
 function assertSafeArchiveLinks(verboseLines) {
-  for (const line of verboseLines) {
-    const idx = line.indexOf(' -> ');
-    if (idx === -1) continue;
-    const target = line.slice(idx + 4).trim();
-    if (target === '' || target.startsWith('/') || target.split('/').includes('..')) {
-      throw new Error(`Refusing archive: unsafe link target ${JSON.stringify(target)}`);
+  for (const raw of verboseLines) {
+    const line = String(raw).replace(/\r$/, '');
+    if (line.trim() === '') continue;
+
+    const m = TAR_MODE_RE.exec(line);
+    const typeFlag = m ? m[1] : null;
+
+    if (typeFlag === 'l' || typeFlag === 'L') {
+      throw new Error(`Refusing archive: symlink entry ${JSON.stringify(line.trim())}`);
+    }
+    if (typeFlag === 'h') {
+      throw new Error(`Refusing archive: hardlink entry ${JSON.stringify(line.trim())}`);
+    }
+    if (typeFlag !== null && !ALLOWED_TYPE_FLAGS.has(typeFlag)) {
+      throw new Error(
+        `Refusing archive: non-regular member (type ${JSON.stringify(typeFlag)}) ${JSON.stringify(line.trim())}`,
+      );
+    }
+
+    // Belt and braces for listings whose first column we could not parse (a
+    // different tar build, a localised or padded format): the textual markers
+    // BSD and GNU tar both emit still give the member away. Fail closed.
+    if (line.includes(' -> ')) {
+      throw new Error(`Refusing archive: symlink entry ${JSON.stringify(line.trim())}`);
+    }
+    if (line.includes(' link to ')) {
+      throw new Error(`Refusing archive: hardlink entry ${JSON.stringify(line.trim())}`);
     }
   }
 }

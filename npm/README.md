@@ -1,6 +1,6 @@
 # mac-control-mcp
 
-Native Swift MCP server for full macOS automation — 142 tools in one Developer ID signed, notarized `.app`. No Python, no Electron, no Node runtime in the hot path.
+Native Swift MCP server for full macOS automation — 151 tools in one Developer ID signed, notarized `.app`. No Python, no Electron, no Node runtime in the hot path.
 
 This npm package is a thin launcher: `npm install` downloads the notarized `MacControlMCP.app` for the matching release, verifies its published SHA-256, and `npx mac-control-mcp` execs the binary inside it as a stdio MCP server.
 

@@ -10,6 +10,7 @@
 
 const https = require('node:https');
 const http = require('node:http');
+const tls = require('node:tls');
 const { URL } = require('node:url');
 
 const MAX_REDIRECTS = 5;
@@ -87,10 +88,44 @@ function connectThroughProxy(proxyUrl, target, timeoutMs) {
 }
 
 /**
+ * An https.Agent bound to one already-open CONNECT tunnel.
+ *
+ * Handing the raw tunnel socket to `https.request` as a `socket` option does
+ * nothing — Node has no such request option, so the request quietly opened a
+ * *direct* connection instead and the advertised proxy route never carried a
+ * byte (and failed outright on networks where only the proxy can reach the
+ * internet). The supported seam is the agent's `createConnection`, so that is
+ * where the TLS handshake over the tunnel happens. The proxy sees only opaque
+ * TLS, and certificate validation still targets the real host.
+ */
+class TunnelAgent extends https.Agent {
+  /**
+   * @param {import('node:net').Socket} socket established CONNECT tunnel
+   * @param {string} servername hostname to validate the certificate against
+   * @param {import('node:tls').ConnectionOptions} [tlsOptions]
+   */
+  constructor(socket, servername, tlsOptions = {}) {
+    super({ maxSockets: 1, keepAlive: false });
+    this.tunnelSocket = socket;
+    this.tunnelServername = servername;
+    this.tunnelTlsOptions = tlsOptions;
+  }
+
+  createConnection() {
+    return tls.connect({
+      ...this.tunnelTlsOptions,
+      socket: this.tunnelSocket,
+      servername: this.tunnelServername,
+      ALPNProtocols: ['http/1.1'],
+    });
+  }
+}
+
+/**
  * GET a URL and hand the response stream to the caller. Follows redirects.
  *
  * @param {string} url
- * @param {{timeoutMs?: number, redirects?: number, env?: NodeJS.ProcessEnv}} [opts]
+ * @param {{timeoutMs?: number, redirects?: number, env?: NodeJS.ProcessEnv, tlsOptions?: import('node:tls').ConnectionOptions}} [opts]
  * @returns {Promise<import('node:http').IncomingMessage>}
  */
 async function openStream(url, opts = {}) {
@@ -105,41 +140,64 @@ async function openStream(url, opts = {}) {
 
   /** @type {Record<string, unknown>} */
   const requestOptions = {
+    ...(opts.tlsOptions ?? {}),
     host: target.hostname,
     port: target.port || 443,
     path: `${target.pathname}${target.search}`,
     method: 'GET',
     headers: { 'User-Agent': USER_AGENT, Accept: '*/*' },
+    servername: target.hostname,
     timeout: timeoutMs,
   };
 
+  /** @type {TunnelAgent|null} */
+  let tunnelAgent = null;
   const proxy = proxyForUrl(url, env);
   if (proxy) {
     // Tunnel first, then run TLS end-to-end over the tunnel, so the proxy
     // never sees plaintext and certificate validation still targets GitHub.
-    requestOptions.socket = await connectThroughProxy(proxy, target, timeoutMs);
-    requestOptions.agent = false;
-    requestOptions.servername = target.hostname;
+    const socket = await connectThroughProxy(proxy, target, timeoutMs);
+    tunnelAgent = new TunnelAgent(socket, target.hostname, opts.tlsOptions ?? {});
+    requestOptions.agent = tunnelAgent;
   }
 
-  const res = await new Promise((resolve, reject) => {
-    const req = https.request(requestOptions, resolve);
-    req.once('timeout', () => {
-      req.destroy(Object.assign(new Error(`Request to ${url} timed out`), { code: 'ETIMEDOUT' }));
+  /** Tear the tunnel down on any path that does not hand `res` to the caller. */
+  const closeTunnel = () => {
+    if (!tunnelAgent) return;
+    try {
+      tunnelAgent.tunnelSocket.destroy();
+      tunnelAgent.destroy();
+    } catch {
+      /* already gone */
+    }
+  };
+
+  let res;
+  try {
+    res = await new Promise((resolve, reject) => {
+      const req = https.request(requestOptions, resolve);
+      req.once('timeout', () => {
+        req.destroy(Object.assign(new Error(`Request to ${url} timed out`), { code: 'ETIMEDOUT' }));
+      });
+      req.once('error', reject);
+      req.end();
     });
-    req.once('error', reject);
-    req.end();
-  });
+  } catch (err) {
+    closeTunnel();
+    throw err;
+  }
 
   const status = res.statusCode ?? 0;
   if (status >= 300 && status < 400 && res.headers.location) {
     res.resume();
+    closeTunnel();
     if (redirects <= 0) throw new Error(`Too many redirects fetching ${url}`);
     const next = new URL(res.headers.location, url).toString();
     return openStream(next, { ...opts, redirects: redirects - 1, env });
   }
   if (status !== 200) {
     res.resume();
+    closeTunnel();
     const err = new Error(`HTTP ${status} fetching ${url}`);
     /** @type {any} */ (err).statusCode = status;
     throw err;
@@ -161,4 +219,12 @@ async function fetchText(url, opts = {}) {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-module.exports = { openStream, fetchText, proxyForUrl, USER_AGENT, DEFAULT_TIMEOUT_MS };
+module.exports = {
+  openStream,
+  fetchText,
+  proxyForUrl,
+  connectThroughProxy,
+  TunnelAgent,
+  USER_AGENT,
+  DEFAULT_TIMEOUT_MS,
+};

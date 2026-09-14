@@ -13,6 +13,12 @@
 # Required env (only 1 is mandatory):
 #   NOTARIZE_PROFILE   keychain profile name (default: mac-control-mcp)
 #
+# Optional env:
+#   PUBLISH=1          create the GitHub release, publish to npm, publish to
+#                      the MCP registry (default 0 = build assets only)
+#   NPM_PUBLISH=0      with PUBLISH=1, skip the npm publish step
+#   NPM_DRY_RUN=1      with PUBLISH=1, run `npm publish --dry-run` instead
+#
 # Usage:
 #   VERSION=0.2.6 ./scripts/release.sh
 
@@ -274,6 +280,48 @@ if [ "$PUBLISH" = "1" ]; then
         "${OUT_DIR}/${TARBALL_NAME}" \
         "${OUT_DIR}/${SHA_NAME}"
 
+    # -------------------------------------------------------------------------
+    # npm publish — AFTER the GitHub release exists, never before. The npm
+    # package carries no binary: its postinstall downloads the tarball + .sha256
+    # from exactly this release. Publishing first would put a package on the
+    # registry whose install can only fail until the assets appear.
+    #
+    #   NPM_PUBLISH=0   skip the npm step entirely (GitHub + registry only)
+    #   NPM_DRY_RUN=1   run `npm publish --dry-run` (packs + validates, uploads
+    #                   nothing) — use it to rehearse a release
+    # -------------------------------------------------------------------------
+    if [ "${NPM_PUBLISH:-1}" = "1" ]; then
+        echo ""
+        NPM_ARGS=(publish --access public)
+        if [ "${NPM_DRY_RUN:-0}" = "1" ]; then
+            NPM_ARGS+=(--dry-run)
+            echo "[release] npm publish (DRY RUN) from npm/ ..."
+        else
+            echo "[release] npm publish from npm/ ..."
+        fi
+
+        # Subshell so the cd cannot leak into the rest of the script. prepack
+        # runs inside npm publish and gates on server.json version sync plus
+        # the docs/TOOLS.md tool count.
+        ( cd "${PROJECT_ROOT}/npm" && npm "${NPM_ARGS[@]}" )
+
+        if [ "${NPM_DRY_RUN:-0}" = "1" ]; then
+            echo "[release] npm dry run OK (nothing uploaded)."
+        else
+            echo "[release] verifying npm registry has ${VERSION}..."
+            PUBLISHED_NPM_VERSION="$(npm view "mac-control-mcp@${VERSION}" version 2>/dev/null || true)"
+            if [ "$PUBLISHED_NPM_VERSION" != "$VERSION" ]; then
+                echo "[release] ERROR: npm view mac-control-mcp@${VERSION} returned '${PUBLISHED_NPM_VERSION:-<nothing>}'."
+                echo "[release]        The publish did not land. Fix it before announcing the release."
+                exit 1
+            fi
+            echo "[release] npm OK: mac-control-mcp@${PUBLISHED_NPM_VERSION}"
+        fi
+    else
+        echo ""
+        echo "[release] NPM_PUBLISH=0 — skipping npm publish."
+    fi
+
     # Publish to the MCP registry. If the token is expired the caller has to
     # `mcp-publisher login github` first — we don't try to auto-login because
     # device-code flow needs an interactive browser.
@@ -284,6 +332,7 @@ if [ "$PUBLISH" = "1" ]; then
     echo ""
     echo "[release] PUBLISHED."
     echo "  GitHub release: https://github.com/AdelElo13/mac-control-mcp/releases/tag/v${VERSION}"
+    echo "  npm:            https://www.npmjs.com/package/mac-control-mcp/v/${VERSION}"
     echo "  MCP registry:   https://registry.modelcontextprotocol.io/v0/servers?search=mac-control-mcp"
 else
     echo ""
@@ -294,6 +343,10 @@ else
     echo "    ${OUT_DIR}/${MCPB_NAME} \\"
     echo "    ${OUT_DIR}/${TARBALL_NAME} \\"
     echo "    ${OUT_DIR}/${SHA_NAME}"
+    echo ""
+    echo ""
+    echo "  cd npm && npm publish --access public   # only AFTER the GitHub release exists"
+    echo "  npm view mac-control-mcp@${VERSION} version"
     echo ""
     echo "  mcp-publisher publish   # assumes you already ran \`mcp-publisher login github\`"
 fi
