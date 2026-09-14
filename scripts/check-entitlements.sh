@@ -53,13 +53,11 @@ entitlement_for() {
     case "$1" in
         NSCalendarsUsageDescription|NSCalendarsFullAccessUsageDescription|NSCalendarsWriteOnlyAccessUsageDescription)
             echo com.apple.security.personal-information.calendars ;;
-        NSRemindersUsageDescription|NSRemindersFullAccessUsageDescription)
-            echo com.apple.security.personal-information.calendars ;;
         NSContactsUsageDescription)
             echo com.apple.security.personal-information.addressbook ;;
         NSLocationUsageDescription|NSLocationWhenInUseUsageDescription|NSLocationAlwaysUsageDescription|NSLocationAlwaysAndWhenInUseUsageDescription)
             echo com.apple.security.personal-information.location ;;
-        NSMicrophoneUsageDescription|NSSpeechRecognitionUsageDescription)
+        NSMicrophoneUsageDescription)
             echo com.apple.security.device.audio-input ;;
         NSCameraUsageDescription)
             echo com.apple.security.device.camera ;;
@@ -67,7 +65,10 @@ entitlement_for() {
             echo com.apple.security.personal-information.photos-library ;;
         NSAppleEventsUsageDescription)
             echo com.apple.security.automation.apple-events ;;
-        NSScreenCaptureUsageDescription|NSAccessibilityUsageDescription|NSDesktopFolderUsageDescription|NSDocumentsFolderUsageDescription|NSDownloadsFolderUsageDescription|NSRemovableVolumesUsageDescription|NSNetworkVolumesUsageDescription|NSSystemAdministrationUsageDescription)
+        # Reminders (AppleScript here) and Speech Recognition are TCC-only
+        # services: Apple's hardened-runtime resource entitlements have no key
+        # for them, so requiring one would be a false guarantee.
+        NSRemindersUsageDescription|NSRemindersFullAccessUsageDescription|NSSpeechRecognitionUsageDescription|NSScreenCaptureUsageDescription|NSAccessibilityUsageDescription|NSDesktopFolderUsageDescription|NSDocumentsFolderUsageDescription|NSDownloadsFolderUsageDescription|NSRemovableVolumesUsageDescription|NSNetworkVolumesUsageDescription|NSSystemAdministrationUsageDescription)
             echo - ;;
         *)
             echo "?" ;;
