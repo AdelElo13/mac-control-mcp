@@ -262,35 +262,50 @@ extension ToolRegistry {
     func callBrowserNewTab(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         let kind = BrowserController.Browser.detect(arguments["browser"]?.stringValue)
         let url = arguments["url"]?.stringValue
-        let ok = await browser.newTab(browser: kind, url: url)
-        let err = await browser.lastError
-        let payload: [String: JSONValue] = [
+        // Single actor call returns ok + classification together — see
+        // BrowserController.classifiedError for why a separate follow-up
+        // read would race under concurrent tool calls.
+        let outcome = await browser.newTab(browser: kind, url: url)
+        let ok = outcome.ok
+        let classification = outcome.classification
+        var payload: [String: JSONValue] = [
             "ok": .bool(ok),
             "browser": .string(kind.rawValue),
             "url": url.map(JSONValue.string) ?? .null,
-            "error": err.map(JSONValue.string) ?? .null
+            "error": classification.map { JSONValue.string($0.error) } ?? .null
         ]
+        if let c = classification {
+            payload["error_code"] = .string(c.errorCode)
+            if let hint = c.hint { payload["hint"] = .string(hint) }
+            if let pane = c.pane { payload["pane"] = .string(pane) }
+        }
         return ok
             ? successResult("New tab opened.", payload)
-            : errorResult("Failed to open tab: \(err ?? "is the browser running?")", payload)
+            : errorResult("Failed to open tab: \(classification?.error ?? "is the browser running?")", payload)
     }
 
     func callBrowserCloseTab(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         let kind = BrowserController.Browser.detect(arguments["browser"]?.stringValue)
         let windowIndex = arguments["window_index"]?.intValue ?? 1
         let tabIndex = arguments["tab_index"]?.intValue
-        let ok = await browser.closeTab(browser: kind, windowIndex: windowIndex, tabIndex: tabIndex)
-        let err = await browser.lastError
-        let payload: [String: JSONValue] = [
+        let outcome = await browser.closeTab(browser: kind, windowIndex: windowIndex, tabIndex: tabIndex)
+        let ok = outcome.ok
+        let classification = outcome.classification
+        var payload: [String: JSONValue] = [
             "ok": .bool(ok),
             "browser": .string(kind.rawValue),
             "window_index": .number(Double(windowIndex)),
             "tab_index": tabIndex.map { .number(Double($0)) } ?? .null,
-            "error": err.map(JSONValue.string) ?? .null
+            "error": classification.map { JSONValue.string($0.error) } ?? .null
         ]
+        if let c = classification {
+            payload["error_code"] = .string(c.errorCode)
+            if let hint = c.hint { payload["hint"] = .string(hint) }
+            if let pane = c.pane { payload["pane"] = .string(pane) }
+        }
         return ok
             ? successResult("Tab closed.", payload)
-            : errorResult("Failed to close tab: \(err ?? "unknown error")", payload)
+            : errorResult("Failed to close tab: \(classification?.error ?? "unknown error")", payload)
     }
 
     func callCaptureWindow(_ arguments: [String: JSONValue]) async -> ToolCallResult {

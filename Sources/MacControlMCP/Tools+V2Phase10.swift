@@ -357,31 +357,43 @@ extension ToolRegistry {
     func callBrowserDOMTree(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         let b = arguments["browser"]?.stringValue ?? "safari"
         let r = await browserDOM.domTree(browser: b)
-        return r.ok
-            ? successResult("dom tree: \(r.nodeCount) nodes",
-                            ["ok": .bool(true), "result": encodeAsJSONValue(r)])
-            : errorResult(r.error ?? "browser_dom_tree failed",
-                          ["ok": .bool(false), "result": encodeAsJSONValue(r)])
+        if r.ok {
+            return successResult("dom tree: \(r.nodeCount) nodes",
+                                 ["ok": .bool(true), "result": encodeAsJSONValue(r)])
+        }
+        var payload: [String: JSONValue] = ["ok": .bool(false), "result": encodeAsJSONValue(r)]
+        if let c = r.errorCode { payload["error_code"] = .string(c) }
+        if let h = r.hint { payload["hint"] = .string(h) }
+        if let p = r.pane { payload["pane"] = .string(p) }
+        return errorResult(r.error ?? "browser_dom_tree failed", payload)
     }
 
     func callBrowserVisibleText(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         let b = arguments["browser"]?.stringValue ?? "safari"
         let r = await browserDOM.visibleText(browser: b)
-        return r.ok
-            ? successResult("\(r.charCount) chars visible",
-                            ["ok": .bool(true), "result": encodeAsJSONValue(r)])
-            : errorResult(r.error ?? "browser_visible_text failed",
-                          ["ok": .bool(false), "result": encodeAsJSONValue(r)])
+        if r.ok {
+            return successResult("\(r.charCount) chars visible",
+                                 ["ok": .bool(true), "result": encodeAsJSONValue(r)])
+        }
+        var payload: [String: JSONValue] = ["ok": .bool(false), "result": encodeAsJSONValue(r)]
+        if let c = r.errorCode { payload["error_code"] = .string(c) }
+        if let h = r.hint { payload["hint"] = .string(h) }
+        if let p = r.pane { payload["pane"] = .string(p) }
+        return errorResult(r.error ?? "browser_visible_text failed", payload)
     }
 
     func callBrowserIframes(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         let b = arguments["browser"]?.stringValue ?? "safari"
         let r = await browserDOM.iframes(browser: b)
-        return r.ok
-            ? successResult("\(r.count) iframe(s)",
-                            ["ok": .bool(true), "result": encodeAsJSONValue(r)])
-            : errorResult(r.error ?? "browser_iframes failed",
-                          ["ok": .bool(false), "result": encodeAsJSONValue(r)])
+        if r.ok {
+            return successResult("\(r.count) iframe(s)",
+                                 ["ok": .bool(true), "result": encodeAsJSONValue(r)])
+        }
+        var payload: [String: JSONValue] = ["ok": .bool(false), "result": encodeAsJSONValue(r)]
+        if let c = r.errorCode { payload["error_code"] = .string(c) }
+        if let h = r.hint { payload["hint"] = .string(h) }
+        if let p = r.pane { payload["pane"] = .string(p) }
+        return errorResult(r.error ?? "browser_iframes failed", payload)
     }
 
     // Apple native

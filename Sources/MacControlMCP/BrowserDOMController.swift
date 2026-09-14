@@ -35,6 +35,21 @@ actor BrowserDOMController {
         public let nodeCount: Int
         public let includeShadow: Bool
         public let error: String?
+        public let errorCode: String?
+        public let hint: String?
+        public let pane: String?
+
+        // BUG-FIX (code review): without explicit CodingKeys, JSONEncoder's
+        // default camelCase strategy encoded this as nested `errorCode`
+        // while the top-level tool payload (Tools+V2Phase10.swift) uses
+        // `error_code` — the same failure reported under two different key
+        // spellings in one response. Keep the wire format snake_case
+        // everywhere.
+        enum CodingKeys: String, CodingKey {
+            case ok, browser, root, nodeCount, includeShadow, error
+            case errorCode = "error_code"
+            case hint, pane
+        }
     }
 
     public struct VisibleTextResult: Codable, Sendable {
@@ -43,6 +58,15 @@ actor BrowserDOMController {
         public let text: String?
         public let charCount: Int
         public let error: String?
+        public let errorCode: String?
+        public let hint: String?
+        public let pane: String?
+
+        enum CodingKeys: String, CodingKey {
+            case ok, browser, text, charCount, error
+            case errorCode = "error_code"
+            case hint, pane
+        }
     }
 
     public struct IframesResult: Codable, Sendable {
@@ -51,6 +75,16 @@ actor BrowserDOMController {
         public let count: Int
         public let iframes: [IframeInfo]
         public let error: String?
+        public let errorCode: String?
+        public let hint: String?
+        public let pane: String?
+
+        enum CodingKeys: String, CodingKey {
+            case ok, browser, count, iframes, error
+            case errorCode = "error_code"
+            case hint, pane
+        }
+
         public struct IframeInfo: Codable, Sendable {
             public let src: String?
             public let sameOrigin: Bool
@@ -109,16 +143,19 @@ actor BrowserDOMController {
         guard r.success, let jsonStr = r.value else {
             return DOMResult(ok: false, browser: browserName, root: nil,
                              nodeCount: 0, includeShadow: true,
-                             error: r.error ?? "eval failed")
+                             error: r.error ?? "eval failed",
+                             errorCode: r.errorCode, hint: r.hint, pane: r.pane)
         }
         guard let data = jsonStr.data(using: .utf8),
               let root = try? JSONDecoder().decode(DOMNode.self, from: data) else {
             return DOMResult(ok: false, browser: browserName, root: nil,
                              nodeCount: 0, includeShadow: true,
-                             error: "DOM JSON parse failed")
+                             error: "DOM JSON parse failed",
+                             errorCode: nil, hint: nil, pane: nil)
         }
         return DOMResult(ok: true, browser: browserName, root: root,
-                         nodeCount: count(node: root), includeShadow: true, error: nil)
+                         nodeCount: count(node: root), includeShadow: true, error: nil,
+                         errorCode: nil, hint: nil, pane: nil)
     }
 
     private func count(node: DOMNode) -> Int {
@@ -152,12 +189,22 @@ actor BrowserDOMController {
         // Previously we would run the eval unconditionally; a closed
         // browser or zero-tab state returned `ok:true charCount:0 text:""`
         // which silently looked identical to "the page is really empty".
-        // Now we distinguish those cases.
-        let tabs = await browser.listTabs(browser: b)
-        guard !tabs.isEmpty else {
+        // Now we distinguish those cases — AND (fix/browser-errors) we
+        // distinguish "listTabs itself failed" (Automation permission,
+        // not running, timeout) from "it succeeded with genuinely zero
+        // tabs", instead of collapsing both into the same generic message.
+        let fetch = await browser.listTabs(browser: b)
+        if let c = fetch.classification {
             return VisibleTextResult(
                 ok: false, browser: browserName, text: nil, charCount: 0,
-                error: "\(browserName) is not running or has no open tab — open one first"
+                error: c.error, errorCode: c.errorCode, hint: c.hint, pane: c.pane
+            )
+        }
+        guard !fetch.tabs.isEmpty else {
+            return VisibleTextResult(
+                ok: false, browser: browserName, text: nil, charCount: 0,
+                error: "\(browserName) is not running or has no open tab — open one first",
+                errorCode: "no_tabs", hint: nil, pane: nil
             )
         }
 
@@ -165,12 +212,14 @@ actor BrowserDOMController {
         guard r.success, let text = r.value else {
             return VisibleTextResult(
                 ok: false, browser: browserName, text: nil, charCount: 0,
-                error: r.error ?? "eval failed"
+                error: r.error ?? "eval failed",
+                errorCode: r.errorCode, hint: r.hint, pane: r.pane
             )
         }
         return VisibleTextResult(
             ok: true, browser: browserName, text: text,
-            charCount: text.count, error: nil
+            charCount: text.count, error: nil,
+            errorCode: nil, hint: nil, pane: nil
         )
     }
 
@@ -212,15 +261,18 @@ actor BrowserDOMController {
         let r = await browser.evalJS(browser: b, code: Self.iframesScript)
         guard r.success, let jsonStr = r.value else {
             return IframesResult(ok: false, browser: browserName, count: 0,
-                                 iframes: [], error: r.error ?? "eval failed")
+                                 iframes: [], error: r.error ?? "eval failed",
+                                 errorCode: r.errorCode, hint: r.hint, pane: r.pane)
         }
         guard let data = jsonStr.data(using: .utf8),
               let arr = try? JSONDecoder().decode([IframesResult.IframeInfo].self, from: data) else {
             return IframesResult(ok: false, browser: browserName,
                                  count: 0, iframes: [],
-                                 error: "iframes JSON parse failed")
+                                 error: "iframes JSON parse failed",
+                                 errorCode: nil, hint: nil, pane: nil)
         }
         return IframesResult(ok: true, browser: browserName,
-                             count: arr.count, iframes: arr, error: nil)
+                             count: arr.count, iframes: arr, error: nil,
+                             errorCode: nil, hint: nil, pane: nil)
     }
 }
