@@ -222,7 +222,18 @@ actor TextEditingController {
         guard AXValueGetType(value) == .cfRange else { return nil }
         var range = CFRange()
         guard AXValueGetValue(value, .cfRange, &range) else { return nil }
-        return TextRange(location: range.location, length: range.length)
+        return sanitized(location: range.location, length: range.length)
+    }
+
+    /// An app-reported range is untrusted input too (Codex r2 #6). A
+    /// negative component or an end offset that overflows Int cannot
+    /// describe any document; treat it as "no usable range" (nil) rather
+    /// than carrying a value the arithmetic downstream would trap on.
+    static func sanitized(location: Int, length: Int) -> TextRange? {
+        guard location >= 0, length >= 0 else { return nil }
+        let (_, overflowed) = location.addingReportingOverflow(length)
+        guard !overflowed else { return nil }
+        return TextRange(location: location, length: length)
     }
 
     /// Decode an `AXValue` that carries a `CGRect` (AXBoundsForRange).
@@ -445,9 +456,19 @@ actor TextEditingController {
         var collapsed = false
         var caret = current
         if current.length != 0 {
-            caret = try setSelection(
-                of: element, location: current.location + current.length, length: 0
-            )
+            // Codex r2 #6: this range comes from the APP, not the caller, so
+            // `validateRange` never saw it. An app answering AXSelectedTextRange
+            // with `Int.max + 1` trapped the whole server on this addition.
+            // `textRange(from:)` now rejects negative or overflowing ranges
+            // at decode time; this is the belt to that suspender.
+            let (end, overflowed) = current.location.addingReportingOverflow(current.length)
+            guard !overflowed else {
+                throw .notSupported(
+                    "Element reported a selection range \(current.location)+\(current.length) whose end does not fit in an Int; refusing to act on it.",
+                    reason: "invalid_selection_range"
+                )
+            }
+            caret = try setSelection(of: element, location: end, length: 0)
             collapsed = true
         }
         return try write(element, at: caret, text: text, collapsedSelection: collapsed)

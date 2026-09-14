@@ -152,7 +152,7 @@ actor ElementCache {
             // Content-addressed: deterministic, so re-storing the same
             // element refreshes its entry instead of minting a twin.
             let id = identify(pid, path)
-            if let existing = entries[id], existing.pid != pid || existing.path != path {
+            if let existing = entries[id], !Self.sameIdentity(existing, pid: pid, path: path) {
                 // Codex review 3: an id whose (pid, path) does not match the
                 // one already filed under it is a hash collision. Silently
                 // overwriting would retarget every handle the caller is
@@ -162,6 +162,15 @@ actor ElementCache {
                 // and file the newcomer under a fresh random id rather than
                 // letting it inherit a poisoned one. Determinism is worth
                 // less than never acting on the wrong element.
+                //
+                // Codex r2 (new): "same identity" is judged on exactly the
+                // fields the id is hashed from (pid, role, ordinal,
+                // identifier — `AXPath.identity`). Fingerprint fields
+                // (title, subrole) are deliberately NOT part of the id so a
+                // relabelled control keeps its handle; comparing whole
+                // components here treated "Start" → "Stop" as a collision,
+                // evicted the stable id and handed out a random one. Now a
+                // relabel simply refreshes the stored fingerprint below.
                 entries.removeValue(forKey: id)
                 collisions += 1
                 FileHandle.standardError.write(Data(
@@ -178,6 +187,15 @@ actor ElementCache {
             return id
         }
         return insertRandom(element, pid: pid, path: nil, identity: identity, now: now)
+    }
+
+    /// Does `entry` describe the same (pid, hashed path) as `path`? Compares
+    /// the canonical identity string — the exact input of the id hash — so
+    /// only a genuine collision (two different hashed paths, one id) is
+    /// reported, never a fingerprint refresh (Codex r2).
+    private static func sameIdentity(_ entry: Entry, pid: pid_t, path: [AXPathComponent]) -> Bool {
+        guard entry.pid == pid, let existingPath = entry.path else { return false }
+        return AXPath.identity(pid: entry.pid, path: existingPath) == AXPath.identity(pid: pid, path: path)
     }
 
     /// Random-id insert: for producers with no path (the system-wide

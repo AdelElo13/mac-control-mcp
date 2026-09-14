@@ -675,32 +675,51 @@ actor ClipboardController {
         return resolved.path
     }
 
-    /// Reads an already-validated regular file's bytes for
-    /// `clipboard_write(image_path:)`, bounded on two sides:
+    /// Reads a file's bytes for `clipboard_write(image_path:)`, bounded on
+    /// three sides — and all three are judged on the OPEN DESCRIPTOR, not
+    /// on the path name:
     ///
-    /// 1. The size is checked via `stat` (already known to be a regular
-    ///    file — see `resolveExistingFile`) BEFORE anything is opened, so
-    ///    a multi-GB file is rejected without ever being read.
-    /// 2. The actual read is capped via `FileHandle.read(upToCount:)`
-    ///    rather than `Data(contentsOf:)`, so a file that grows between
-    ///    the size check and the read (TOCTOU) still cannot hand back
-    ///    more than the cap — `read(upToCount:)` never over-reads.
-    private static func boundedReadForImage(at resolvedPath: String, originalPath: String) throws -> Data {
-        let attributes = try? FileManager.default.attributesOfItem(atPath: resolvedPath)
-        let size = (attributes?[.size] as? Int) ?? 0
-        guard size <= maxImageFileBytes else {
+    /// 1. `open(2)` with `O_NONBLOCK`: opening a FIFO that has no writer
+    ///    returns immediately instead of parking the server forever; for
+    ///    a regular file the flag changes nothing.
+    /// 2. `fstat(2)` on that descriptor decides type (must be `S_IFREG`)
+    ///    and size (≤ `maxImageFileBytes`) — so a path that was a regular
+    ///    file when `resolveExistingFile` stat'ed it and became a FIFO,
+    ///    device or multi-GB file before we opened it (TOCTOU, Codex r2 #7)
+    ///    is still rejected: whatever we hold IS what we checked.
+    /// 3. The read is capped via `FileHandle.read(upToCount:)` rather than
+    ///    `Data(contentsOf:)`, so a file that grows after the fstat cannot
+    ///    hand back more than the cap — `read(upToCount:)` never over-reads.
+    ///
+    /// Internal (not private) so the FIFO race can be tested directly.
+    static func boundedReadForImage(at resolvedPath: String, originalPath: String) throws -> Data {
+        let fd = open(resolvedPath, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
+        guard fd >= 0 else {
+            throw ClipboardError.unreadableImage(originalPath)
+        }
+        var info = stat()
+        guard fstat(fd, &info) == 0 else {
+            close(fd)
+            throw ClipboardError.unreadableImage(originalPath)
+        }
+        guard (info.st_mode & S_IFMT) == S_IFREG else {
+            close(fd)
+            throw ClipboardError.notRegularFile(originalPath)
+        }
+        guard info.st_size <= off_t(maxImageFileBytes) else {
+            close(fd)
             throw ClipboardError.fileTooLarge(originalPath, maxImageFileBytes)
         }
 
-        guard let handle = FileHandle(forReadingAtPath: resolvedPath) else {
-            throw ClipboardError.unreadableImage(originalPath)
-        }
+        // Regular file from here on: hand the descriptor to FileHandle,
+        // which closes it when done.
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         defer { try? handle.close() }
 
         let data: Data
         do {
             // Ask for one more byte than the cap so a file that grew
-            // after the stat() above is still caught here rather than
+            // after the fstat() above is still caught here rather than
             // silently truncated and misread as a smaller valid image.
             data = try handle.read(upToCount: maxImageFileBytes + 1) ?? Data()
         } catch {

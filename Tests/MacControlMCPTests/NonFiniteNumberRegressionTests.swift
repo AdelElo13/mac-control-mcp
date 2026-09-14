@@ -89,6 +89,11 @@ struct NonFiniteNumberRegressionTests {
         let response = JSONRPCResponse.success(id: .string("a"), result: .object(["ok": .bool(true)]))
         let framed = try #require(StdioMessageFramer.frameOrInternalError(response, encoder: JSONEncoder()))
         #expect(framed.encodingFailure == nil)
-        #expect(framed.data == (try StdioMessageFramer.frame(response, encoder: JSONEncoder())))
+        // Compare decoded, not bytes: JSONEncoder does not promise a key
+        // order between two encodes of the same dictionary.
+        let decoded = try JSONDecoder().decode(JSONRPCResponse.self, from: framed.data)
+        #expect(decoded.id == .string("a"))
+        #expect(decoded.result == .object(["ok": .bool(true)]))
+        #expect(decoded.error == nil)
     }
 }
