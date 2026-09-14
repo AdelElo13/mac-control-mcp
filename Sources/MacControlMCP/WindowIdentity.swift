@@ -99,15 +99,15 @@ enum WindowIdentity {
         entries.first { $0.windowID == id }
     }
 
-    /// pid of the application owning the frontmost on-screen normal
-    /// window, i.e. the app that has keyboard focus.
+    /// The frontmost on-screen normal window — the one that receives
+    /// keystrokes.
     ///
-    /// The window server already knows this — the first layer-0 on-screen
-    /// entry of the snapshot IS the front window — so `list_windows` does
-    /// not need `NSWorkspace.frontmostApplication`, which is MainActor
-    /// affine and cost a hop off the AX work queue on every call.
-    static func frontmostOwnerPID(in entries: [Entry]) -> pid_t? {
-        entries.first { $0.zOrder == 0 }?.pid
+    /// The window server already knows this (the first layer-0 on-screen
+    /// entry of a snapshot IS the front window), so `list_windows` needs
+    /// no `NSWorkspace.frontmostApplication`, which is MainActor affine
+    /// and cost a hop off the AX work queue on every call.
+    static func frontmostWindow(in entries: [Entry]) -> Entry? {
+        entries.first { $0.zOrder == 0 }
     }
 
     // MARK: - Frame matching (CG entry ↔ AX window)

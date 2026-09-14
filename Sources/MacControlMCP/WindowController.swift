@@ -30,8 +30,9 @@ actor WindowController {
         /// Index into `list_displays` of the display showing this window
         /// (by window center). nil when the window is off every display.
         var displayIndex: Int? = nil
-        /// True for the main window of the frontmost application — i.e.
-        /// the window that receives keystrokes.
+        /// True for the frontmost on-screen window (`z_order == 0`) — the
+        /// window that receives keystrokes. Not tied to the app's AX
+        /// `main` flag, which can name a different window of the same app.
         var isFocused: Bool = false
         /// Front-to-back position among all normal application windows:
         /// 0 is the frontmost window on screen. nil when unmatched.
@@ -263,17 +264,18 @@ actor WindowController {
     /// Pure: no AX, no CG, no AppKit calls. `cgEntries` and `displays`
     /// are supplied by the caller.
     ///
-    /// `frontmostPID` defaults to the owner of the frontmost on-screen
-    /// window IN `cgEntries` — the window server already knows which app
-    /// has focus, so the hot path needs no `NSWorkspace` MainActor hop.
-    /// Pass it explicitly to pin the value (tests).
+    /// `is_focused` is the frontmost ON-SCREEN window (`z_order == 0`) —
+    /// the window server's own answer to "what receives keystrokes",
+    /// which costs no `NSWorkspace` MainActor hop. It deliberately does
+    /// NOT require the AX `main` flag: a second window of an app can be
+    /// frontmost while the app's AX main window is another one (observed
+    /// live with two ControlZoo windows), and requiring `main` then left
+    /// every window unfocused.
     static func enrich(
         windows: [WindowInfo],
         cgEntries: [WindowIdentity.Entry],
-        displays: [WindowIdentity.DisplayBounds],
-        frontmostPID: pid_t? = nil
+        displays: [WindowIdentity.DisplayBounds]
     ) -> [WindowInfo] {
-        let frontPID = frontmostPID ?? WindowIdentity.frontmostOwnerPID(in: cgEntries)
         var used = Set<CGWindowID>()
         return windows.map { window in
             var out = window
@@ -288,9 +290,7 @@ actor WindowController {
                 out.zOrder = match.zOrder
             }
             out.displayIndex = WindowIdentity.displayIndex(containing: frame, displays: displays)
-            // "Focused" == the main window of the frontmost app: the one
-            // that receives keystrokes. A minimized window never is.
-            out.isFocused = !window.minimized && window.main && frontPID == window.pid
+            out.isFocused = out.zOrder == 0
             return out
         }
     }

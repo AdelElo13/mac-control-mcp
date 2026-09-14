@@ -92,7 +92,7 @@ extension ToolRegistry {
             name: "list_windows",
             description: "List all windows of all running regular apps (or one app if pid is provided). "
                 + "Every entry carries `window_id` (the window server's CGWindowID) — the PREFERRED way to target a window in capture_window, focus_window, move_window, resize_window, set_window_state, move_window_to_display, ground, ax_tree_augmented and ocr_screen, because pid+index is only valid within one list_windows response and pid+title_contains cannot tell two same-titled or untitled windows apart. "
-                + "Also returns `display_index` (which display shows it, by window center), `z_order` (0 = frontmost among normal app windows), `is_focused` (main window of the frontmost app) and `title` (always present, \"\" when the window has none).",
+                + "Also returns `display_index` (which display shows it, by window center), `z_order` (0 = frontmost among normal app windows on screen; null when minimized or off-Space), `is_focused` (the frontmost on-screen window, i.e. the one receiving keystrokes) and `title` (always present, \"\" when the window has none).",
             inputSchema: schema(
                 properties: [
                     "pid": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Optional — restrict to this app.")])

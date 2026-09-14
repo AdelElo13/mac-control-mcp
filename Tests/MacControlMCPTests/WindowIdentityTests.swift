@@ -87,9 +87,9 @@ struct WindowIdentityTests {
         ]
         let entries = WindowIdentity.entries(from: info)
         #expect(entries.map(\.ownerName) == ["SystemUIServer", "Claude", "Safari"])
-        // The frontmost ON-SCREEN layer-0 window's owner — not the overlay's.
-        #expect(WindowIdentity.frontmostOwnerPID(in: entries) == 20)
-        #expect(WindowIdentity.frontmostOwnerPID(in: []) == nil)
+        // The frontmost ON-SCREEN layer-0 window — not the overlay.
+        #expect(WindowIdentity.frontmostWindow(in: entries)?.windowID == 2)
+        #expect(WindowIdentity.frontmostWindow(in: []) == nil)
     }
 
     @Test("entry(id:) finds a window and reports nil for an unknown id")
@@ -198,9 +198,12 @@ struct WindowIdentityTests {
 
     @Test("is_focused follows the window server's own front window, with no NSWorkspace hop")
     func focusFromSnapshot() {
+        // Regression (found live): the front window is NOT necessarily its
+        // app's AX main window — a second window of an app can be
+        // frontmost. Requiring `main` left every window is_focused:false.
         let front = WindowController.WindowInfo(
             app: "Claude", pid: 20, title: "Claude", x: 0, y: 39, width: 800, height: 600,
-            minimized: false, main: true, index: 0
+            minimized: false, main: false, index: 1
         )
         let behind = WindowController.WindowInfo(
             app: "Safari", pid: 30, title: "Safari", x: 0, y: 39, width: 900, height: 600,
@@ -257,13 +260,15 @@ struct WindowIdentityTests {
             Self.cgEntry(id: 1, pid: 6, x: 0, y: 0, w: 500, h: 500),
             Self.cgEntry(id: 2, pid: 6, x: 0, y: 0, w: 500, h: 500)
         ])
-        let out = WindowController.enrich(windows: [ghost, a, b], cgEntries: cg, displays: [], frontmostPID: 999)
+        let out = WindowController.enrich(windows: [ghost, a, b], cgEntries: cg, displays: [])
         #expect(out[0].windowID == nil)
         #expect(out[0].displayIndex == nil)
         // Two identical windows of one pid must get DIFFERENT ids.
         #expect(out[1].windowID == 1)
         #expect(out[2].windowID == 2)
-        #expect(out.allSatisfy { $0.isFocused == false })
+        // The frontmost on-screen window (z_order 0) is the focused one;
+        // the unmatched ghost and the window behind are not.
+        #expect(out.map(\.isFocused) == [false, true, false])
     }
 
     // MARK: - ocr_screen coordinate space
