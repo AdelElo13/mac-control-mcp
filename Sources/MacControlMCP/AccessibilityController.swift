@@ -213,6 +213,24 @@ actor AccessibilityController {
         return match
     }
 
+    /// Outcome of attempting to press an element via the AX-native
+    /// `AXPress` action, WITHOUT ever falling back to a coordinate
+    /// CGEvent click. Split out from the old single-`Bool` `clickElement`
+    /// (input-focus-guard follow-up) so callers can apply the focus guard
+    /// only to the coordinate-fallback path — `AXPress` acts on the
+    /// element handle directly and does not depend on which app is
+    /// frontmost, so it needs no guard.
+    enum AXPressOutcome: Sendable, Equatable {
+        /// AXPress succeeded — nothing else to do.
+        case succeeded
+        /// AXEnabled=false — short-circuited before ever attempting
+        /// AXPress or a coordinate click (bug #3, see below).
+        case disabled
+        /// AXPress is unsupported/failed on this element. The caller may
+        /// fall back to a coordinate click via `clickElementCoordinateFallback`.
+        case unsupported
+    }
+
     // BUG-FIX v0.2.6 #3 (AXEnabled): previously clickElement forwarded
     // the AXPress call even on disabled controls; AX reports .success
     // for the action but nothing happens, so the caller believes the
@@ -221,15 +239,23 @@ actor AccessibilityController {
     // available for AX-press-unsupported controls (bug #5) but the
     // disabled check is evaluated first — a disabled control shouldn't
     // silently turn into a coord click either.
-    func clickElement(element: AXUIElement) -> Bool {
+    func pressElementViaAX(element: AXUIElement) -> AXPressOutcome {
         if let enabled = stringAttribute(of: element, attribute: "AXEnabled" as CFString),
            enabled == "0" || enabled.lowercased() == "false" {
-            return false
+            return .disabled
         }
         if AXUIElementPerformAction(element, kAXPressAction as CFString) == .success {
-            return true
+            return .succeeded
         }
+        return .unsupported
+    }
 
+    /// Coordinate-click fallback for elements where `AXPress` is
+    /// unsupported (bug #5). THIS is the synthetic-CGEvent path that
+    /// depends on which app is frontmost — callers must apply the
+    /// input-focus guard immediately before calling this, not before
+    /// `pressElementViaAX`.
+    func clickElementCoordinateFallback(element: AXUIElement) -> Bool {
         guard
             let position = pointAttribute(of: element, attribute: kAXPositionAttribute as CFString),
             let size = sizeAttribute(of: element, attribute: kAXSizeAttribute as CFString)

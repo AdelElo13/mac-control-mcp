@@ -231,23 +231,43 @@ extension ToolRegistry {
 
         MCPToolDefinition(
             name: "right_click",
-            description: "Right-click (secondary button) at coordinates. Ergonomic wrapper around mouse_event.",
+            description: "Right-click (secondary button) at coordinates. Ergonomic wrapper around mouse_event. "
+                + "Always lands on the frontmost app — pass expected_app/expected_window to abort "
+                + "instead of clicking the wrong window if focus changed.",
             inputSchema: schema(
                 properties: [
                     "x": .object(["type": .string("number")]),
-                    "y": .object(["type": .string("number")])
+                    "y": .object(["type": .string("number")]),
+                    "expected_app": .object([
+                        "type": .string("string"),
+                        "description": .string("Bundle id or localized app name expected to be frontmost. On mismatch, nothing is clicked.")
+                    ]),
+                    "expected_window": .object([
+                        "type": .string("string"),
+                        "description": .string("Case-insensitive substring expected in the focused window title. On mismatch, nothing is clicked.")
+                    ])
                 ],
                 required: ["x", "y"]
             )
         ),
         MCPToolDefinition(
             name: "double_click",
-            description: "Double-click at coordinates. Ergonomic wrapper around mouse_event with action='double_click'.",
+            description: "Double-click at coordinates. Ergonomic wrapper around mouse_event with action='double_click'. "
+                + "Always lands on the frontmost app — pass expected_app/expected_window to abort "
+                + "instead of clicking the wrong window if focus changed.",
             inputSchema: schema(
                 properties: [
                     "x": .object(["type": .string("number")]),
                     "y": .object(["type": .string("number")]),
-                    "button": .object(["type": .string("string")])
+                    "button": .object(["type": .string("string")]),
+                    "expected_app": .object([
+                        "type": .string("string"),
+                        "description": .string("Bundle id or localized app name expected to be frontmost. On mismatch, nothing is clicked.")
+                    ]),
+                    "expected_window": .object([
+                        "type": .string("string"),
+                        "description": .string("Case-insensitive substring expected in the focused window title. On mismatch, nothing is clicked.")
+                    ])
                 ],
                 required: ["x", "y"]
             )
@@ -582,6 +602,9 @@ extension ToolRegistry {
         guard let x = arguments["x"]?.doubleValue, let y = arguments["y"]?.doubleValue else {
             return invalidArgument("right_click requires numeric x and y.")
         }
+        if let mismatch = await checkFocusGuard(arguments) {
+            return mismatch
+        }
         let ok = await mouse.click(at: CGPoint(x: x, y: y), button: .right)
         return ok
             ? successResult(String(format: "right click at (%.0f,%.0f)", x, y),
@@ -599,6 +622,9 @@ extension ToolRegistry {
         case "right":  button = .right
         case "center": button = .center
         default:       button = .left
+        }
+        if let mismatch = await checkFocusGuard(arguments) {
+            return mismatch
         }
         let ok = await mouse.doubleClick(at: CGPoint(x: x, y: y), button: button)
         return ok
