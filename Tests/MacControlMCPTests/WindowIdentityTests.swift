@@ -218,6 +218,29 @@ struct WindowIdentityTests {
         #expect(out.allSatisfy { $0.isFocused == false })
     }
 
+    // MARK: - convert_coordinates containment (C-14 / A-11)
+
+    @Test("convert_coordinates reports which display contains the point")
+    func convertReportsDisplayIndex() async {
+        let registry = ToolRegistry(accessibility: AccessibilityController())
+        let result = await registry.callTool(
+            name: "convert_coordinates",
+            arguments: ["x": .number(10), "y": .number(10), "from": .string("global"), "to": .string("global")]
+        )
+        #expect(result.isError == false)
+        guard case .object(let payload) = result.structuredContent else {
+            Issue.record("convert_coordinates returned no object payload")
+            return
+        }
+        // Present on every success, even with zero displays (then null +
+        // in_display_bounds:false) — a caller must never have to guess
+        // whether a converted point is on a screen at all.
+        #expect(payload["display_index"] != nil)
+        #expect(payload["in_display_bounds"] != nil)
+        #expect(payload["global_x"] != nil)
+        #expect(payload["global_y"] != nil)
+    }
+
     @Test("WindowInfo JSON always carries title and the new identity keys")
     func encoding() throws {
         let info = WindowController.WindowInfo(

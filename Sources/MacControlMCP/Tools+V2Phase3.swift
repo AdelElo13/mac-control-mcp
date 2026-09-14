@@ -141,7 +141,9 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "convert_coordinates",
-            description: "Convert coordinates between coordinate spaces: 'global' (default) or 'display:<index>'.",
+            description: "Convert coordinates between coordinate spaces: 'global' (default) or 'display:<index>'. "
+                + "Also reports containment: global_x/global_y, display_index (which display holds the point, null when none) "
+                + "and in_display_bounds — so an off-screen coordinate is visible as such instead of being echoed back as valid.",
             inputSchema: schema(
                 properties: [
                     "x": .object(["type": .string("number")]),
@@ -447,6 +449,21 @@ extension ToolRegistry {
         case .success(let p):
             point = p
         }
+        // v0.9 (C-14 / B-9): say WHICH display the point lands on — the
+        // tool used to echo any coordinate back with ok:true, including
+        // ones on no display at all, so a caller could not tell a valid
+        // click point from one off every screen.
+        let displayList = await displays.list()
+        let global: CGPoint
+        if to == "global" {
+            global = point
+        } else if case .success(let p) = await displays.convert(x: Double(point.x), y: Double(point.y),
+                                                               from: to, to: "global") {
+            global = p
+        } else {
+            global = point
+        }
+        let containing = WindowIdentity.displayIndex(containing: global, displays: displayList)
         return successResult(
             "Coordinates converted.",
             [
@@ -454,7 +471,12 @@ extension ToolRegistry {
                 "x": .number(Double(point.x)),
                 "y": .number(Double(point.y)),
                 "from": .string(from),
-                "to": .string(to)
+                "to": .string(to),
+                "global_x": .number(Double(global.x)),
+                "global_y": .number(Double(global.y)),
+                "display_index": containing.map { JSONValue.number(Double($0)) } ?? .null,
+                "in_display_bounds": .bool(containing != nil),
+                "display_count": .number(Double(displayList.count))
             ]
         )
     }
