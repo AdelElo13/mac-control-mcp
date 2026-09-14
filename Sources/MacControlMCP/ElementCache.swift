@@ -19,7 +19,8 @@ actor ElementCache {
 
     private var entries: [String: Entry] = [:]
     private let ttl: TimeInterval
-    private let maxEntries: Int
+    /// Hard cap on live entries (also get_ui_tree's node cap).
+    nonisolated let maxEntries: Int
 
     init(ttl: TimeInterval = 300, maxEntries: Int = 2_000) {
         self.ttl = ttl
@@ -46,20 +47,31 @@ actor ElementCache {
     /// 422-node Chrome tree against a warm (full) cache that was the
     /// dominant cost of the tool, far above the AX walk itself.
     ///
-    /// Semantics match calling `store` per element: IDs are returned in
-    /// input order, every returned ID resolves immediately afterwards
-    /// (batch entries are never evicted by their own batch), and the
-    /// cache ends at <= `maxEntries` unless the batch itself is larger,
-    /// in which case the batch wins and older entries go first.
-    func storeMany(_ elements: [AXUIElement], pid: pid_t) -> [String] {
+    /// Invariants:
+    ///   - the cache never holds more than `maxEntries` entries afterwards;
+    ///   - the result is index-aligned with `elements`;
+    ///   - every non-nil ID resolves immediately afterwards (a batch never
+    ///     evicts its own entries — older entries go first);
+    ///   - when the batch alone exceeds `maxEntries`, only the FIRST
+    ///     `maxEntries` elements are stored and the rest get `nil`. First,
+    ///     not newest: callers pass tree walks in preorder, so the head of
+    ///     the batch is the root / windows — the ids worth keeping. A nil
+    ///     is returned instead of an id that would already be dangling.
+    ///
+    /// get_ui_tree avoids the nil case entirely by capping its walk at
+    /// `maxEntries` nodes.
+    func storeMany(_ elements: [AXUIElement], pid: pid_t) -> [String?] {
         guard !elements.isEmpty else { return [] }
         evictExpired()
-        let overflow = entries.count + elements.count - maxEntries
+        let storable = min(elements.count, maxEntries)
+        let overflow = entries.count + storable - maxEntries
         if overflow > 0 {
             evictOldest(count: min(overflow, entries.count))
         }
         let now = Date()
-        return elements.map { insert($0, pid: pid, now: now) }
+        return elements.enumerated().map { index, element in
+            index < storable ? insert(element, pid: pid, now: now) : nil
+        }
     }
 
     private func insert(_ element: AXUIElement, pid: pid_t, now: Date) -> String {

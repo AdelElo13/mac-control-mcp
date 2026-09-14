@@ -8,7 +8,7 @@ extension ToolRegistry {
     static let definitionsV2: [MCPToolDefinition] = [
         MCPToolDefinition(
             name: "get_ui_tree",
-            description: "Walk the full accessibility tree of a process and return every node (including containers and static text) with child indices and stable element IDs for follow-up calls. Bounded by a 5 s / 5000-node budget. "
+            description: "Walk the full accessibility tree of a process and return every node (including containers and static text) with child indices and stable element IDs for follow-up calls. Bounded by a 5 s budget and node_cap nodes (= element-cache capacity, 2000 by default, so every returned id stays valid); node_cap_reached=true means the tree was cut off — lower max_depth or use find_elements. "
                 + "The heaviest AX tool (tens of KB for a browser window) — when you know what you are looking for, find_elements / query_elements are far smaller and also return ids.",
             inputSchema: schema(
                 properties: [
@@ -174,7 +174,12 @@ extension ToolRegistry {
             return invalidArgument("get_ui_tree requires a positive integer pid.")
         }
         let maxDepth = max(1, min(arguments["max_depth"]?.intValue ?? 12, 64))
-        let nodes = await accessibility.treeWalk(pid: pid, maxDepth: maxDepth)
+        // Node cap = element-cache capacity, so every returned node gets
+        // a live id. (Before v0.8.3 the walk allowed 5000 nodes but the
+        // 2000-entry cache evicted the first nodes' ids while storing the
+        // rest, so ids beyond 2000 nodes were already dangling.)
+        let nodeCap = elementCache.maxEntries
+        let nodes = await accessibility.treeWalk(pid: pid, maxDepth: maxDepth, nodeCap: nodeCap)
 
         // One actor hop + one eviction pass for the whole tree (see
         // ElementCache.storeMany) instead of one per node.
@@ -192,6 +197,8 @@ extension ToolRegistry {
                 "pid": .number(Double(pid)),
                 "max_depth": .number(Double(maxDepth)),
                 "count": .number(Double(nodes.count)),
+                "node_cap": .number(Double(nodeCap)),
+                "node_cap_reached": .bool(nodes.count >= nodeCap),
                 "nodes": .array(encoded)
             ]
         )
@@ -545,9 +552,9 @@ extension ToolRegistry {
         return .object(dict)
     }
 
-    private func encodeTreeNode(node: AccessibilityController.TreeNode, id: String) -> JSONValue {
+    private func encodeTreeNode(node: AccessibilityController.TreeNode, id: String?) -> JSONValue {
         var dict: [String: JSONValue] = [
-            "id": .string(id),
+            "id": id.map(JSONValue.string) ?? .null,
             "role": node.role.map(JSONValue.string) ?? .null,
             "title": node.title.map(JSONValue.string) ?? .null,
             "value": node.value.map(JSONValue.string) ?? .null,

@@ -475,7 +475,7 @@ actor AccessibilityController {
     /// Walks the AX tree for an app and returns every node (including
     /// non-actionable containers) up to `maxDepth`. Each node's `childIndices`
     /// points into the returned array so the tree can be reconstructed.
-    func treeWalk(pid: pid_t, maxDepth: Int) -> [TreeNode] {
+    func treeWalk(pid: pid_t, maxDepth: Int, nodeCap: Int = 5000) -> [TreeNode] {
         enableManualAccessibility(pid: pid)
         let root = AXUIElementCreateApplication(pid)
         var visited = Set<AXKey>()
@@ -486,7 +486,6 @@ actor AccessibilityController {
         // hangs until it disconnects. Matches the 5 s / 5000-node budget
         // used elsewhere in this controller.
         let deadline = Date().addingTimeInterval(5.0)
-        let nodeCap = 5000
 
         func recurse(element: AXUIElement, depth: Int) -> Int {
             guard Date() < deadline, nodes.count < nodeCap else { return -1 }
