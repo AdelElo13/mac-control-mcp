@@ -37,6 +37,13 @@ actor WindowController {
         /// Front-to-back position among all normal application windows:
         /// 0 is the frontmost window on screen. nil when unmatched.
         var zOrder: Int? = nil
+        /// v0.9.0 (Codex r2 #1) — the id the AX element itself reports via
+        /// `AXWindowID.of`, read when the row is built from AX. `enrich`
+        /// uses it to attach `window_id` EXACTLY instead of by frame.
+        /// Internal only: NOT in `CodingKeys`, so `list_windows` output is
+        /// unchanged (`window_id` is still the one public id). nil for
+        /// CG-fallback rows and when the private symbol is unavailable.
+        var axWindowID: CGWindowID? = nil
 
         enum CodingKeys: String, CodingKey {
             case app, pid, title, x, y, width, height, minimized, main, index
@@ -253,13 +260,28 @@ actor WindowController {
     /// Attach the window-server identity (`window_id`, `z_order`) plus
     /// `display_index` and `is_focused` to an assembled window list.
     ///
-    /// Matching rule: for each window, the first **unused** window-server
-    /// entry of the same pid whose frame equals the window's frame
-    /// (`WindowIdentity.frameTolerance`). Entries are consumed, so two
-    /// windows of one app with identical frames — the case that made
-    /// `pid + title_contains` unusable — still get distinct ids, in
-    /// window-server (front-to-back) order. A window with no matching
-    /// entry keeps `window_id: null` rather than borrowing a neighbour's.
+    /// Matching rule, per window, in order (Codex r2 #1):
+    ///   1. **Exact.** The row carries `axWindowID` (read from the AX
+    ///      element via `AXWindowID.of`) → the window-server entry with
+    ///      that id, full stop. No frame, no title, no order involved.
+    ///   2. **Frame + title.** Rows without an exact id (CG-fallback rows,
+    ///      or the private symbol is unavailable) take the first **unused**
+    ///      entry of the same pid whose frame matches
+    ///      (`WindowIdentity.frameTolerance`) AND whose normalized title
+    ///      (trimmed; nil ≡ "") equals the row's.
+    ///   3. **Frame only.** Last resort, first unused frame match — for
+    ///      apps whose AX title and `kCGWindowName` disagree.
+    ///
+    /// Entries are consumed: an id attached exactly is marked used BEFORE
+    /// any fallback row is considered, so a heuristic row can never steal
+    /// an id that another row owns exactly, and two same-framed fallback
+    /// rows still get distinct ids. A window with no matching entry keeps
+    /// `window_id: null` rather than borrowing a neighbour's.
+    ///
+    /// Why not frame-only-first-unused, as v0.9.0-rc1 did: it assumed AX
+    /// order == CG z-order. Same-frame windows A/B listed B,A by AX and A,B
+    /// by CG gave row B the id of A — and `window_id` then acted on the
+    /// wrong window (Codex r2 #1).
     ///
     /// Pure: no AX, no CG, no AppKit calls. `cgEntries` and `displays`
     /// are supplied by the caller.
@@ -276,16 +298,39 @@ actor WindowController {
         cgEntries: [WindowIdentity.Entry],
         displays: [WindowIdentity.DisplayBounds]
     ) -> [WindowInfo] {
+        // Pass 1: exact ids. Reserved up front so no fallback row — even
+        // one listed EARLIER — can consume an entry that a later row owns
+        // exactly.
+        let byID = Dictionary(cgEntries.map { ($0.windowID, $0) }, uniquingKeysWith: { first, _ in first })
         var used = Set<CGWindowID>()
-        return windows.map { window in
+        let exact: [WindowIdentity.Entry?] = windows.map { window in
+            guard let id = window.axWindowID, let entry = byID[id], entry.pid == window.pid else { return nil }
+            used.insert(id)
+            return entry
+        }
+
+        // Pass 2: heuristics for the rest, consuming entries as they go.
+        func normalized(_ title: String) -> String {
+            title.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return zip(windows, exact).map { window, exactEntry in
             var out = window
             let frame = CGRect(x: window.x, y: window.y, width: window.width, height: window.height)
-            if let match = cgEntries.first(where: { entry in
-                entry.pid == window.pid
-                    && !used.contains(entry.windowID)
-                    && WindowIdentity.framesMatch(entry.bounds, frame)
-            }) {
-                used.insert(match.windowID)
+            let match: WindowIdentity.Entry?
+            if let exactEntry {
+                match = exactEntry
+            } else {
+                let sameFrame: (WindowIdentity.Entry) -> Bool = { entry in
+                    entry.pid == window.pid
+                        && !used.contains(entry.windowID)
+                        && WindowIdentity.framesMatch(entry.bounds, frame)
+                }
+                let title = normalized(window.title)
+                match = cgEntries.first(where: { sameFrame($0) && normalized($0.title) == title })
+                    ?? cgEntries.first(where: sameFrame)
+                if let match { used.insert(match.windowID) }
+            }
+            if let match {
                 out.windowID = match.windowID
                 out.zOrder = match.zOrder
             }
@@ -369,14 +414,17 @@ actor WindowController {
         }
     }
 
-    /// Frame + title of one AX window, in the shape `WindowTargeting`
-    /// disambiguates over.
+    /// Exact id + frame + title of one AX window, in the shape
+    /// `WindowTargeting` disambiguates over. The id (Codex r2 #1) is what
+    /// makes resolution exact; frame and title only matter when the
+    /// private symbol is unavailable.
     private static func snapshot(of element: AXUIElement, index: Int) -> WindowTargeting.AXWindow<AXUIElement> {
         WindowTargeting.AXWindow(
             handle: element,
             index: index,
             frame: axFrame(of: element),
-            title: axTitle(of: element)
+            title: axTitle(of: element),
+            windowID: AXWindowID.of(element)
         )
     }
 
@@ -411,10 +459,11 @@ actor WindowController {
     ///
     /// v0.9.0 blocker fix (Codex r1 #1): this used to be "the first AX
     /// window whose frame matches", which mapped two same-framed windows of
-    /// one pid onto the same AX index. Disambiguation (title, then CG
-    /// z-order ↔ AX order, then refuse) lives in `WindowTargeting`, which
-    /// is pure and unit-tested; the element is carried through to the
-    /// action so no later re-indexing can retarget.
+    /// one pid onto the same AX index. Codex r2 #1: the AX element now
+    /// reports its own id (`AXWindowID.of`), so the match is exact;
+    /// frame → title → refuse is the fallback for id-less elements only,
+    /// in `WindowTargeting`, which is pure and unit-tested. The element is
+    /// carried through to the action so no later re-indexing can retarget.
     func resolve(windowID: CGWindowID) -> ResolvedWindow? {
         let entries = WindowIdentity.copyEntries()
         guard let entry = WindowIdentity.entry(id: windowID, in: entries) else { return nil }
@@ -735,6 +784,9 @@ actor WindowController {
             return CFEqual(mainWindow, window)
         }()
 
+        // Codex r2 #1: ask the element which window-server entry it IS, so
+        // `enrich` can attach `window_id` exactly instead of by frame.
+        // One extra AX round trip per window; nil when unavailable.
         return WindowInfo(
             app: appName,
             pid: pid,
@@ -745,7 +797,8 @@ actor WindowController {
             height: Double(size.height),
             minimized: minimized,
             main: isMain,
-            index: index
+            index: index,
+            axWindowID: AXWindowID.of(window)
         )
     }
 }
