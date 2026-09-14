@@ -7,7 +7,10 @@ extension ToolRegistry {
     static let definitionsV2Phase3: [MCPToolDefinition] = [
         MCPToolDefinition(
             name: "mouse_event",
-            description: "Low-level mouse event: move, click, double_click, triple_click. Use for precise positional input when AX element-based click is not possible.",
+            description: "Low-level mouse event: move, click, double_click, triple_click. Use for precise positional input when AX element-based click is not possible. "
+                + "Always lands on the frontmost app — pass expected_app/expected_window to abort "
+                + "instead of clicking the wrong window if focus changed. Prefer perform_element_action "
+                + "(AXPress) when you already have an element handle — it does not depend on focus.",
             inputSchema: schema(
                 properties: [
                     "action": .object([
@@ -19,6 +22,14 @@ extension ToolRegistry {
                     "button": .object([
                         "type": .string("string"),
                         "description": .string("'left', 'right', or 'center'. Default left.")
+                    ]),
+                    "expected_app": .object([
+                        "type": .string("string"),
+                        "description": .string("Bundle id or localized app name expected to be frontmost. On mismatch, nothing is posted.")
+                    ]),
+                    "expected_window": .object([
+                        "type": .string("string"),
+                        "description": .string("Case-insensitive substring expected in the focused window title. On mismatch, nothing is posted.")
                     ])
                 ],
                 required: ["action", "x", "y"]
@@ -26,7 +37,9 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "drag_and_drop",
-            description: "Click-and-drag from (x1,y1) to (x2,y2). Supports left/right/center button and step count for smoothness.",
+            description: "Click-and-drag from (x1,y1) to (x2,y2). Supports left/right/center button and step count for smoothness. "
+                + "Always lands on the frontmost app — pass expected_app/expected_window to abort "
+                + "instead of dragging in the wrong window if focus changed.",
             inputSchema: schema(
                 properties: [
                     "x1": .object(["type": .string("number")]),
@@ -34,20 +47,38 @@ extension ToolRegistry {
                     "x2": .object(["type": .string("number")]),
                     "y2": .object(["type": .string("number")]),
                     "button": .object(["type": .string("string")]),
-                    "steps": .object(["type": .array([.string("integer"), .string("string")])])
+                    "steps": .object(["type": .array([.string("integer"), .string("string")])]),
+                    "expected_app": .object([
+                        "type": .string("string"),
+                        "description": .string("Bundle id or localized app name expected to be frontmost. On mismatch, nothing is posted.")
+                    ]),
+                    "expected_window": .object([
+                        "type": .string("string"),
+                        "description": .string("Case-insensitive substring expected in the focused window title. On mismatch, nothing is posted.")
+                    ])
                 ],
                 required: ["x1", "y1", "x2", "y2"]
             )
         ),
         MCPToolDefinition(
             name: "scroll",
-            description: "Scroll wheel event. Positive delta_y scrolls up, negative scrolls down. Optional x/y targets the cursor position.",
+            description: "Scroll wheel event. Positive delta_y scrolls up, negative scrolls down. Optional x/y targets the cursor position. "
+                + "Always lands on the frontmost app — pass expected_app/expected_window to abort "
+                + "instead of scrolling the wrong window if focus changed.",
             inputSchema: schema(
                 properties: [
                     "delta_x": .object(["type": .array([.string("integer"), .string("string")])]),
                     "delta_y": .object(["type": .array([.string("integer"), .string("string")])]),
                     "x": .object(["type": .string("number")]),
-                    "y": .object(["type": .string("number")])
+                    "y": .object(["type": .string("number")]),
+                    "expected_app": .object([
+                        "type": .string("string"),
+                        "description": .string("Bundle id or localized app name expected to be frontmost. On mismatch, nothing is posted.")
+                    ]),
+                    "expected_window": .object([
+                        "type": .string("string"),
+                        "description": .string("Case-insensitive substring expected in the focused window title. On mismatch, nothing is posted.")
+                    ])
                 ]
             )
         ),
@@ -137,6 +168,10 @@ extension ToolRegistry {
         let point = CGPoint(x: x, y: y)
         let button = parseButton(arguments["button"]?.stringValue)
 
+        if let mismatch = checkFocusGuard(arguments) {
+            return mismatch
+        }
+
         let ok: Bool
         switch action.lowercased() {
         case "move":
@@ -175,6 +210,10 @@ extension ToolRegistry {
         let button = parseButton(arguments["button"]?.stringValue)
         let steps = max(1, min(arguments["steps"]?.intValue ?? 20, 200))
 
+        if let mismatch = checkFocusGuard(arguments) {
+            return mismatch
+        }
+
         let ok = await mouse.drag(
             from: CGPoint(x: x1, y: y1),
             to: CGPoint(x: x2, y: y2),
@@ -203,6 +242,10 @@ extension ToolRegistry {
             guard let x = arguments["x"]?.doubleValue, let y = arguments["y"]?.doubleValue else { return nil }
             return CGPoint(x: x, y: y)
         }()
+
+        if let mismatch = checkFocusGuard(arguments) {
+            return mismatch
+        }
 
         let ok = await mouse.scroll(deltaX: dx, deltaY: dy, at: point)
         let payload: [String: JSONValue] = [

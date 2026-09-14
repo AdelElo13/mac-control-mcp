@@ -564,6 +564,10 @@ final class ToolRegistry: @unchecked Sendable {
     private func callClick(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         let pid = parsePID(arguments["pid"])
 
+        if let mismatch = checkFocusGuard(arguments) {
+            return mismatch
+        }
+
         if let x = arguments["x"]?.doubleValue, let y = arguments["y"]?.doubleValue {
             let success = await accessibility.click(at: CGPoint(x: CGFloat(x), y: CGFloat(y)))
             var payload: [String: JSONValue] = [
@@ -653,6 +657,10 @@ final class ToolRegistry: @unchecked Sendable {
             )
         }
 
+        if let mismatch = checkFocusGuard(arguments) {
+            return mismatch
+        }
+
         let result = await accessibility.typeText(text: text, strategy: strategy)
         if result.success {
             return successResult(
@@ -740,6 +748,10 @@ final class ToolRegistry: @unchecked Sendable {
         case .failure(let error):
             return invalidArgument(error.description)
         case .success(let modifiers):
+            if let mismatch = checkFocusGuard(arguments) {
+                return mismatch
+            }
+
             let pressed = await accessibility.pressKey(keyCode: keyCode, modifiers: modifiers)
             if pressed {
                 return successResult(
@@ -846,6 +858,68 @@ final class ToolRegistry: @unchecked Sendable {
         ToolCallResult(text: message, structuredContent: .object(payload), isError: false)
     }
 
+    /// Input-focus guard for tools that inject synthetic CGEvent
+    /// keyboard/mouse input. Synthetic input always goes to whatever app
+    /// is frontmost *at delivery time* — not whatever the caller last
+    /// observed — so when another app steals focus between a caller's
+    /// check and its keystroke, the input lands in the wrong window.
+    /// (Measured: two concurrent MCP clients both driving this server —
+    /// a `press_key` cmd+a/cmd+v landed in the wrong app.)
+    ///
+    /// Call this immediately before injecting synthetic input. Returns
+    /// `nil` when the caller omitted both `expected_app` and
+    /// `expected_window` (the guard is opt-in and existing behaviour is
+    /// unchanged), or when the actual focus matches. Returns a
+    /// `focus_mismatch` error result — inject nothing — on mismatch.
+    func checkFocusGuard(_ arguments: [String: JSONValue]) -> ToolCallResult? {
+        let expectedApp = arguments["expected_app"]?.stringValue
+        let expectedWindow = arguments["expected_window"]?.stringValue
+
+        let actual = FocusGuard.currentFocus()
+        let outcome = FocusGuard.evaluate(
+            expectedApp: expectedApp,
+            expectedWindow: expectedWindow,
+            actualAppName: actual.appName,
+            actualBundleIdentifier: actual.bundleIdentifier,
+            actualWindowTitle: actual.windowTitle
+        )
+
+        guard case .mismatch(let reason) = outcome else {
+            return nil
+        }
+
+        var actualAppDescription = actual.appName ?? "unknown"
+        if let bundle = actual.bundleIdentifier {
+            actualAppDescription += " (\(bundle))"
+        }
+        if let pid = actual.pid {
+            actualAppDescription += " pid \(pid)"
+        }
+
+        var payload: [String: JSONValue] = [
+            "ok": .bool(false),
+            "error_code": .string("focus_mismatch"),
+            "error": .string(reason),
+            "actual_app": .string(actualAppDescription),
+            "actual_window": actual.windowTitle.map(JSONValue.string) ?? .null,
+            "hint": .string(
+                "Frontmost app/window changed since your last check. Call activate_app / "
+                    + "focus_window to bring the expected target back to front and retry, or — "
+                    + "when you already have an AX element handle — prefer perform_element_action "
+                    + "(AXPress) / set_element_attribute (AXValue), which act on that element "
+                    + "directly and do not depend on what is frontmost."
+            )
+        ]
+        if let expectedApp {
+            payload["expected_app"] = .string(expectedApp)
+        }
+        if let expectedWindow {
+            payload["expected_window"] = .string(expectedWindow)
+        }
+
+        return errorResult(reason, payload)
+    }
+
     static func schema(properties: [String: JSONValue], required: [String] = []) -> JSONValue {
         var schema: [String: JSONValue] = [
             "type": .string("object"),
@@ -901,7 +975,11 @@ final class ToolRegistry: @unchecked Sendable {
         ),
         MCPToolDefinition(
             name: "click",
-            description: "Click an element by role/title or click absolute coordinates.",
+            description: "Click an element by role/title or click absolute coordinates. "
+                + "Coordinate clicks post a synthetic CGEvent that always lands on the "
+                + "frontmost app — pass expected_app/expected_window to abort instead of "
+                + "clicking the wrong window if focus changed. Prefer perform_element_action "
+                + "(AXPress) when you already have an element handle — it does not depend on focus.",
             inputSchema: schema(
                 properties: [
                     "pid": .object([
@@ -919,6 +997,14 @@ final class ToolRegistry: @unchecked Sendable {
                     ]),
                     "y": .object([
                         "type": .string("number")
+                    ]),
+                    "expected_app": .object([
+                        "type": .string("string"),
+                        "description": .string("Bundle id or localized app name expected to be frontmost. On mismatch, nothing is clicked.")
+                    ]),
+                    "expected_window": .object([
+                        "type": .string("string"),
+                        "description": .string("Case-insensitive substring expected in the focused window title. On mismatch, nothing is clicked.")
                     ])
                 ]
             )
@@ -927,7 +1013,10 @@ final class ToolRegistry: @unchecked Sendable {
             name: "type_text",
             description: "Type text into the currently focused field. "
                 + "Strategies: auto (clipboard → keys → ax, default; best for React/Angular SPAs), "
-                + "clipboard (paste events), keys (CGEvent unicode), ax (AX set_value last-resort).",
+                + "clipboard (paste events), keys (CGEvent unicode), ax (AX set_value last-resort). "
+                + "Pass expected_app/expected_window to abort instead of typing into the wrong "
+                + "window if focus changed since your last check. Prefer set_element_attribute "
+                + "(AXValue) when you already have an element handle — it does not depend on focus.",
             inputSchema: schema(
                 properties: [
                     "text": .object([
@@ -942,6 +1031,14 @@ final class ToolRegistry: @unchecked Sendable {
                             .string("ax")
                         ]),
                         "default": .string("auto")
+                    ]),
+                    "expected_app": .object([
+                        "type": .string("string"),
+                        "description": .string("Bundle id or localized app name expected to be frontmost. On mismatch, nothing is typed.")
+                    ]),
+                    "expected_window": .object([
+                        "type": .string("string"),
+                        "description": .string("Case-insensitive substring expected in the focused window title. On mismatch, nothing is typed.")
                     ])
                 ],
                 required: ["text"]
@@ -967,7 +1064,11 @@ final class ToolRegistry: @unchecked Sendable {
         ),
         MCPToolDefinition(
             name: "press_key",
-            description: "Send a keyboard key with optional modifiers.",
+            description: "Send a keyboard key with optional modifiers. Posts a synthetic CGEvent "
+                + "that always lands on the frontmost app — pass expected_app/expected_window to "
+                + "abort instead of sending a key (e.g. cmd+a/cmd+v) to the wrong window if focus "
+                + "changed since your last check. Prefer perform_element_action when the effect "
+                + "you want is available as an AX action on a known element.",
             inputSchema: schema(
                 properties: [
                     "key": .object([
@@ -978,6 +1079,14 @@ final class ToolRegistry: @unchecked Sendable {
                         "items": .object([
                             "type": .string("string")
                         ])
+                    ]),
+                    "expected_app": .object([
+                        "type": .string("string"),
+                        "description": .string("Bundle id or localized app name expected to be frontmost. On mismatch, no key is sent.")
+                    ]),
+                    "expected_window": .object([
+                        "type": .string("string"),
+                        "description": .string("Case-insensitive substring expected in the focused window title. On mismatch, no key is sent.")
                     ])
                 ],
                 required: ["key"]

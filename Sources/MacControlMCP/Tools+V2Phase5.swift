@@ -107,13 +107,23 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "key_down",
-            description: "Post a key-down event without releasing. Pair with key_up.",
+            description: "Post a key-down event without releasing. Pair with key_up. "
+                + "Always lands on the frontmost app — pass expected_app/expected_window to "
+                + "abort instead of posting to the wrong window if focus changed.",
             inputSchema: schema(
                 properties: [
                     "key": .object(["type": .string("string")]),
                     "modifiers": .object([
                         "type": .string("array"),
                         "items": .object(["type": .string("string")])
+                    ]),
+                    "expected_app": .object([
+                        "type": .string("string"),
+                        "description": .string("Bundle id or localized app name expected to be frontmost. On mismatch, nothing is posted.")
+                    ]),
+                    "expected_window": .object([
+                        "type": .string("string"),
+                        "description": .string("Case-insensitive substring expected in the focused window title. On mismatch, nothing is posted.")
                     ])
                 ],
                 required: ["key"]
@@ -121,13 +131,23 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "key_up",
-            description: "Post a key-up event to release a previously held key.",
+            description: "Post a key-up event to release a previously held key. "
+                + "Always lands on the frontmost app — pass expected_app/expected_window to "
+                + "abort instead of posting to the wrong window if focus changed.",
             inputSchema: schema(
                 properties: [
                     "key": .object(["type": .string("string")]),
                     "modifiers": .object([
                         "type": .string("array"),
                         "items": .object(["type": .string("string")])
+                    ]),
+                    "expected_app": .object([
+                        "type": .string("string"),
+                        "description": .string("Bundle id or localized app name expected to be frontmost. On mismatch, nothing is posted.")
+                    ]),
+                    "expected_window": .object([
+                        "type": .string("string"),
+                        "description": .string("Case-insensitive substring expected in the focused window title. On mismatch, nothing is posted.")
                     ])
                 ],
                 required: ["key"]
@@ -135,7 +155,10 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "press_key_sequence",
-            description: "Press multiple keys in order. Each step is {key, modifiers?}.",
+            description: "Press multiple keys in order. Each step is {key, modifiers?}. "
+                + "Always lands on the frontmost app — pass expected_app/expected_window to "
+                + "abort the whole sequence instead of sending it to the wrong window if focus "
+                + "changed (checked once immediately before the first key).",
             inputSchema: schema(
                 properties: [
                     "steps": .object([
@@ -152,7 +175,15 @@ extension ToolRegistry {
                             "required": .array([.string("key")])
                         ])
                     ]),
-                    "delay_ms": .object(["type": .array([.string("integer"), .string("string")])])
+                    "delay_ms": .object(["type": .array([.string("integer"), .string("string")])]),
+                    "expected_app": .object([
+                        "type": .string("string"),
+                        "description": .string("Bundle id or localized app name expected to be frontmost. On mismatch, nothing is sent.")
+                    ]),
+                    "expected_window": .object([
+                        "type": .string("string"),
+                        "description": .string("Case-insensitive substring expected in the focused window title. On mismatch, nothing is sent.")
+                    ])
                 ],
                 required: ["steps"]
             )
@@ -490,6 +521,10 @@ extension ToolRegistry {
             modifiers.append(flag)
         }
 
+        if let mismatch = checkFocusGuard(arguments) {
+            return mismatch
+        }
+
         let ok = down
             ? await accessibility.keyDown(keyCode: code, modifiers: modifiers)
             : await accessibility.keyUp(keyCode: code, modifiers: modifiers)
@@ -523,6 +558,16 @@ extension ToolRegistry {
                 flags.append(f)
             }
             parsed.append((code, flags))
+        }
+
+        // Checked once immediately before injecting the whole sequence —
+        // re-checking between every step would be the more thorough guard
+        // but the sequence typically fires within milliseconds, so a
+        // single check right before the first key covers the realistic
+        // race (another app stealing focus between the caller's check
+        // and this call).
+        if let mismatch = checkFocusGuard(arguments) {
+            return mismatch
         }
 
         // Clamp the upper bound: delay_ms drives a Thread.sleep inside the
