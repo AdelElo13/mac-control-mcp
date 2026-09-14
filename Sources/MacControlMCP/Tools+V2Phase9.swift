@@ -77,7 +77,17 @@ extension ToolRegistry {
                 elements preferred over unlabelled when truncating.
                 Pass window_id (from list_windows) to scope the tree AND the OCR \
                 pass to ONE window — required to get sane labels from an app \
-                with several windows. window_id takes precedence over pid.
+                with several windows. window_id takes precedence over pid. \
+                The response carries `ax_scope`: "window_subtree" when the \
+                walk was rooted at that window's Accessibility window, \
+                "app_root" when no window was requested (plain pid), or \
+                "none" when the window has NO attributable Accessibility \
+                window (Chrome browser windows, parts of Electron, minimized \
+                windows, or several indistinguishable AX windows) — then \
+                `nodes` is EMPTY, `ax_scope_reason` is "no_ax_window" or \
+                "ambiguous_window" (with `candidates`) and `hint` names the \
+                alternatives; nodes are never taken from an app-wide walk \
+                for a targeted window.
                 """,
             inputSchema: schema(
                 properties: withWindowIDProperty([
@@ -325,14 +335,49 @@ extension ToolRegistry {
         var payload: [String: JSONValue] = [
             "ok": .bool(r.ok),
             "result": encodeAsJSONValue(r),
-            "max_depth_used": .number(Double(r.maxDepthUsed))
+            "max_depth_used": .number(Double(r.maxDepthUsed)),
+            // Codex r2 #2: which AX tree the nodes come from (see
+            // `withheldAugmentedFields` for the withheld shape).
+            "ax_scope": .string(r.axScope)
         ]
         if let scope { payload.merge(scope.payload) { existing, _ in existing } }
+        if let scope, let reasonRaw = r.axScopeReason,
+           let reason = AXScopePolicy.WithheldReason(rawValue: reasonRaw) {
+            payload.merge(Self.withheldAugmentedFields(
+                reason: reason, windowID: scope.windowID, ownerName: scope.ownerName,
+                candidates: scope.ambiguousCandidates
+            )) { _, new in new }
+        }
         if let c = r.errorCode { payload["error_code"] = .string(c) }
         return r.ok
             ? successResult("augmented tree: \(r.nodeCount) nodes, \(r.inferredCount) inferred in \(r.elapsedMs)ms",
                             payload)
             : errorResult(r.error ?? "ax_tree_augmented failed", payload)
+    }
+
+    /// Codex r2 #2: the top-level fields `ax_tree_augmented` reports when
+    /// a targeted window has no attributable AXWindow. Pure, so the shape
+    /// is unit-tested without a live window.
+    static func withheldAugmentedFields(
+        reason: AXScopePolicy.WithheldReason,
+        windowID: CGWindowID?,
+        ownerName: String,
+        candidates: [WindowTargeting.Candidate]?
+    ) -> [String: JSONValue] {
+        var fields: [String: JSONValue] = [
+            "nodes": .array([]),
+            "node_count": .number(0),
+            "ax_scope": .string(AXScopePolicy.Decision.withheld(reason).axScope),
+            "ax_scope_reason": .string(reason.rawValue),
+            "hint": .string(AXScopePolicy.withheldHint(
+                tool: "ax_tree_augmented", reason: reason, windowID: windowID, ownerName: ownerName
+            ))
+        ]
+        if let candidates {
+            fields["candidate_count"] = .number(Double(candidates.count))
+            fields["candidates"] = .array(candidates.map { .object($0.payload) })
+        }
+        return fields
     }
 
     func callAXSnapshotCapture(_ arguments: [String: JSONValue]) async -> ToolCallResult {

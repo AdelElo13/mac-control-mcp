@@ -569,6 +569,13 @@ actor GroundingController {
         let maxDepthUsed: Int
         let error: String?
         let errorCode: String?
+        /// Codex r2 #2: which AX tree the nodes come from —
+        /// "window_subtree" (rooted at the scoped window's AXWindow),
+        /// "app_root" (no window requested), or "none" (a window was
+        /// requested but has no attributable AXWindow; `nodes` is empty).
+        let axScope: String
+        /// "no_ax_window" / "ambiguous_window" when `axScope` is "none".
+        let axScopeReason: String?
     }
 
     /// Codex v3 design — single OCR pass + geometric join instead of
@@ -591,13 +598,39 @@ actor GroundingController {
         let start = Date()
         let pid = window?.pid ?? rawPID
 
-        // 1. Walk the AX tree, collect nodes with frames
-        let root = AXUIElementCreateApplication(pid)
+        // Codex r2 #2: same rule as `ground` / `capture_annotated`. A
+        // window scope without an attributable AXWindow gets NO nodes —
+        // the old app-root walk behind a frame filter let an overlapping
+        // window of the same app contribute nodes, which the OCR join
+        // then labelled with THIS window's text.
+        let decision = window?.scopeDecision ?? .appRoot
+        if let reason = decision.reason, let window {
+            let ms = Int(Date().timeIntervalSince(start) * 1000)
+            return AugmentedTreeResult(
+                ok: false, pid: Int32(pid), nodeCount: 0, inferredCount: 0,
+                nodes: [], elapsedMs: ms, maxDepthUsed: maxDepth,
+                error: AXScopePolicy.withheldHint(
+                    tool: "ax_tree_augmented", reason: reason,
+                    windowID: window.windowID, ownerName: window.ownerName
+                ),
+                errorCode: reason.rawValue,
+                axScope: decision.axScope,
+                axScopeReason: reason.rawValue
+            )
+        }
+        let axScope = decision.axScope
+
+        // 1. Walk the AX tree, collect nodes with frames. With a window
+        //    scope the walk is ROOTED at that window's AXWindow, so a
+        //    sibling window's subtree is never visited (Codex r2 #2);
+        //    without one it is the app root, honestly reported as such.
+        let root = window?.axElement ?? AXUIElementCreateApplication(pid)
         var axBoxes: [(node: AugmentedNode, rect: CGRect)] = []
         walk(element: root, depth: 0, maxDepth: maxDepth, into: &axBoxes)
-        // v0.9 (C-2): a window_id scopes the tree to that window's frame —
-        // nodes belonging to the app's other windows are not this window's
-        // UI and would be joined against OCR text they cannot contain.
+        // v0.9 (C-2): the frame filter stays as the second line of
+        // defence — nodes parked outside the window's frame are not this
+        // window's UI and would be joined against OCR text they cannot
+        // contain.
         if let window {
             axBoxes = axBoxes.filter { WindowIdentity.rect($0.rect, isWithin: window.bounds) }
         }
@@ -608,7 +641,9 @@ actor GroundingController {
                 ok: false, pid: Int32(pid), nodeCount: 0, inferredCount: 0,
                 nodes: [], elapsedMs: ms, maxDepthUsed: maxDepth,
                 error: "no AX nodes found — app may lack AX support",
-                errorCode: "not_found"
+                errorCode: "not_found",
+                axScope: axScope,
+                axScopeReason: nil
             )
         }
 
@@ -638,7 +673,9 @@ actor GroundingController {
                 ok: false, pid: Int32(pid), nodeCount: axBoxes.count, inferredCount: 0,
                 nodes: axBoxes.map { $0.node }, elapsedMs: ms, maxDepthUsed: maxDepth,
                 error: "window OCR pass failed for pid \(pid): \(error)",
-                errorCode: Self.errorCode(for: error)
+                errorCode: Self.errorCode(for: error),
+                axScope: axScope,
+                axScopeReason: nil
             )
         }
         guard let windowBounds = capture.pointBounds,
@@ -648,7 +685,9 @@ actor GroundingController {
                 ok: false, pid: Int32(pid), nodeCount: axBoxes.count, inferredCount: 0,
                 nodes: axBoxes.map { $0.node }, elapsedMs: ms, maxDepthUsed: maxDepth,
                 error: "window capture for pid \(pid) reported no point bounds; cannot map OCR to screen coordinates",
-                errorCode: "capture_failed"
+                errorCode: "capture_failed",
+                axScope: axScope,
+                axScopeReason: nil
             )
         }
         let ocrPointCenters: [CGPoint] = ocrBlocks.map { block in
@@ -749,7 +788,9 @@ actor GroundingController {
             error: capped.count < out.count
                 ? "truncated to \(maxNodes) nodes of \(out.count) total (labelled first)"
                 : nil,
-            errorCode: nil
+            errorCode: nil,
+            axScope: axScope,
+            axScopeReason: nil
         )
     }
 
