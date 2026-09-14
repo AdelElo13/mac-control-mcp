@@ -266,6 +266,37 @@ struct WindowIdentityTests {
         #expect(out.allSatisfy { $0.isFocused == false })
     }
 
+    // MARK: - ocr_screen coordinate space
+
+    @Test("ocr_screen names its coordinate space and the image origin for all three sources")
+    func ocrCoordinateSpaces() {
+        // 1. window_id → window image, origin = window's top-left.
+        let window = ToolRegistry.ocrCoordinateSpace(
+            region: nil, windowBounds: CGRect(x: 410, y: 158, width: 980, height: 600),
+            displayBounds: CGRect(x: 0, y: 0, width: 1800, height: 1169)
+        )
+        #expect(window.space == "window_image_pixels")
+        #expect(window.origin == CGPoint(x: 410, y: 158))
+
+        // 2. x/y/width/height → region image, origin = region's top-left.
+        let region = ToolRegistry.ocrCoordinateSpace(
+            region: ScreenController.CaptureRegion(x: 700, y: 90, width: 300, height: 200),
+            windowBounds: nil,
+            displayBounds: CGRect(x: 0, y: 0, width: 1800, height: 1169)
+        )
+        #expect(region.space == "region_image_pixels")
+        #expect(region.origin == CGPoint(x: 700, y: 90))
+
+        // 3. neither → whole main display, origin = that display's origin
+        //    (not assumed to be 0,0 — the main display can be repositioned).
+        let screen = ToolRegistry.ocrCoordinateSpace(
+            region: nil, windowBounds: nil,
+            displayBounds: CGRect(x: 0, y: -200, width: 1800, height: 1169)
+        )
+        #expect(screen.space == "screen_image_pixels")
+        #expect(screen.origin == CGPoint(x: 0, y: -200))
+    }
+
     // MARK: - convert_coordinates containment (C-14 / A-11)
 
     @Test("convert_coordinates reports which display contains the point")

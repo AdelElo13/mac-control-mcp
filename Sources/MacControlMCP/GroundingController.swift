@@ -101,9 +101,21 @@ actor GroundingController {
     struct WindowScope: Sendable {
         let windowID: CGWindowID
         let pid: pid_t
+        let ownerName: String
         let title: String
         let bounds: CGRect
         let isOnscreen: Bool
+
+        /// Identity echo for the tool response — which window the id
+        /// actually resolved to (ids are recycled after a window closes).
+        var payload: [String: JSONValue] {
+            [
+                "window_id": .number(Double(windowID)),
+                "owner_pid": .number(Double(pid)),
+                "owner_name": .string(ownerName),
+                "title": .string(title)
+            ]
+        }
 
         var selected: ScreenController.SelectedWindowInfo {
             ScreenController.SelectedWindowInfo(

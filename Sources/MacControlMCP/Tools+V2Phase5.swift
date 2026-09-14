@@ -389,7 +389,7 @@ extension ToolRegistry {
                 "height": .number(Double(capture.height)),
                 "pid": .number(Double(pid))
             ]
-            if let resolved { payload["window_id"] = .number(Double(resolved.windowID)) }
+            if let resolved { payload.merge(resolved.payload) { existing, _ in existing } }
             payload.merge(Self.captureMetadata(capture)) { existing, _ in existing }
             return successResult("Captured window to \(capture.path).", payload)
         } catch {

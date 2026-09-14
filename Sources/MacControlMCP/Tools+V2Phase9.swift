@@ -266,7 +266,7 @@ extension ToolRegistry {
             // caller does not have to know both spellings (A-2 / A-14 / D-4).
             "max_depth_used": .number(Double(r.maxDepthUsed))
         ]
-        if let scope { payload["window_id"] = .number(Double(scope.windowID)) }
+        if let scope { payload.merge(scope.payload) { existing, _ in existing } }
         if let id = r.elementId { payload["element_id"] = .string(id) }
         if let b = r.bounds { payload["bounds"] = encodeAsJSONValue(b) }
         if let c = r.errorCode { payload["error_code"] = .string(c) }
@@ -301,7 +301,7 @@ extension ToolRegistry {
             "result": encodeAsJSONValue(r),
             "max_depth_used": .number(Double(r.maxDepthUsed))
         ]
-        if let scope { payload["window_id"] = .number(Double(scope.windowID)) }
+        if let scope { payload.merge(scope.payload) { existing, _ in existing } }
         if let c = r.errorCode { payload["error_code"] = .string(c) }
         return r.ok
             ? successResult("augmented tree: \(r.nodeCount) nodes, \(r.inferredCount) inferred in \(r.elapsedMs)ms",
