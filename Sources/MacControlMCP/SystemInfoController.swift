@@ -70,6 +70,14 @@ actor SystemInfoController {
         } else if out.contains("(no estimate)") {
             timeRemaining = -1
         }
+        // v0.9 (A-17): `pmset` prints "0:00 remaining" once a battery is
+        // fully charged — that parsed to `0`, which reads as "0 minutes
+        // of battery left" on a Mac that is in fact fully charged and
+        // plugged in. There is no meaningful "time remaining" once
+        // charged, so report it as unavailable rather than zero.
+        if out.contains("; charged;") {
+            timeRemaining = nil
+        }
 
         let battery = Battery(
             percentage: percentage,
@@ -200,15 +208,28 @@ actor SystemInfoController {
         public let wifiSSID: String?
         public let wifiInterface: String?
         public let interfaces: [Interface]
+        /// v0.9 (A-12): mirrors `wifi_scan`'s `ssids_redacted` — true when
+        /// `wifiSSID` is nil because macOS is withholding it (Location not
+        /// granted to the responsible process), as distinct from nil
+        /// because the Mac simply isn't associated with any Wi-Fi network.
+        public let ssidsRedacted: Bool
+        /// Same status strings as `locationPermissionStatusString()`.
+        public let locationStatus: String
         public struct Interface: Codable, Sendable {
             public let name: String
             public let ip: String?
             public let mac: String?
             public let active: Bool
         }
+
+        private enum CodingKeys: String, CodingKey {
+            case wifiSSID, wifiInterface, interfaces
+            case ssidsRedacted = "ssids_redacted"
+            case locationStatus = "location_status"
+        }
     }
 
-    func network() -> Result<Network> {
+    func network() async -> Result<Network> {
         var wifiSSID: String?, wifiIFace: String?
 
         let listRes = ProcessRunner.run("/usr/sbin/networksetup", ["-listallhardwareports"], timeout: 3)
@@ -282,10 +303,20 @@ actor SystemInfoController {
             )
         }
 
+        // v0.9 (A-12): `networksetup -getairportnetwork` is gated by the
+        // same per-app Location authorization CoreWLAN uses for
+        // `wifi_scan` — when it's not granted, force the SSID to nil and
+        // say so explicitly instead of letting a withheld value look
+        // identical to "this Mac isn't on Wi-Fi".
+        let locationStatus = await ToolRegistry.locationPermissionStatusStringMainActor()
+        let locationGranted = ToolRegistry.isGrantedPermissionStatus(locationStatus)
+        let redacted = wifiIFace != nil && !locationGranted
         let network = Network(
-            wifiSSID: wifiSSID,
+            wifiSSID: redacted ? nil : wifiSSID,
             wifiInterface: wifiIFace,
-            interfaces: interfaces
+            interfaces: interfaces,
+            ssidsRedacted: redacted,
+            locationStatus: locationStatus
         )
         return Result(ok: true, data: network, error: nil, exitCode: 0)
     }

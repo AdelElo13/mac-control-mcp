@@ -464,8 +464,6 @@ final class ToolRegistry: @unchecked Sendable {
             return await callBrowserVisibleText(arguments)
         case "browser_iframes":
             return await callBrowserIframes(arguments)
-        case "foundation_models_generate":
-            return await callFoundationModelsGenerate(arguments)
         case "list_app_intents":
             return await callListAppIntents()
         case "invoke_app_intent":
@@ -479,6 +477,7 @@ final class ToolRegistry: @unchecked Sendable {
         guard let pid = parsePID(arguments["pid"]) else {
             return invalidArgument("list_elements requires a positive integer pid.")
         }
+        if let dead = noSuchProcessResult(pid: pid, tool: "list_elements") { return dead }
 
         let maxDepth = max(1, min(arguments["max_depth"]?.intValue ?? 8, 32))
         let elements = await accessibility.listElements(pid: pid, maxDepth: maxDepth)
@@ -500,6 +499,7 @@ final class ToolRegistry: @unchecked Sendable {
         guard let pid = parsePID(arguments["pid"]) else {
             return invalidArgument("find_element requires a positive integer pid.")
         }
+        if let dead = noSuchProcessResult(pid: pid, tool: "find_element") { return dead }
 
         let role = arguments["role"]?.stringValue
         let title = arguments["title"]?.stringValue
@@ -839,6 +839,35 @@ final class ToolRegistry: @unchecked Sendable {
             return nil
         }
         return pid_t(integer)
+    }
+
+    /// v0.9 (A-8): `find_element`/`find_elements`/`get_ui_tree`/
+    /// `list_elements` used to send a pid that belongs to no running
+    /// process straight into the AX walk, which came back with the same
+    /// "app exposes no AX children or windows" hint a genuinely
+    /// AX-headless *running* app gets — indistinguishable from a plain
+    /// typo/stale pid. `kill(pid, 0)` sends no signal, just probes
+    /// whether the process exists (ESRCH => it doesn't); it works for
+    /// any process, not only ones NSRunningApplication tracks (GUI apps
+    /// registered with the WindowServer).
+    func isRunningProcess(_ pid: pid_t) -> Bool {
+        if kill(pid, 0) == 0 { return true }
+        return errno != ESRCH
+    }
+
+    /// Structured `error_code: no_such_process` payload for the AX-tool
+    /// family above. `nil` when the pid is alive — callers proceed as
+    /// before.
+    func noSuchProcessResult(pid: pid_t, tool: String) -> ToolCallResult? {
+        guard !isRunningProcess(pid) else { return nil }
+        return errorResult(
+            "\(tool): no running process with pid \(pid).",
+            [
+                "ok": .bool(false),
+                "pid": .number(Double(pid)),
+                "error_code": .string("no_such_process")
+            ]
+        )
     }
 
     struct ToolInputError: Error, CustomStringConvertible {

@@ -121,7 +121,6 @@ enum ToolTimeouts {
     static let environmentKey = "MAC_CONTROL_MCP_TOOL_TIMEOUT"
     /// Tools whose normal runtime can exceed the default.
     static let perToolLimit: [String: TimeInterval] = [
-        "foundation_models_generate": 180,
         "speech_to_text": 180
     ]
 

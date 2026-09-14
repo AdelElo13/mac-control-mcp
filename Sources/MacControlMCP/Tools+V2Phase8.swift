@@ -338,10 +338,16 @@ extension ToolRegistry {
         let dueISO = arguments["due_iso"]?.stringValue
         let list = arguments["list"]?.stringValue
         let r = await appleApps.createReminder(title: title, dueISO: dueISO, list: list)
-        return r.ok
-            ? successResult("reminder created", ["ok": .bool(true), "result": encodeAsJSONValue(r)])
-            : errorResult(r.error ?? "reminders_create failed",
-                          ["ok": .bool(false), "result": encodeAsJSONValue(r)])
+        let authorization = ToolRegistry.remindersPermissionStatusString()
+        if r.ok {
+            return successResult("reminder created",
+                                 ["ok": .bool(true), "result": encodeAsJSONValue(r),
+                                  "authorization": .string(authorization)])
+        }
+        var payload: [String: JSONValue] = ["ok": .bool(false), "result": encodeAsJSONValue(r),
+                                             "authorization": .string(authorization)]
+        payload.merge(r.errorPayload ?? [:]) { _, structured in structured }
+        return errorResult(r.error ?? "reminders_create failed", payload)
     }
 
     func callRemindersList(_ arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -351,11 +357,19 @@ extension ToolRegistry {
         let includeCompleted = arguments["include_completed"]?.boolValue ?? false
         let limit = arguments["limit"]?.intValue ?? 50
         let r = await appleApps.listReminders(includeCompleted: includeCompleted, limit: limit)
-        return r.ok
-            ? successResult("found \(r.data?.count ?? 0) reminder(s)",
-                            ["ok": .bool(true), "reminders": encodeAsJSONValue(r.data ?? [])])
-            : errorResult(r.error ?? "reminders_list failed",
-                          ["ok": .bool(false), "error": .string(r.error ?? "")])
+        let authorization = ToolRegistry.remindersPermissionStatusString()
+        guard r.ok, let result = r.data else {
+            var payload: [String: JSONValue] = ["ok": .bool(false), "error": .string(r.error ?? "reminders_list failed"),
+                                                 "authorization": .string(authorization)]
+            payload.merge(r.errorPayload ?? [:]) { _, structured in structured }
+            return errorResult(r.error ?? "reminders_list failed", payload)
+        }
+        return successResult("found \(result.reminders.count) reminder(s)",
+                             ["ok": .bool(true),
+                              "reminders": encodeAsJSONValue(result.reminders),
+                              "count": .number(Double(result.reminders.count)),
+                              "lists": .array(result.lists.map(JSONValue.string)),
+                              "authorization": .string(authorization)])
     }
 
     func callContactsSearch(_ arguments: [String: JSONValue]) async -> ToolCallResult {

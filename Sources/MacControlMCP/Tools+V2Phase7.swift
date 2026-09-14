@@ -38,7 +38,10 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "network_info",
-            description: "Active Wi-Fi SSID + interface + every network interface's IP/MAC address.",
+            description: "Active Wi-Fi interface + every network interface's IP/MAC address. The Wi-Fi SSID " +
+                "itself ('wifiSSID') is only included when Location Services is granted to the responsible " +
+                "process (same requirement as wifi_scan) — otherwise it is null and 'ssids_redacted':true " +
+                "names the reason via 'location_status'.",
             inputSchema: schema(properties: [:])
         ),
         MCPToolDefinition(

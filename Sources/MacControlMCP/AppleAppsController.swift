@@ -372,8 +372,55 @@ actor AppleAppsController {
         public let list: String?
     }
 
+    #if canImport(EventKit)
+    /// v0.9 (A-7): `reminders_list`/`reminders_create` went through
+    /// AppleScript without ever checking the Reminders TCC status, so a
+    /// denied/not-yet-granted permission and a genuinely empty database
+    /// were indistinguishable — both returned `ok:true, reminders:[]}`.
+    /// Mirrors `requestCalendarAccess`: explicitly request access via
+    /// EventKit (the same `kTCCServiceReminders` bucket that gates the
+    /// AppleScript path) so the outcome can be classified precisely.
+    private func requestRemindersAccess() async -> (outcome: PermissionContext.AuthOutcome, status: String) {
+        let before = ToolRegistry.remindersPermissionStatusString()
+        switch before {
+        case "granted", "authorized_legacy": return (.granted, before)
+        case "denied": return (.deniedByUser, before)
+        case "write_only": return (.writeOnly, before)
+        case "restricted": return (.restricted, before)
+        case "info_plist_missing": return (.deniedWithoutPrompt, before)
+        default: break
+        }
+        let store = eventStore
+        let granted: Bool? = await PermissionContext.awaitCallback(timeout: Self.permissionPromptTimeout) { done in
+            store.requestFullAccessToReminders { granted, _ in done(granted) }
+        }
+        let after = ToolRegistry.remindersPermissionStatusString()
+        return (PermissionContext.classify(granted: granted, statusAfter: after), after)
+    }
+
+    /// nil when access is available; otherwise the structured refusal to
+    /// return directly from the caller.
+    private func ensureRemindersAccess<T: Codable & Sendable>() async -> Result<T>? {
+        let access = await requestRemindersAccess()
+        guard access.outcome != .granted else { return nil }
+        let failure = PermissionContext.permissionError(
+            service: "Reminders",
+            pane: "reminders",
+            entitlement: "com.apple.security.personal-information.calendars",
+            outcome: access.outcome,
+            statusAfter: access.status
+        )
+        return Result(ok: false, data: nil, error: failure.message, errorPayload: failure.payload)
+    }
+    #endif
+
     /// Create a reminder in Reminders.app. Optional `due` and `list`.
-    func createReminder(title: String, dueISO: String?, list: String?) -> Result<Reminder> {
+    func createReminder(title: String, dueISO: String?, list: String?) async -> Result<Reminder> {
+        #if canImport(EventKit)
+        if let refused: Result<Reminder> = await ensureRemindersAccess() {
+            return refused
+        }
+        #endif
         func esc(_ s: String) -> String {
             s.replacingOccurrences(of: "\\", with: "\\\\")
              .replacingOccurrences(of: "\"", with: "\\\"")
@@ -406,9 +453,24 @@ actor AppleAppsController {
         public let list: String
     }
 
+    /// v0.9 (A-7): carries the list names alongside the (possibly
+    /// filtered/capped) reminders, so callers can tell "no reminders
+    /// anywhere" (`lists` non-empty, `reminders` empty) apart from
+    /// "no lists at all" — both of which used to render as the same
+    /// bare `reminders:[]`.
+    public struct ReminderListResult: Codable, Sendable {
+        public let reminders: [ReminderSummary]
+        public let lists: [String]
+    }
+
     /// List reminders across all lists. Optional `includeCompleted` — default
     /// false so agents see only actionable items.
-    func listReminders(includeCompleted: Bool, limit: Int) -> Result<[ReminderSummary]> {
+    func listReminders(includeCompleted: Bool, limit: Int) async -> Result<ReminderListResult> {
+        #if canImport(EventKit)
+        if let refused: Result<ReminderListResult> = await ensureRemindersAccess() {
+            return refused
+        }
+        #endif
         let cap = max(1, min(limit, 200))
         let filter = includeCompleted ? "" : "whose completed is false"
         // `total` caps globally — the old `if n > cap` capped per list, so a
@@ -419,8 +481,12 @@ actor AppleAppsController {
         let script = """
         tell application "Reminders"
             set out to {}
-            set total to 0
+            set names to {}
             set ls to lists
+            repeat with l in ls
+                set end of names to (name of l as string)
+            end repeat
+            set total to 0
             repeat with l in ls
                 if total ≥ \(cap) then exit repeat
                 try
@@ -437,8 +503,9 @@ actor AppleAppsController {
             end repeat
             set AppleScript's text item delimiters to "§§REC§§"
             set outStr to out as string
+            set namesStr to names as string
             set AppleScript's text item delimiters to ""
-            return outStr
+            return namesStr & "§§LISTS_END§§" & outStr
         end tell
         """
         let r = OsascriptRunner.run(script)
@@ -446,7 +513,14 @@ actor AppleAppsController {
             return Result(ok: false, data: nil,
                           error: r.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
         }
-        let lines = r.stdout
+        let sections = r.stdout.components(separatedBy: "§§LISTS_END§§")
+        let namesSection = sections.first ?? ""
+        let recordsSection = sections.count > 1 ? sections[1] : ""
+        let listNames = namesSection
+            .components(separatedBy: "§§REC§§")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        let lines = recordsSection
             .components(separatedBy: "§§REC§§")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
@@ -459,7 +533,11 @@ actor AppleAppsController {
                 list: parts[0]
             )
         }
-        return Result(ok: true, data: reminders, error: nil)
+        return Result(
+            ok: true,
+            data: ReminderListResult(reminders: reminders, lists: listNames),
+            error: nil
+        )
     }
 
     // MARK: - Contacts
