@@ -212,9 +212,13 @@ actor TextEditingController {
         /// attributes that just failed. The clipboard route names the
         /// EXACT range the written text now occupies — `range` is what was
         /// replaced (empty for an insert), so "over the range" would copy
-        /// nothing (Codex r5).
+        /// nothing (Codex r5) — and starts with `activate_app`: the
+        /// selection is set on the element, but `press_key` goes to the
+        /// FRONTMOST app, so without it Cmd-C would copy from whatever is
+        /// in front and clipboard_read would "verify" the wrong text
+        /// (Codex r6). Tool arguments are spelled as the schema takes them.
         var alternativeRoutes: String {
-            "visually (capture_annotated / ocr_screen on the window) or via the clipboard (text_set_selection location: \(range.location), length: \(insertedCharacters); press_key cmd+c; clipboard_read)"
+            "visually (capture_annotated / ocr_screen on the window) or via the clipboard (activate_app on the element's pid; text_set_selection location: \(range.location), length: \(insertedCharacters); press_key key: \"c\", modifiers: [\"cmd\"]; clipboard_read)"
         }
     }
 

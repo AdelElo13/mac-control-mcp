@@ -188,6 +188,11 @@ struct CodexR2RegressionTests {
         #expect(outcome.warning?.contains("text_get_value") == false)
         #expect(outcome.warning?.contains("capture_annotated") == true)
         #expect(outcome.warning?.contains("location: 7, length: 3") == true)
+        // Codex r6: press_key targets the frontmost app, so the route must
+        // bring the element's app forward first, and spell press_key's
+        // real arguments.
+        #expect(outcome.warning?.contains("activate_app") == true)
+        #expect(outcome.warning?.contains("key: \"c\", modifiers: [\"cmd\"]") == true)
     }
 
     @Test("a count that moved by the wrong amount reports applied:false WITH a warning")
