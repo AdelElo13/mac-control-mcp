@@ -196,6 +196,82 @@ struct ScreenAnnotatorGeometryTests {
         #expect(ScreenAnnotator.filterInteractive(items, captureRect: capture, limit: 200) == [0])
     }
 
+    // MARK: - Fractional / asymmetric scale
+
+    @Test("a fractional backing factor maps points to pixels per axis")
+    func fractionalScale() {
+        // 300×200 pt captured at 400×200 px: 1.333× horizontally, 1× vertically.
+        let geometry = ScreenAnnotator.Geometry(
+            origin: CGPoint(x: 50, y: 25),
+            pointSize: CGSize(width: 300, height: 200),
+            pixelWidth: 400, pixelHeight: 200
+        )
+        #expect(abs(geometry.pixelsPerPointX - 4.0 / 3.0) < 1e-12)
+        #expect(geometry.pixelsPerPointY == 1.0)
+
+        let r = ScreenAnnotator.imageRect(
+            globalRect: CGRect(x: 80, y: 45, width: 30, height: 20), geometry: geometry
+        )
+        #expect(abs(r.origin.x - 40) < 1e-9)     // (80-50) * 4/3
+        #expect(abs(r.origin.y - 20) < 1e-9)     // (45-25) * 1
+        #expect(abs(r.width - 40) < 1e-9)
+        #expect(abs(r.height - 20) < 1e-9)
+    }
+
+    @Test("badges stay inside the image at a fractional, asymmetric scale")
+    func badgesStayInBoundsAtFractionalScale() {
+        let geometry = ScreenAnnotator.Geometry(
+            origin: CGPoint(x: 0, y: 0),
+            pointSize: CGSize(width: 300, height: 200),
+            pixelWidth: 400, pixelHeight: 200
+        )
+        let ppp = max(geometry.pixelsPerPointX, geometry.pixelsPerPointY)
+        // Elements in every corner, including ones straddling the edges.
+        let candidates: [CGRect] = [
+            CGRect(x: 0, y: 0, width: 20, height: 10),
+            CGRect(x: 280, y: 0, width: 40, height: 10),      // off the right edge
+            CGRect(x: 0, y: 190, width: 20, height: 20),      // off the bottom edge
+            CGRect(x: 290, y: 195, width: 30, height: 30),    // off both
+            CGRect(x: 149, y: 99, width: 2, height: 2)        // tiny, centred
+        ]
+        for (i, globalRect) in candidates.enumerated() {
+            let pixelRect = ScreenAnnotator.imageRect(globalRect: globalRect, geometry: geometry)
+            let badge = ScreenAnnotator.badgeSize(index: i + 1, pixelsPerPoint: ppp)
+            let rect = ScreenAnnotator.badgeRect(
+                boxPixelRect: pixelRect, badge: badge,
+                imageWidth: geometry.pixelWidth, imageHeight: geometry.pixelHeight
+            )
+            #expect(rect.minX >= 0, "badge \(i + 1) left edge escaped the image")
+            #expect(rect.minY >= 0, "badge \(i + 1) top edge escaped the image")
+            #expect(rect.maxX <= Double(geometry.pixelWidth), "badge \(i + 1) right edge escaped the image")
+            #expect(rect.maxY <= Double(geometry.pixelHeight), "badge \(i + 1) bottom edge escaped the image")
+        }
+    }
+
+    @Test("drawing at a fractional scale paints inside the image and nowhere else")
+    func drawAtFractionalScale() throws {
+        let image = Self.whiteImage(width: 400, height: 200)
+        let geometry = ScreenAnnotator.Geometry(
+            origin: CGPoint(x: 0, y: 0),
+            pointSize: CGSize(width: 300, height: 200),
+            pixelWidth: 400, pixelHeight: 200
+        )
+        // A box hanging off the right edge must not crash or corrupt the
+        // image; Core Graphics clips it.
+        let out = try #require(ScreenAnnotator.draw(
+            boxes: [
+                .init(index: 1, globalRect: CGRect(x: 30, y: 30, width: 60, height: 40)),
+                .init(index: 2, globalRect: CGRect(x: 280, y: 150, width: 60, height: 60))
+            ],
+            on: image, geometry: geometry
+        ))
+        #expect(out.width == 400 && out.height == 200)
+        // Box 1: left edge at x = 30 * 4/3 = 40 px, y = 30 px.
+        #expect(!Self.isWhite(Self.pixel(out, x: 40, y: 45)))
+        // A far corner stays untouched.
+        #expect(Self.isWhite(Self.pixel(out, x: 200, y: 120)))
+    }
+
     // MARK: - Drawing
 
     @Test("annotating preserves image dimensions and paints the box outline")

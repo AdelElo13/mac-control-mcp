@@ -221,7 +221,7 @@ struct ClipboardRichTests {
 
         let available = try #require(result.available)
         #expect(!available.isEmpty)
-        #expect(available.allSatisfy { $0.bytes >= 0 })
+        #expect(available.allSatisfy { ($0.bytes ?? 0) >= 0 })
         #expect(available.contains { $0.uti == NSPasteboard.PasteboardType.string.rawValue })
         #expect(available.contains { $0.uti == NSPasteboard.PasteboardType.html.rawValue })
         #expect(result.text == "abc")
@@ -255,6 +255,118 @@ struct ClipboardRichTests {
                 kind: .image, inline: false, outputPath: "/etc/mcp-clipboard-should-not-exist.png"
             )
         }
+    }
+
+    // MARK: - Write safety (two-phase write)
+
+    @Test("a rejected write leaves the previous clipboard contents intact")
+    func failedRealWriteRestoresPreviousContents() async throws {
+        let board = Self.privateBoard()
+        // Seed the board with something worth losing.
+        let seeder = ClipboardController(pasteboardName: board)
+        _ = try await seeder.writeRich(.init(text: "precious original", html: "<b>precious</b>"))
+
+        // A write whose REAL writeObjects fails must restore the snapshot.
+        let failing = ClipboardController(pasteboardName: board, writeFailureSimulation: .realWrite)
+        await #expect(throws: ClipboardController.ClipboardError.self) {
+            _ = try await failing.writeRich(.init(text: "replacement that never lands"))
+        }
+
+        let after = try await seeder.readRich(kind: .all, inline: false, outputPath: nil)
+        #expect(after.text == "precious original", "a failed write must not empty the clipboard")
+        #expect(after.html == "<b>precious</b>")
+    }
+
+    @Test("a write rejected during the dry run never touches the real pasteboard")
+    func failedDryRunLeavesBoardUntouched() async throws {
+        let board = Self.privateBoard()
+        let seeder = ClipboardController(pasteboardName: board)
+        _ = try await seeder.writeRich(.init(text: "still here"))
+        let changeCountBefore = await MainActor.run { NSPasteboard(name: board).changeCount }
+
+        let failing = ClipboardController(pasteboardName: board, writeFailureSimulation: .dryRun)
+        await #expect(throws: ClipboardController.ClipboardError.self) {
+            _ = try await failing.writeRich(.init(text: "never gets there"))
+        }
+
+        let after = try await seeder.readRich(kind: .text, inline: false, outputPath: nil)
+        #expect(after.text == "still here")
+        // Not even a clearContents() — the change count must be unmoved.
+        let changeCountAfter = await MainActor.run { NSPasteboard(name: board).changeCount }
+        #expect(changeCountAfter == changeCountBefore,
+                "the dry run must not clear or touch the real pasteboard")
+    }
+
+    // MARK: - Inventory budget
+
+    @Test("type=all reports sizes for small representations and flags bulk ones")
+    func allCapsLargeRepresentations() async throws {
+        // A PNG big enough to be worth not copying twice.
+        let source = try Self.makePNG(width: 1400, height: 1400)
+        defer { try? FileManager.default.removeItem(atPath: source) }
+
+        let clipboard = Self.controller()
+        _ = try await clipboard.writeRich(.init(text: "small text", imagePath: source))
+        let result = try await clipboard.readRich(kind: .all, inline: false, outputPath: nil)
+
+        let available = try #require(result.available)
+        let text = try #require(available.first { $0.uti == NSPasteboard.PasteboardType.string.rawValue })
+        #expect(text.bytes == 10)          // "small text"
+        #expect(text.large == false)
+
+        // Image flavours are never materialised just to be measured.
+        let png = try #require(available.first { $0.uti == NSPasteboard.PasteboardType.png.rawValue })
+        #expect(png.bytes == nil)
+        #expect(png.large)
+        let tiff = try #require(available.first { $0.uti == NSPasteboard.PasteboardType.tiff.rawValue })
+        #expect(tiff.bytes == nil)
+        #expect(tiff.large)
+    }
+
+    @Test("legacy image aliases are treated as bulk too")
+    func legacyImageAliasesAreBulk() {
+        #expect(ClipboardController.isBulkType("Apple PNG pasteboard type"))
+        #expect(ClipboardController.isBulkType("NeXT TIFF v4.0 pasteboard type"))
+        #expect(ClipboardController.isBulkType("com.apple.webarchive"))
+        #expect(ClipboardController.isBulkType("public.jpeg"))
+        #expect(ClipboardController.isBulkType("public.mpeg-4"))
+        #expect(!ClipboardController.isBulkType("public.utf8-plain-text"))
+        #expect(!ClipboardController.isBulkType("public.html"))
+        #expect(!ClipboardController.isBulkType("public.rtf"))
+    }
+
+    // MARK: - Inline without a file
+
+    @Test("inline:true with no output_path returns bytes without writing a temp file")
+    func inlineDoesNotWriteAFile() async throws {
+        let source = try Self.makePNG(width: 24, height: 12)
+        defer { try? FileManager.default.removeItem(atPath: source) }
+
+        let clipboard = Self.controller()
+        _ = try await clipboard.writeRich(.init(imagePath: source))
+        let result = try await clipboard.readRich(kind: .image, inline: true, outputPath: nil)
+
+        let image = try #require(result.image)
+        #expect(image.path == nil, "inline reads must not leave a temp file behind")
+        #expect(image.base64 != nil)
+        #expect(image.width == 24 && image.height == 12)
+    }
+
+    @Test("inline:true WITH an output_path still writes the file")
+    func inlineWithOutputPathWritesFile() async throws {
+        let source = try Self.makePNG(width: 24, height: 12)
+        defer { try? FileManager.default.removeItem(atPath: source) }
+        let destination = NSTemporaryDirectory() + "mcp-clip-out-\(UUID().uuidString).png"
+        defer { try? FileManager.default.removeItem(atPath: destination) }
+
+        let clipboard = Self.controller()
+        _ = try await clipboard.writeRich(.init(imagePath: source))
+        let result = try await clipboard.readRich(kind: .image, inline: true, outputPath: destination)
+
+        let image = try #require(result.image)
+        #expect(image.path == destination)
+        #expect(FileManager.default.fileExists(atPath: destination))
+        #expect(image.base64 != nil)
     }
 
     // MARK: - Tool layer

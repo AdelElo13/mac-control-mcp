@@ -39,8 +39,27 @@ actor ClipboardController {
     /// on their clipboard at all.
     private let pasteboardName: NSPasteboard.Name?
 
-    init(pasteboardName: NSPasteboard.Name? = nil) {
+    /// Test seam for the two-phase write. `NSPasteboard.writeObjects`
+    /// returning false cannot be provoked from outside AppKit, so the
+    /// only way to exercise the "restore the user's clipboard after a
+    /// failed write" path is to inject the failure. Production never sets
+    /// this (`.none`).
+    enum WriteFailureSimulation: Sendable {
+        case none
+        /// Fail the private dry run — the real board must not be touched.
+        case dryRun
+        /// Fail the real write — the pre-write snapshot must be restored.
+        case realWrite
+    }
+
+    private let writeFailureSimulation: WriteFailureSimulation
+
+    init(
+        pasteboardName: NSPasteboard.Name? = nil,
+        writeFailureSimulation: WriteFailureSimulation = .none
+    ) {
         self.pasteboardName = pasteboardName
+        self.writeFailureSimulation = writeFailureSimulation
     }
 
     @MainActor
@@ -74,8 +93,54 @@ actor ClipboardController {
 
     struct TypeInfo: Sendable, Equatable {
         let uti: String
-        let bytes: Int
+        /// nil when the representation was deliberately NOT copied to be
+        /// measured (see `isBulkType`) — `large` says so explicitly.
+        let bytes: Int?
+        /// Bulk payload: an image/video/audio/archive flavour, or a blob
+        /// that turned out to be at least `bulkThresholdBytes`.
+        let large: Bool
+
+        init(uti: String, bytes: Int?, large: Bool) {
+            self.uti = uti
+            self.bytes = bytes
+            self.large = large
+        }
     }
+
+    /// At or above this, a representation is reported as `large`.
+    static let bulkThresholdBytes = 1_048_576
+
+    /// Should `type=all` refuse to copy this representation just to
+    /// measure it?
+    ///
+    /// NSPasteboard has no size API — `data(forType:)` is the only way to
+    /// learn a length, and it copies the whole payload across. For an
+    /// inventory call that is a terrible trade on image/video/archive
+    /// flavours: copying 40 MB of TIFF to print a number stalls the tool
+    /// and buys nothing. Those are reported as `{bytes: null, large: true}`
+    /// and never materialised; ask for `type="image"` to actually get the
+    /// bytes.
+    ///
+    /// Classification is by UTI conformance where the system knows the
+    /// type, plus a small list of legacy AppKit pasteboard names (which
+    /// are not registered UTIs at all, so `UTType` cannot see them).
+    static func isBulkType(_ rawType: String) -> Bool {
+        if legacyBulkTypeNames.contains(rawType) { return true }
+        guard let type = UTType(rawType) else { return false }
+        for bulk in [UTType.image, .movie, .audio, .archive, .pdf, .webArchive, .font]
+        where type.conforms(to: bulk) {
+            return true
+        }
+        return false
+    }
+
+    private static let legacyBulkTypeNames: Set<String> = [
+        "Apple PNG pasteboard type",
+        "Apple PDF pasteboard type",
+        "NeXT TIFF v4.0 pasteboard type",
+        "NeXT Encapsulated PostScript v1.2 pasteboard type",
+        "com.apple.webarchive"
+    ]
 
     struct ImagePayload: Sendable, Equatable {
         /// Absolute path of the PNG written for this read (nil only when
@@ -282,7 +347,12 @@ actor ClipboardController {
             raw.html = pasteboard.data(forType: .html)
             raw.files = Self.fileURLs(pasteboard)
             raw.sizes = types.map { type in
-                TypeInfo(uti: type.rawValue, bytes: pasteboard.data(forType: type)?.count ?? 0)
+                // Bulk flavours are named, not measured — see isBulkType.
+                guard !isBulkType(type.rawValue) else {
+                    return TypeInfo(uti: type.rawValue, bytes: nil, large: true)
+                }
+                let count = pasteboard.data(forType: type)?.count ?? 0
+                return TypeInfo(uti: type.rawValue, bytes: count, large: count >= bulkThresholdBytes)
             }
         }
         return raw
@@ -332,30 +402,37 @@ actor ClipboardController {
         return data as Data
     }
 
-    /// Write the PNG to disk (default: the user-scoped temp dir, which is a
-    /// PathValidator-allowed root) and measure it. A caller-supplied
-    /// `outputPath` goes through `PathValidator` — same policy as every
-    /// other tool that writes a file the client names.
+    /// Materialise the clipboard image for the caller.
+    ///
+    /// A file is written when the caller named an `output_path` (validated
+    /// by `PathValidator`, same policy as every other client-named output)
+    /// or when they did NOT ask for inline bytes — in which case the path
+    /// is the only way to hand the image over, and it goes to the
+    /// user-scoped temp dir. `inline` with no `output_path` writes nothing
+    /// at all: the bytes are already in the response, and a temp file
+    /// nobody asked for is just litter.
     private static func writeImagePayload(
         _ png: Data,
         inline: Bool,
         outputPath: String?
     ) throws -> ImagePayload {
-        let path: String
+        var path: String?
         if let outputPath, !outputPath.isEmpty {
             do {
                 path = try PathValidator.validate(outputPath)
             } catch {
                 throw ClipboardError.invalidPath(String(describing: error))
             }
-        } else {
+        } else if !inline {
             path = NSTemporaryDirectory() + "mcp-clipboard-\(UUID().uuidString).png"
         }
 
-        do {
-            try png.write(to: URL(fileURLWithPath: path), options: .atomic)
-        } catch {
-            throw ClipboardError.invalidPath("Could not write the clipboard image to '\(path)': \(error.localizedDescription)")
+        if let path {
+            do {
+                try png.write(to: URL(fileURLWithPath: path), options: .atomic)
+            } catch {
+                throw ClipboardError.invalidPath("Could not write the clipboard image to '\(path)': \(error.localizedDescription)")
+            }
         }
 
         var width = 0
@@ -420,11 +497,68 @@ actor ClipboardController {
         let images = imageRepresentations
         let urls = fileURLs
 
+        let plan = WritePlan(text: text, html: html, rtf: rtf, images: images, urls: urls)
         let name = pasteboardName
-        let outcome: WriteResult = await MainActor.run {
-            let pasteboard = Self.board(name)
-            pasteboard.clearContents()
+        let simulation = writeFailureSimulation
 
+        let outcome: Result<WriteResult, ClipboardError> = await MainActor.run {
+            let pasteboard = Self.board(name)
+
+            // PHASE 1 — dry run on a throwaway private pasteboard.
+            //
+            // The old code called clearContents() on the REAL board first
+            // and only then discovered whether writeObjects succeeded: a
+            // rejected write left the user with an EMPTY clipboard and
+            // their previous contents gone for good. Proving the
+            // representations are acceptable on a scratch board first
+            // means the user's clipboard is never destroyed by a write
+            // that was never going to land.
+            let scratch = NSPasteboard(name: NSPasteboard.Name("com.mac-control-mcp.precheck.\(UUID().uuidString)"))
+            defer { scratch.releaseGlobally() }
+            let probe = plan.makeObjects()
+            guard !probe.objects.isEmpty else { return .failure(.nothingToWrite) }
+            scratch.clearContents()
+            let probeAccepted = simulation == .dryRun ? false : scratch.writeObjects(probe.objects)
+            guard probeAccepted else { return .failure(.pasteboardRejectedWrite) }
+
+            // PHASE 2 — snapshot, then the real write.
+            //
+            // An NSPasteboardItem belongs to the pasteboard it was
+            // written to, so phase 2 builds a FRESH set of objects from
+            // the same bytes rather than re-writing the probe's.
+            let snapshot = PasteboardSnapshot.capture(from: pasteboard)
+            let real = plan.makeObjects()
+            pasteboard.clearContents()
+            let accepted = simulation == .realWrite ? false : pasteboard.writeObjects(real.objects)
+            guard accepted else {
+                // Put the user's clipboard back exactly as it was.
+                PasteboardSnapshot.restore(snapshot, to: pasteboard)
+                return .failure(.pasteboardRejectedWrite)
+            }
+            return .success(WriteResult(
+                wrote: real.wrote,
+                types: pasteboard.types?.map(\.rawValue) ?? []
+            ))
+        }
+
+        switch outcome {
+        case .success(let result): return result
+        case .failure(let error): throw error
+        }
+    }
+
+    /// The representations to publish, kept as plain data so a fresh set
+    /// of `NSPasteboardItem`s can be minted per pasteboard (an item may
+    /// only ever be written to one).
+    private struct WritePlan: Sendable {
+        let text: String?
+        let html: String?
+        let rtf: String?
+        let images: [(NSPasteboard.PasteboardType, Data)]
+        let urls: [URL]
+
+        @MainActor
+        func makeObjects() -> (objects: [NSPasteboardWriting], wrote: [String]) {
             var wrote: [String] = []
             var objects: [NSPasteboardWriting] = []
 
@@ -456,14 +590,8 @@ actor ClipboardController {
                 objects.append(contentsOf: urls.map { $0 as NSURL })
                 wrote.append("files")
             }
-
-            let ok = objects.isEmpty ? false : pasteboard.writeObjects(objects)
-            let types = pasteboard.types?.map(\.rawValue) ?? []
-            return WriteResult(wrote: ok ? wrote : [], types: types)
+            return (objects, wrote)
         }
-
-        guard !outcome.wrote.isEmpty else { throw ClipboardError.pasteboardRejectedWrite }
-        return outcome
     }
 
     private static func encodeTIFF(_ image: CGImage) -> Data? {

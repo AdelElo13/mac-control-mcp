@@ -193,7 +193,7 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "clipboard_read",
-            description: "Read the clipboard. type=text (default) returns the plain-text flattening; rtf / html return those flavours as strings; image writes the pasteboard image as a PNG and returns {path, width, height, bytes} (inline=true adds base64); files returns the file-URL paths; all inventories every available UTI with its byte size (plus text/rtf/html/files when present, but no PNG — ask for type=image for that). Always returns the raw `types` list.",
+            description: "Read the clipboard. type=text (default) returns the plain-text flattening; rtf / html return those flavours as strings; image returns {width, height, bytes} plus a PNG written to output_path or the temp dir — with inline=true and no output_path it returns base64 only and writes no file; files returns the file-URL paths; all inventories every available UTI as {uti, bytes, large} (bulk image/video/archive flavours report bytes=null, large=true instead of being copied just to be measured — ask for type=image to get those bytes). Always returns the raw `types` list.",
             inputSchema: schema(
                 properties: [
                     "type": .object([
@@ -713,7 +713,13 @@ extension ToolRegistry {
             }
             if let available = result.available {
                 payload["available"] = .array(available.map { info in
-                    .object(["uti": .string(info.uti), "bytes": .number(Double(info.bytes))])
+                    .object([
+                        "uti": .string(info.uti),
+                        // null == deliberately not copied to be measured
+                        // (image/video/archive flavours): `large` says so.
+                        "bytes": info.bytes.map { JSONValue.number(Double($0)) } ?? .null,
+                        "large": .bool(info.large)
+                    ])
                 })
             }
             return successResult("Read clipboard (\(result.kind)).", payload)
