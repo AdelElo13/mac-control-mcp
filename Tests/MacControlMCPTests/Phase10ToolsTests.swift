@@ -5,7 +5,7 @@ import Foundation
 @Suite("Phase 10 tools — complete Mac surface", .serialized)
 struct Phase10ToolsTests {
 
-    @Test("all 13 phase 10 tools are registered")
+    @Test("all phase 10 tools are registered")
     func phase10Definitions() {
         let registry = ToolRegistry(accessibility: AccessibilityController())
         let names = Set(registry.toolDefinitions.map { $0.name })
@@ -20,10 +20,9 @@ struct Phase10ToolsTests {
             // Browser DOM
             "browser_dom_tree", "browser_visible_text", "browser_iframes",
             // Apple native
-            "foundation_models_generate",
             "list_app_intents", "invoke_app_intent"
         ]
-        #expect(expected.count == 14)
+        #expect(expected.count == 13)
         #expect(expected.isSubset(of: names))
     }
 
@@ -84,13 +83,6 @@ struct Phase10ToolsTests {
     }
 
     // MARK: - Apple native
-
-    @Test("foundation_models_generate requires prompt")
-    func fmMissing() async {
-        let r = await ToolRegistry(accessibility: AccessibilityController())
-            .callTool(name: "foundation_models_generate", arguments: [:])
-        #expect(r.isError == true)
-    }
 
     @Test("list_app_intents runs without error (returns whatever apps expose Intents)")
     func listAppIntentsSmoke() async {

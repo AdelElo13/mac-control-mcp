@@ -6,7 +6,7 @@
 [![Notarized](https://img.shields.io/badge/signed-Developer%20ID%20%2B%20Notarized-success.svg)](#install)
 [![MCP Registry](https://img.shields.io/badge/MCP%20Registry-io.github.AdelElo13%2Fmac--control--mcp-7B68EE.svg)](https://registry.modelcontextprotocol.io/)
 
-Native Swift MCP server for full macOS automation. <!-- tool-count -->143<!-- /tool-count --> tools in one signed `.app` bundle — no Python, no Node runtime, no Electron. Full list with parameters: [docs/TOOLS.md](docs/TOOLS.md).
+Native Swift MCP server for full macOS automation. <!-- tool-count -->142<!-- /tool-count --> tools in one signed `.app` bundle — no Python, no Node runtime, no Electron. Full list with parameters: [docs/TOOLS.md](docs/TOOLS.md).
 
 <p align="center">
   <img src="docs/demo.gif" width="720" alt="mac-control-mcp driving Safari: open tab, type query, capture window, OCR, Spotlight search — all via MCP stdio">
@@ -116,7 +116,7 @@ from the tool registry so it can't drift), see **[docs/TOOLS.md](docs/TOOLS.md)*
 | Voice & recording | `speech_to_text`, `text_to_speech`, `audio_record`, `record_screen` |
 | Undo | `undo_last_action`, `undo_peek` |
 
-<!-- tool-count -->143<!-- /tool-count --> tools total — see [docs/TOOLS.md](docs/TOOLS.md) for the complete, generated list.
+<!-- tool-count -->142<!-- /tool-count --> tools total — see [docs/TOOLS.md](docs/TOOLS.md) for the complete, generated list.
 
 ### Which tool when
 

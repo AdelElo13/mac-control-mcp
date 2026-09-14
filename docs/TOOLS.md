@@ -7,7 +7,7 @@ running server returns from `tools/list`. **Do not hand-edit.** Regenerate with:
 UPDATE_TOOL_DOCS=1 swift test --filter ToolDocsDriftTests
 ```
 
-<!-- tool-count -->143<!-- /tool-count --> tools total.
+<!-- tool-count -->142<!-- /tool-count --> tools total.
 
 | Tool | Description | Required params | Optional params |
 |---|---|---|---|
@@ -62,7 +62,6 @@ UPDATE_TOOL_DOCS=1 swift test --filter ToolDocsDriftTests
 | `focus_window` | Bring a window to the front by pid + window index (from list_windows). | `index`, `pid` | — |
 | `focused_app` | Get metadata for NSWorkspace.shared.frontmostApplication. | — | — |
 | `force_quit_app` | Force-terminate an app by PID or bundle ID. Equivalent to quit_app with force=true. | — | `bundle_id`, `pid` |
-| `foundation_models_generate` | Generate text via Apple's Foundation Models framework (macOS Tahoe 26+, Apple Intelligence). On-device, free, offline. Gracefully reports 'not available' when framework missing. | `prompt` | `system` |
 | `get_element_attributes` | Read one or more AX attributes for a cached element ID. Pass names=[] to list available attribute names. | `element_id` | `names` |
 | `get_ui_tree` | Walk the full accessibility tree of a process and return every node (including containers and static text) with child indices and stable element IDs for follow-up calls. Bounded by a 5 s budget and node_cap nodes (= element-cache capacity, 2000 by default, so every returned id stays valid); node_cap_reached=true means the tree was cut off — lower max_depth or use find_elements. The heaviest AX tool (tens of KB for a browser window) — when you know what you are looking for, find_elements / query_elements are far smaller and also return ids. | `pid` | `max_depth` |
 | `ground` | Mixture-of-grounding: find screen coordinates for a target text. Strategy: 'ax' (fastest, structured), 'ocr' (OCRs the target app's own window — works on Electron/Canvas and on windows that are covered by other windows), 'auto' (AX first, OCR fallback). Returns (x,y) plus the match's bounds, element_id and max_depth_used, with confidence 0..1 + candidate list. | `pid`, `target` | `max_depth`, `strategy` |
@@ -92,7 +91,7 @@ UPDATE_TOOL_DOCS=1 swift test --filter ToolDocsDriftTests
 | `mouse_event` | Low-level mouse event: move, click, double_click, triple_click. Use for precise positional input when AX element-based click is not possible. Always lands on the frontmost app — pass expected_app/expected_window to abort instead of clicking the wrong window if focus changed. Prefer perform_element_action (AXPress) when you already have an element handle — it does not depend on focus. | `action`, `x`, `y` | `button`, `expected_app`, `expected_window` |
 | `move_window` | Move a window to an absolute (x,y) position in global coordinates. | `index`, `pid`, `x`, `y` | — |
 | `move_window_to_display` | Move a window to the specified display (by display_index), preserving its size. | `display_index`, `index`, `pid` | — |
-| `network_info` | Active Wi-Fi SSID + interface + every network interface's IP/MAC address. | — | — |
+| `network_info` | Active Wi-Fi interface + every network interface's IP/MAC address. The Wi-Fi SSID itself ('wifiSSID') is only included when Location Services is granted to the responsible process (same requirement as wifi_scan) — otherwise it is null and 'ssids_redacted':true names the reason via 'location_status'. | — | — |
 | `night_shift_set` | Turn Night Shift on/off/toggle. Requires 'nightlight' (brew install smudge/smudge/nightlight) — returns a hint when missing. | `state` | — |
 | `notification_center_toggle` | Open/close Notification Center (right-edge panel). Uses Fn+F12 via System Events. | — | — |
 | `ocr_screen` | Capture the screen (or a region) and run OCR. Returns joined text plus per-block coordinates and confidence. Coordinates are in IMAGE PIXELS matching image_width/image_height (i.e. backing resolution — 2x point size on Retina), for annotating/cropping the returned image. For click-ready screen points, use the `ground` tool with strategy 'ocr' instead. Speed/size knobs (defaults = most accurate): level=fast (~10x faster than accurate, weaker on small or low-contrast text); language_correction=false (~2x faster at accurate level; raw glyphs, no dictionary fix-ups — good for code, IDs, URLs); include_blocks=false returns only `text` (much smaller response); max_blocks caps the blocks array. | — | `height`, `include_blocks`, `keep_image`, `language_correction`, `languages`, `level`, `max_blocks`, `width`, `x`, `y` |

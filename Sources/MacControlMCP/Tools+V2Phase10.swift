@@ -10,8 +10,7 @@ import Foundation
 //                    record_screen
 //   Browser DOM layers: browser_dom_tree, browser_visible_text,
 //                       browser_iframes
-//   Apple native: foundation_models_generate, list_app_intents,
-//                 invoke_app_intent
+//   Apple native: list_app_intents, invoke_app_intent
 
 extension ToolRegistry {
     static let definitionsV2Phase10: [MCPToolDefinition] = [
@@ -184,22 +183,6 @@ extension ToolRegistry {
 
         // MARK: Apple native
 
-        MCPToolDefinition(
-            name: "foundation_models_generate",
-            description: """
-                Generate text via Apple's Foundation Models framework \
-                (macOS Tahoe 26+, Apple Intelligence). On-device, free, \
-                offline. Gracefully reports 'not available' when framework \
-                missing.
-                """,
-            inputSchema: schema(
-                properties: [
-                    "prompt": .object(["type": .string("string")]),
-                    "system": .object(["type": .string("string")])
-                ],
-                required: ["prompt"]
-            )
-        ),
         MCPToolDefinition(
             name: "list_app_intents",
             description: """
@@ -415,19 +398,6 @@ extension ToolRegistry {
     }
 
     // Apple native
-
-    func callFoundationModelsGenerate(_ arguments: [String: JSONValue]) async -> ToolCallResult {
-        guard let prompt = arguments["prompt"]?.stringValue, !prompt.isEmpty else {
-            return invalidArgument("foundation_models_generate requires 'prompt'.")
-        }
-        let system = arguments["system"]?.stringValue
-        let r = await appleNative.foundationModelsGenerate(prompt: prompt, system: system)
-        return r.ok
-            ? successResult("generated \(r.text?.count ?? 0) chars",
-                            ["ok": .bool(true), "result": encodeAsJSONValue(r)])
-            : errorResult(r.hint ?? r.error ?? "foundation_models_generate failed",
-                          ["ok": .bool(false), "result": encodeAsJSONValue(r)])
-    }
 
     func callListAppIntents() async -> ToolCallResult {
         let r = await appleNative.listAppIntents()

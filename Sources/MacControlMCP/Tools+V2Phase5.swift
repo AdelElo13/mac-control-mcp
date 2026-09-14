@@ -439,7 +439,17 @@ extension ToolRegistry {
         }
         let list = await displays.list()
         guard idx < list.count else {
-            return errorResult("display_index out of range — found \(list.count) display(s).", ["ok": .bool(false)])
+            let validRange = list.isEmpty ? "(no displays detected)" : "0..\(list.count - 1)"
+            let message = "display_index \(idx) is out of range — this Mac has \(list.count) display(s), " +
+                "valid indices: \(validRange)."
+            return errorResult(message, [
+                "ok": .bool(false),
+                "error": .string(message),
+                "error_code": .string("no_such_display"),
+                "display_index": .number(Double(idx)),
+                "display_count": .number(Double(list.count)),
+                "valid_display_indices": .string(validRange)
+            ])
         }
         let rawPath = arguments["output_path"]?.stringValue
         let outputPath: String?

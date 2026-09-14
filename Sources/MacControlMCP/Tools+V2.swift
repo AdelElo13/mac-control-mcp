@@ -173,6 +173,7 @@ extension ToolRegistry {
         guard let pid = parsePID(arguments["pid"]) else {
             return invalidArgument("get_ui_tree requires a positive integer pid.")
         }
+        if let dead = noSuchProcessResult(pid: pid, tool: "get_ui_tree") { return dead }
         let maxDepth = max(1, min(arguments["max_depth"]?.intValue ?? 12, 64))
         // Node cap = element-cache capacity, so every returned node gets
         // a live id. (Before v0.8.3 the walk allowed 5000 nodes but the
@@ -208,6 +209,7 @@ extension ToolRegistry {
         guard let pid = parsePID(arguments["pid"]) else {
             return invalidArgument("find_elements requires a positive integer pid.")
         }
+        if let dead = noSuchProcessResult(pid: pid, tool: "find_elements") { return dead }
         let role = arguments["role"]?.stringValue
         let title = arguments["title"]?.stringValue
         let value = arguments["value"]?.stringValue
@@ -248,7 +250,7 @@ extension ToolRegistry {
         let maxDepth = max(1, min(arguments["max_depth"]?.intValue ?? 32, 64))
         let limit = max(1, min(arguments["limit"]?.intValue ?? 200, 500))
 
-        let matches = await accessibility.queryElements(
+        let result = await accessibility.queryElements(
             pid: pid,
             rolePattern: rolePattern,
             titlePattern: titlePattern,
@@ -256,6 +258,7 @@ extension ToolRegistry {
             maxDepth: maxDepth,
             limit: limit
         )
+        let matches = result.matches
 
         var encoded: [JSONValue] = []
         for (element, info) in matches {
@@ -269,6 +272,20 @@ extension ToolRegistry {
             "count": .number(Double(matches.count)),
             "elements": .array(encoded)
         ]
+        // v0.9 (A-13): surface exactly which pattern(s) failed to
+        // compile as regex and fell back to substring matching, so a
+        // typo'd pattern isn't indistinguishable from a genuine no-match.
+        if !result.invalidPatterns.isEmpty {
+            payload["regex_invalid"] = .bool(true)
+            payload["matching"] = .string("substring")
+            payload["invalid_patterns"] = .array(result.invalidPatterns.map {
+                .object([
+                    "field": .string($0.field),
+                    "pattern": .string($0.pattern),
+                    "error": .string($0.error)
+                ])
+            })
+        }
         if let hint = await axEmptyHint(pid: pid, whenEmpty: matches.isEmpty) {
             payload["ax_tree_hint"] = .string(hint)
         }

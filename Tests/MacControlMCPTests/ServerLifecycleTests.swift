@@ -17,7 +17,6 @@ struct ServerLifecycleTests {
     @Test("tool timeout honours defaults, per-tool limits, requested durations and the env override")
     func toolTimeoutLimits() {
         #expect(ToolTimeouts.limit(for: "list_windows", arguments: [:], environment: [:]) == ToolTimeouts.defaultLimit)
-        #expect(ToolTimeouts.limit(for: "foundation_models_generate", arguments: [:], environment: [:]) == 180)
         #expect(ToolTimeouts.limit(for: "record_screen", arguments: ["seconds": .number(120)], environment: [:]) == 135)
         #expect(ToolTimeouts.limit(for: "wait_for_app", arguments: ["timeout_seconds": .number(5)], environment: [:]) == ToolTimeouts.defaultLimit)
         let env = [ToolTimeouts.environmentKey: "30"]

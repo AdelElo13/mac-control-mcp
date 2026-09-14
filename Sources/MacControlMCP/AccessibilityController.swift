@@ -589,8 +589,31 @@ actor AccessibilityController {
         return matches
     }
 
+    /// v0.9 (A-13): which of `role_regex`/`title_regex`/`value_regex` was
+    /// not a valid regex, and why. Non-empty when at least one pattern
+    /// silently fell back to case-insensitive substring matching —
+    /// previously that fallback was invisible, so a typo'd/unclosed
+    /// pattern and a genuine no-match both came back as plain
+    /// `{ok:true, count:0}`.
+    struct InvalidPattern: Sendable {
+        let field: String
+        let pattern: String
+        let error: String
+    }
+
+    private static func compileRegex(_ pattern: String?, field: String, invalid: inout [InvalidPattern]) -> NSRegularExpression? {
+        guard let pattern, !pattern.isEmpty else { return nil }
+        do {
+            return try NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+        } catch {
+            invalid.append(InvalidPattern(field: field, pattern: pattern, error: error.localizedDescription))
+            return nil
+        }
+    }
+
     /// Regex-aware search. Matches on role/title/value with case-insensitive
-    /// regex semantics. Invalid regex falls back to literal substring.
+    /// regex semantics. Invalid regex falls back to literal substring —
+    /// `invalidPatterns` in the result says exactly when that happened.
     func queryElements(
         pid: pid_t,
         rolePattern: String?,
@@ -598,10 +621,11 @@ actor AccessibilityController {
         valuePattern: String?,
         maxDepth: Int = 32,
         limit: Int = 200
-    ) -> [(AXUIElement, ElementInfo)] {
-        let roleRegex = rolePattern.flatMap { try? NSRegularExpression(pattern: $0, options: .caseInsensitive) }
-        let titleRegex = titlePattern.flatMap { try? NSRegularExpression(pattern: $0, options: .caseInsensitive) }
-        let valueRegex = valuePattern.flatMap { try? NSRegularExpression(pattern: $0, options: .caseInsensitive) }
+    ) -> (matches: [(AXUIElement, ElementInfo)], invalidPatterns: [InvalidPattern]) {
+        var invalidPatterns: [InvalidPattern] = []
+        let roleRegex = Self.compileRegex(rolePattern, field: "role_regex", invalid: &invalidPatterns)
+        let titleRegex = Self.compileRegex(titlePattern, field: "title_regex", invalid: &invalidPatterns)
+        let valueRegex = Self.compileRegex(valuePattern, field: "value_regex", invalid: &invalidPatterns)
 
         // Inline recurse for the same reason documented in findElements:
         // the private `walk(...)` helper's inout-visited-set + capturing-
@@ -644,7 +668,7 @@ actor AccessibilityController {
         }
 
         recurse(element: root, depth: 0)
-        return matches
+        return (matches, invalidPatterns)
     }
 
     /// List every AX attribute name exposed by this element.

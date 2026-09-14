@@ -372,6 +372,29 @@ actor AppleAppsController {
         public let list: String?
     }
 
+    /// v0.9 review fix (A-7): sending Apple Events to Reminders.app is
+    /// gated by the **Automation** TCC bucket, not by EventKit's
+    /// `kTCCServiceReminders` — those are independently toggled. An
+    /// earlier version of this fix pre-blocked `createReminder`/
+    /// `listReminders` on `remindersPermissionStatusString()`, which
+    /// wrongly refused a user who had granted Automation but never
+    /// touched EventKit reminders (still `not_determined`/`denied`
+    /// there) even though the AppleScript call would have worked fine.
+    /// So: never pre-block. Run the script, and classify whatever it
+    /// actually failed with via `AppleScriptErrorClassifier` — the same
+    /// approach `BrowserErrorClassifier` uses for browser AppleScript
+    /// calls. `ok:true, reminders:[]` is only ever returned after the
+    /// script itself succeeded.
+    private func classifiedFailure<T: Codable & Sendable>(stderr: String) -> Result<T> {
+        let trimmed = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        let c = AppleScriptErrorClassifier.classify(stderr: trimmed, appName: "Reminders")
+        return Result(ok: false, data: nil, error: trimmed.isEmpty ? c.error : trimmed, errorPayload: [
+            "error_code": .string(c.errorCode),
+            "pane": c.pane.map(JSONValue.string) ?? .null,
+            "hint": c.hint.map(JSONValue.string) ?? .null
+        ])
+    }
+
     /// Create a reminder in Reminders.app. Optional `due` and `list`.
     func createReminder(title: String, dueISO: String?, list: String?) -> Result<Reminder> {
         func esc(_ s: String) -> String {
@@ -394,8 +417,7 @@ actor AppleAppsController {
         """
         let r = OsascriptRunner.run(script)
         guard r.ok else {
-            return Result(ok: false, data: nil,
-                          error: r.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+            return classifiedFailure(stderr: r.stderr)
         }
         return Result(ok: true, data: Reminder(title: title, dueISO: dueISO, list: list), error: nil)
     }
@@ -406,9 +428,19 @@ actor AppleAppsController {
         public let list: String
     }
 
+    /// v0.9 (A-7): carries the list names alongside the (possibly
+    /// filtered/capped) reminders, so callers can tell "no reminders
+    /// anywhere" (`lists` non-empty, `reminders` empty) apart from
+    /// "no lists at all" — both of which used to render as the same
+    /// bare `reminders:[]`.
+    public struct ReminderListResult: Codable, Sendable {
+        public let reminders: [ReminderSummary]
+        public let lists: [String]
+    }
+
     /// List reminders across all lists. Optional `includeCompleted` — default
     /// false so agents see only actionable items.
-    func listReminders(includeCompleted: Bool, limit: Int) -> Result<[ReminderSummary]> {
+    func listReminders(includeCompleted: Bool, limit: Int) -> Result<ReminderListResult> {
         let cap = max(1, min(limit, 200))
         let filter = includeCompleted ? "" : "whose completed is false"
         // `total` caps globally — the old `if n > cap` capped per list, so a
@@ -419,8 +451,12 @@ actor AppleAppsController {
         let script = """
         tell application "Reminders"
             set out to {}
-            set total to 0
+            set names to {}
             set ls to lists
+            repeat with l in ls
+                set end of names to (name of l as string)
+            end repeat
+            set total to 0
             repeat with l in ls
                 if total ≥ \(cap) then exit repeat
                 try
@@ -437,16 +473,23 @@ actor AppleAppsController {
             end repeat
             set AppleScript's text item delimiters to "§§REC§§"
             set outStr to out as string
+            set namesStr to names as string
             set AppleScript's text item delimiters to ""
-            return outStr
+            return namesStr & "§§LISTS_END§§" & outStr
         end tell
         """
         let r = OsascriptRunner.run(script)
         guard r.ok else {
-            return Result(ok: false, data: nil,
-                          error: r.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+            return classifiedFailure(stderr: r.stderr)
         }
-        let lines = r.stdout
+        let sections = r.stdout.components(separatedBy: "§§LISTS_END§§")
+        let namesSection = sections.first ?? ""
+        let recordsSection = sections.count > 1 ? sections[1] : ""
+        let listNames = namesSection
+            .components(separatedBy: "§§REC§§")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        let lines = recordsSection
             .components(separatedBy: "§§REC§§")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
@@ -459,7 +502,11 @@ actor AppleAppsController {
                 list: parts[0]
             )
         }
-        return Result(ok: true, data: reminders, error: nil)
+        return Result(
+            ok: true,
+            data: ReminderListResult(reminders: reminders, lists: listNames),
+            error: nil
+        )
     }
 
     // MARK: - Contacts
