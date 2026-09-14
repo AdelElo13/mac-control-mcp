@@ -34,9 +34,20 @@ extension ToolRegistry {
                 Returns (x,y) plus the match's bounds, element_id and \
                 max_depth_used, with confidence 0..1 + candidate list.
                 Pass window_id (from list_windows) to scope BOTH strategies \
-                to one window: AX candidates outside that window's frame are \
-                dropped and the OCR pass captures exactly that window. \
-                window_id takes precedence — pid is then ignored.
+                to one window: the AX search is rooted at that window's \
+                Accessibility window and the OCR pass captures exactly that \
+                window. window_id takes precedence — pid is then ignored. \
+                With a window_id the response carries `ax_scope`: \
+                "window_subtree" when AX ran inside that window, or "none" \
+                when the window has NO attributable Accessibility window \
+                (Chrome browser windows, parts of Electron, minimized \
+                windows, or several indistinguishable AX windows) — then \
+                the AX strategy is SKIPPED, `ax_skipped_reason` says why \
+                ("no_ax_window" / "ambiguous_window"), and only OCR runs; \
+                AX elements are never taken from an app-wide walk, because \
+                they could belong to an overlapping window of the same \
+                app. strategy="ax" on such a window fails with that reason \
+                as error_code (plus `candidates` when ambiguous).
                 """,
             inputSchema: schema(
                 properties: withWindowIDProperty([
@@ -266,7 +277,22 @@ extension ToolRegistry {
             // caller does not have to know both spellings (A-2 / A-14 / D-4).
             "max_depth_used": .number(Double(r.maxDepthUsed))
         ]
-        if let scope { payload.merge(scope.payload) { existing, _ in existing } }
+        if let scope {
+            payload.merge(scope.payload) { existing, _ in existing }
+            // Codex r2 #2: say whether AX really ran inside this window
+            // ("window_subtree") or was withheld ("none") because the
+            // window has no attributable AXWindow — and why. An agent
+            // that sees "none" knows the OCR hit is all it will get and
+            // should not retry with strategy="ax".
+            payload["ax_scope"] = .string(scope.axScope)
+            if let reason = r.axSkippedReason {
+                payload["ax_skipped_reason"] = .string(reason)
+            }
+            if let candidates = scope.ambiguousCandidates {
+                payload["candidate_count"] = .number(Double(candidates.count))
+                payload["candidates"] = .array(candidates.map { .object($0.payload) })
+            }
+        }
         if let id = r.elementId { payload["element_id"] = .string(id) }
         if let b = r.bounds { payload["bounds"] = encodeAsJSONValue(b) }
         if let c = r.errorCode { payload["error_code"] = .string(c) }
