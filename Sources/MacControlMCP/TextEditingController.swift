@@ -49,6 +49,10 @@ actor TextEditingController {
         /// The element is alive but is not a text element, or refuses the
         /// write (read-only AXSelectedText).
         case notSupported(String)
+        /// The caller asked for a range the document does not have. A caller
+        /// mistake, not an element limitation — surfaced separately so the
+        /// "use type_text instead" hint is not attached to it.
+        case invalidRange(String)
         /// AX returned an error we do not classify further.
         case axError(Int32, String)
 
@@ -57,6 +61,7 @@ actor TextEditingController {
             case .permissionMissing: return "permission_missing"
             case .notFound:          return "not_found"
             case .notSupported:      return "not_supported"
+            case .invalidRange:      return "invalid_argument"
             case .axError:           return "ax_error"
             }
         }
@@ -67,7 +72,7 @@ actor TextEditingController {
                 return "Accessibility permission is not granted to this process."
             case .notFound:
                 return "The target element is gone (stale element_id, or the app has no focused element)."
-            case .notSupported(let detail):
+            case .notSupported(let detail), .invalidRange(let detail):
                 return detail
             case .axError(let status, let detail):
                 return "\(detail) (AXError=\(status))"
@@ -82,6 +87,8 @@ actor TextEditingController {
                 return "Re-resolve the element with find_elements/query_elements (ids expire after 5 minutes), or pass pid to target the app's currently focused element."
             case .notSupported:
                 return "This element does not accept AX text edits. Focus it and use type_text (clipboard/keys strategy) instead, or set the whole value with set_element_attribute(AXValue)."
+            case .invalidRange:
+                return "Read the current length first (text_get_selection reports number_of_characters) and clamp the range to it."
             case .axError:
                 return nil
             }
@@ -165,6 +172,19 @@ actor TextEditingController {
         return nil
     }
 
+    /// AppKit answers AXInsertionPointLineNumber with a sentinel (Int.max, or
+    /// a negative value) when there is no insertion point — e.g. while a
+    /// non-empty selection is active. Verified live against TextEdit on
+    /// 2026-09-14: a 3-character selection reported 9223372036854775807.
+    /// Report "unknown" rather than passing a sentinel off as a line number.
+    static func sanitizeLineNumber(_ raw: Int?) -> Int? {
+        guard let raw, raw >= 0, raw <= maxPlausibleLineNumber else { return nil }
+        return raw
+    }
+
+    /// No real document has a billion lines; anything above this is a sentinel.
+    static let maxPlausibleLineNumber = 1_000_000_000
+
     /// Character-accurate truncation for `text_get_value`.
     static func truncate(_ text: String, maxChars: Int?) -> (text: String, truncated: Bool) {
         guard let maxChars, text.count > maxChars else { return (text, false) }
@@ -198,7 +218,9 @@ actor TextEditingController {
             range: range(element, kAXSelectedTextRangeAttribute as String),
             numberOfCharacters: integer(element, kAXNumberOfCharactersAttribute as String),
             visibleRange: range(element, kAXVisibleCharacterRangeAttribute as String),
-            insertionPointLine: integer(element, kAXInsertionPointLineNumberAttribute as String)
+            insertionPointLine: Self.sanitizeLineNumber(
+                integer(element, kAXInsertionPointLineNumberAttribute as String)
+            )
         )
     }
 
@@ -209,8 +231,8 @@ actor TextEditingController {
             throw .notSupported("Element does not expose AXSelectedTextRange, so it has no addressable caret.")
         }
         let index = selected.location
-        let line = lineForIndex(element, index: index)
-            ?? integer(element, kAXInsertionPointLineNumberAttribute as String)
+        let line = Self.sanitizeLineNumber(lineForIndex(element, index: index))
+            ?? Self.sanitizeLineNumber(integer(element, kAXInsertionPointLineNumberAttribute as String))
 
         // A zero-length range is the true caret rect, but several apps answer
         // an empty rect (or nothing) for it — fall back to the bounds of the
@@ -257,7 +279,7 @@ actor TextEditingController {
             length: length,
             numberOfCharacters: integer(element, kAXNumberOfCharactersAttribute as String)
         ) {
-            throw .notSupported(reason)
+            throw .invalidRange(reason)
         }
         guard let value = Self.makeRangeValue(location: location, length: length) else {
             throw .axError(AXError.illegalArgument.rawValue, "Could not build an AXValue for the range.")

@@ -99,6 +99,20 @@ struct TextEditingTests {
         #expect(TextEditingController.validateRange(location: -1, length: 0, numberOfCharacters: nil) != nil)
     }
 
+    // MARK: - Line-number sanity
+
+    /// Live probe, TextEdit 39746 (2026-09-14): with a 3-character selection
+    /// AXInsertionPointLineNumber came back as 9223372036854775807 (Int.max) —
+    /// AppKit's "no insertion point" sentinel. Reporting that verbatim as a
+    /// line number is worse than reporting nothing.
+    @Test("an out-of-range insertion point line is reported as unknown, not as Int.max")
+    func sanitizesLineNumber() {
+        #expect(TextEditingController.sanitizeLineNumber(Int.max) == nil)
+        #expect(TextEditingController.sanitizeLineNumber(-1) == nil)
+        #expect(TextEditingController.sanitizeLineNumber(0) == 0)
+        #expect(TextEditingController.sanitizeLineNumber(37) == 37)
+    }
+
     // MARK: - Value truncation
 
     @Test("truncate reports the untruncated value when it fits")
@@ -220,6 +234,16 @@ struct TextEditingTests {
         )
         #expect(r.isError == true)
         #expect(r.structuredContent.objectValue?["error_code"]?.stringValue == "invalid_argument")
+    }
+
+    /// Live probe (2026-09-14): a location past the end of the document came
+    /// back as `not_supported` + "use type_text instead", which blames the
+    /// element for what is a caller mistake.
+    @Test("an out-of-bounds range is an argument error, not not_supported")
+    func outOfBoundsIsArgumentError() {
+        let failure = TextEditingController.Failure.invalidRange("location 9999 is past the end.")
+        #expect(failure.code == "invalid_argument")
+        #expect(failure.hint?.contains("type_text") != true)
     }
 
     @Test("an unknown element_id reports not_found, not a crash")
