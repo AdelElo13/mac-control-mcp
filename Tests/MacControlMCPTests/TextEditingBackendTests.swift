@@ -371,6 +371,23 @@ struct TextEditingBackendTests {
         }
     }
 
+    /// Live observation (2026-09-14, TextEdit on a locked session): an app
+    /// that is not frontmost answers AXFocusedUIElement with the
+    /// AXApplication, and the pid path then landed on it.
+    @Test("an app element from the pid path reports no_focused_element, not not_text_element")
+    func focusedElementIsTheApp() async {
+        let element = FakeElement(role: "AXApplication", attributeNames: ["AXRole", "AXWindows"])
+        let controller = Self.controller(element)
+        do {
+            _ = try await controller.selection(of: Self.dummyElement())
+            Issue.record("expected not_supported")
+        } catch {
+            #expect(error.code == "not_supported")
+            #expect(error.reason == "no_focused_element")
+            #expect(error.hint?.contains("activate_app") == true)
+        }
+    }
+
     @Test("a non-text element reports not_text_element")
     func nonTextElement() async {
         let element = FakeElement(role: "AXButton", attributeNames: ["AXRole", "AXTitle"])

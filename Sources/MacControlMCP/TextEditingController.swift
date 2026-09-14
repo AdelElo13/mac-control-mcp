@@ -121,6 +121,8 @@ actor TextEditingController {
                     return "The element accepted the AXSelectedTextRange write but did not apply it — nothing was typed. Focus it and use type_text (clipboard/keys strategy) instead."
                 case "write_not_applied":
                     return "The element accepted the AXSelectedText write but its value did not change. Focus it and use type_text (clipboard/keys strategy) instead."
+                case "no_focused_element":
+                    return "Nothing in that app currently has keyboard focus (it is in the background, or the screen is locked). Bring it forward with activate_app / focus_window, or address the text element directly with element_id."
                 default:
                     return "This element does not accept AX text edits. Focus it and use type_text (clipboard/keys strategy) instead, or set the whole value with set_element_attribute(AXValue)."
                 }
@@ -551,6 +553,17 @@ actor TextEditingController {
         ]
         guard !textMarkers.isDisjoint(with: Set(available)) else {
             let role = ax.stringAttribute(element, kAXRoleAttribute as String) ?? "unknown"
+            // Observed live (2026-09-14, TextEdit while the session was
+            // locked): an app that is not frontmost answers
+            // AXFocusedUIElement with the AXApplication itself. Saying "not
+            // an editable text element" is true but useless — the caller's
+            // real problem is that the app has no focused element right now.
+            if role == (kAXApplicationRole as String) {
+                throw .notSupported(
+                    "The app reports no focused UI element — AXFocusedUIElement came back as the application itself (role=AXApplication).",
+                    reason: "no_focused_element"
+                )
+            }
             throw .notSupported(
                 "Element (role=\(role)) exposes none of AXSelectedTextRange/AXSelectedText/AXNumberOfCharacters — it is not an editable text element.",
                 reason: "not_text_element"
