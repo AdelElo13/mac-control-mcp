@@ -14,21 +14,28 @@
  *    single byte is extracted. Note what that does and does not buy: both
  *    assets come from the same GitHub release, so the checksum only proves
  *    the bytes arrived uncorrupted, not that they are what the maintainer
- *    built. The actual trust anchor is the signature check below — an
- *    attacker who could replace release assets still cannot produce a bundle
- *    signed by our Developer ID team.
- *  - The archive's table of contents is validated before extraction, and the
- *    extracted bundle is re-verified against codesign, Gatekeeper policy and
- *    the expected Team ID.
+ *    built. The actual trust anchor is the signature check, which pins our
+ *    Team ID — an attacker who could replace release assets still cannot
+ *    produce a bundle signed by our Developer ID team.
+ *  - Nothing unverified ever occupies the final path. Download and extraction
+ *    happen in a staging directory alongside the destination; codesign, spctl,
+ *    Team ID, bundle identifier and version are all checked *there*; only then
+ *    is the bundle renamed into place. Any failure leaves the previously
+ *    installed, previously verified bundle untouched.
+ *  - The "already installed" fast path re-runs the cheap checks rather than
+ *    trusting a leftover: a bundle that exists is not a bundle that passed.
+ *
+ * Testing hook: MAC_CONTROL_MCP_TEST_VERSION pins the release version to
+ * download, so a package whose own release assets are not published yet can be
+ * exercised against an existing release. It never changes what gets verified —
+ * the bundle's CFBundleShortVersionString must equal whatever version is used.
  */
 
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
-const { spawnSync } = require('node:child_process');
 
 const {
   releaseUrls,
@@ -37,11 +44,19 @@ const {
   isTransientError,
   assertSafeArchivePaths,
   assertSafeArchiveLinks,
-  parseTeamIdentifier,
   EXPECTED_TEAM_ID,
 } = require('../lib/release');
 const { openStream, fetchText } = require('../lib/download');
-const { VENDOR_DIR, APP_PATH, BINARY_PATH, installedVersion } = require('../lib/paths');
+const { VENDOR_DIR, APP_PATH } = require('../lib/paths');
+const {
+  EXPECTED_BUNDLE_ID,
+  run,
+  runOrThrow,
+  needsInstall,
+  promoteStagedBundle,
+  makeStagingDir,
+  cleanStagingLeftovers,
+} = require('../lib/install-core');
 
 const pkg = require('../package.json');
 
@@ -95,36 +110,6 @@ async function downloadAndHash(url, destPath) {
 }
 
 /**
- * Run a system tool without a shell. Returns the result rather than throwing
- * so callers can attach their own diagnostics.
- *
- * @param {string} file
- * @param {string[]} args
- */
-function run(file, args) {
-  const res = spawnSync(file, args, { encoding: 'utf8' });
-  if (res.error && res.error.code === 'ENOENT') {
-    throw new Error(
-      `${file} is missing from this system — it is required to install MacControlMCP.app.`,
-    );
-  }
-  return res;
-}
-
-/**
- * Same as run(), but turns a non-zero exit into a labelled error.
- */
-function runOrThrow(file, args, what) {
-  const res = run(file, args);
-  if (res.status !== 0) {
-    throw new Error(
-      `${what} failed (exit ${res.status})\n${((res.stderr || '') + (res.stdout || '')).trim()}`,
-    );
-  }
-  return res;
-}
-
-/**
  * macOS attaches com.apple.quarantine to anything downloaded by a browser or
  * a network client. On the *archive* it is harmless, but it propagates to the
  * extracted bundle and then Gatekeeper puts up a blocking dialog the first
@@ -164,83 +149,55 @@ function assertArchiveIsContained(archivePath) {
 }
 
 /**
- * Verify the extracted bundle is the genuine signed+notarized artifact.
- * A checksum proves we got the bytes we asked for; this proves those bytes
- * are Apple-notarized and were not tampered with in the extraction step.
+ * One full download → verify → promote cycle inside a fresh staging directory.
+ *
+ * @param {string} version
+ * @param {ReturnType<typeof releaseUrls>} urls
  */
-function verifySignature() {
-  runOrThrow(
-    '/usr/bin/codesign',
-    ['--verify', '--deep', '--strict', APP_PATH],
-    'codesign --verify --deep --strict',
-  );
-  runOrThrow(
-    '/usr/sbin/spctl',
-    ['--assess', '--type', 'execute', APP_PATH],
-    'spctl --assess --type execute',
-  );
+async function attemptInstall(version, urls) {
+  const stagingDir = makeStagingDir(VENDOR_DIR);
+  try {
+    const archivePath = path.join(stagingDir, urls.tarballName);
 
-  // Both checks above are satisfied by any valid, notarized Developer ID —
-  // an attacker's own account included. Pinning the Team ID is what makes
-  // them assert authorship rather than mere validity.
-  const info = run('/usr/bin/codesign', ['-dv', '--verbose=4', APP_PATH]);
-  const teamId = parseTeamIdentifier(`${info.stdout || ''}\n${info.stderr || ''}`);
-  if (teamId !== EXPECTED_TEAM_ID) {
-    throw new Error(
-      [
-        `Signing team mismatch — refusing to install ${APP_PATH}`,
-        `  expected TeamIdentifier: ${EXPECTED_TEAM_ID}`,
-        `  actual TeamIdentifier:   ${teamId ?? '<none>'}`,
-        '',
-        'The bundle is signed by someone other than the project owner. Do not use it.',
-      ].join('\n'),
+    log(`fetching checksum ${urls.sha256Name}`);
+    const expected = parseSha256File(await fetchText(urls.sha256Url), urls.tarballName);
+
+    log(`downloading ${urls.tarballName}`);
+    const actual = await downloadAndHash(urls.tarballUrl, archivePath);
+
+    if (!digestsMatch(actual, expected)) {
+      throw new Error(
+        [
+          'SHA-256 mismatch — refusing to install.',
+          `  expected: ${expected}`,
+          `  actual:   ${actual}`,
+          `  url:      ${urls.tarballUrl}`,
+          '',
+          'This means the download was corrupted or tampered with. Do not use it.',
+        ].join('\n'),
+      );
+    }
+    log(`checksum verified (${expected.slice(0, 12)}…)`);
+
+    clearQuarantine(archivePath);
+
+    assertArchiveIsContained(archivePath);
+    log('archive contents verified (no absolute, parent-directory, symlink or hardlink entries)');
+
+    // System tar preserves extended attributes and the _CodeSignature
+    // directory byte for byte; no file inside the bundle is rewritten.
+    runOrThrow('/usr/bin/tar', ['-xzf', archivePath, '-C', stagingDir], 'tar -xzf');
+    fs.rmSync(archivePath, { force: true });
+
+    // Verifies in staging and only then renames into place. A throw here
+    // leaves whatever was installed before exactly where it was.
+    promoteStagedBundle({ stagingDir, appPath: APP_PATH, expectedVersion: version });
+    log(
+      `signature verified in staging (codesign --verify --deep --strict, spctl --assess, team ${EXPECTED_TEAM_ID}, bundle id ${EXPECTED_BUNDLE_ID}, version ${version}) — promoted atomically`,
     );
+  } finally {
+    fs.rmSync(stagingDir, { recursive: true, force: true });
   }
-}
-
-async function attemptInstall(version, urls, tmpDir) {
-  const archivePath = path.join(tmpDir, urls.tarballName);
-
-  log(`fetching checksum ${urls.sha256Name}`);
-  const expected = parseSha256File(await fetchText(urls.sha256Url), urls.tarballName);
-
-  log(`downloading ${urls.tarballName}`);
-  const actual = await downloadAndHash(urls.tarballUrl, archivePath);
-
-  if (!digestsMatch(actual, expected)) {
-    throw new Error(
-      [
-        'SHA-256 mismatch — refusing to install.',
-        `  expected: ${expected}`,
-        `  actual:   ${actual}`,
-        `  url:      ${urls.tarballUrl}`,
-        '',
-        'This means the download was corrupted or tampered with. Do not use it.',
-      ].join('\n'),
-    );
-  }
-  log(`checksum verified (${expected.slice(0, 12)}…)`);
-
-  clearQuarantine(archivePath);
-
-  assertArchiveIsContained(archivePath);
-  log('archive contents verified (no absolute, parent-directory or escaping link entries)');
-
-  fs.rmSync(APP_PATH, { recursive: true, force: true });
-  fs.mkdirSync(VENDOR_DIR, { recursive: true });
-
-  // System tar preserves extended attributes and the _CodeSignature
-  // directory byte for byte; no file inside the bundle is rewritten.
-  runOrThrow('/usr/bin/tar', ['-xzf', archivePath, '-C', VENDOR_DIR], 'tar -xzf');
-
-  if (!fs.existsSync(BINARY_PATH)) {
-    throw new Error(`archive did not contain ${path.relative(VENDOR_DIR, BINARY_PATH)}`);
-  }
-
-  verifySignature();
-  log(
-    `signature verified (codesign --verify --deep --strict, spctl --assess, team ${EXPECTED_TEAM_ID})`,
-  );
 }
 
 async function main() {
@@ -254,22 +211,32 @@ async function main() {
     return;
   }
 
-  const version = pkg.version;
-  const urls = releaseUrls(version);
-
-  if (installedVersion() === version && fs.existsSync(BINARY_PATH)) {
-    log(`MacControlMCP.app ${version} already installed — nothing to do.`);
-    return;
+  const pinned = process.env.MAC_CONTROL_MCP_TEST_VERSION;
+  const version = pinned && pinned.trim() !== '' ? pinned.trim() : pkg.version;
+  if (version !== pkg.version) {
+    warn(`MAC_CONTROL_MCP_TEST_VERSION=${version} — installing that release instead of ${pkg.version}.`);
   }
 
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mac-control-mcp-'));
+  // releaseUrls() validates the version string, so a hostile env var cannot
+  // steer the download at an arbitrary path.
+  const urls = releaseUrls(version);
+
+  cleanStagingLeftovers(VENDOR_DIR);
+
+  const state = needsInstall({ appPath: APP_PATH, expectedVersion: version });
+  if (!state.install) {
+    log(`MacControlMCP.app ${version} already installed and re-verified — nothing to do.`);
+    return;
+  }
+  log(`installing: ${state.reason}`);
+
   try {
     try {
-      await attemptInstall(version, urls, tmpDir);
+      await attemptInstall(version, urls);
     } catch (err) {
       if (!isTransientError(err)) throw err;
       warn(`transient failure (${err.message}); retrying once…`);
-      await attemptInstall(version, urls, tmpDir);
+      await attemptInstall(version, urls);
     }
   } catch (err) {
     process.exitCode = 1;
@@ -277,12 +244,9 @@ async function main() {
       `\nmac-control-mcp: installation failed.\n\n${err && err.message ? err.message : err}\n${manualFallback(version, urls)}\n`,
     );
     return;
-  } finally {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 
-  const installed = installedVersion() ?? version;
-  log(`installed MacControlMCP.app ${installed}`);
+  log(`installed MacControlMCP.app ${version}`);
   log(`app path: ${APP_PATH}`);
   log('macOS permissions (Accessibility, Screen Recording, Apple Events) are granted');
   log('to the MCP host application that launches this server, on first tool call.');
