@@ -135,7 +135,7 @@ final class ToolRegistry: @unchecked Sendable {
         // — if the caller didn't pass one, construct with the defaults so the
         // registry is self-consistent.
         self.grounding = grounding ?? GroundingController(
-            accessibility: accessibility, screen: screen
+            accessibility: accessibility, screen: screen, elementCache: elementCache
         )
         self.voice = voice
         self.browserDOM = browserDOM ?? BrowserDOMController(browser: browser)
