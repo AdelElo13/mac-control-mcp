@@ -418,23 +418,25 @@ extension ToolRegistry {
         case .failure(let spaceError):
             let displayCount = await displays.list().count
             let validRange = displayCount > 0 ? "0..\(displayCount - 1)" : "(no displays detected)"
-            let (message, badField, badValue): (String, String, String)
+            let (message, badField, badValue, errorCode): (String, String, String, String)
             switch spaceError {
             case .malformed(let field, let value):
                 message = "'\(value)' is not a valid coordinate space. Use 'global' or 'display:<index>' " +
                     "(valid indices: \(validRange))."
                 badField = field
                 badValue = value
+                errorCode = "invalid_argument"
             case .outOfRange(let field, let value, let index, let count):
                 message = "'\(value)' has no matching display — index \(index) is out of range " +
                     "(this Mac has \(count) display(s), valid indices: \(validRange))."
                 badField = field
                 badValue = value
+                errorCode = "no_such_display"
             }
             return errorResult(message, [
                 "ok": .bool(false),
                 "error": .string(message),
-                "error_code": .string("invalid_argument"),
+                "error_code": .string(errorCode),
                 "field": .string(badField),
                 "value": .string(badValue),
                 "from": .string(from),

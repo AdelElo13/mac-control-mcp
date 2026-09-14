@@ -37,20 +37,14 @@ actor SystemInfoController {
         public let rawStatus: String
     }
 
-    /// Parses `pmset -g batt` which looks like:
+    /// Pure parser for `pmset -g batt` output, e.g.:
     ///   Now drawing from 'AC Power'
     ///    -InternalBattery-0 (id=0) 97%; charged; 0:00 remaining present: true
-    func battery() -> Result<Battery> {
-        let r = ProcessRunner.run("/usr/bin/pmset", ["-g", "batt"], timeout: 3)
-        guard r.ok else {
-            return Result(
-                ok: false, data: nil,
-                error: "pmset failed: \(r.stderr.trimmingCharacters(in: .whitespacesAndNewlines))",
-                exitCode: r.exitCode
-            )
-        }
-        let out = r.stdout
-
+    ///
+    /// Extracted from `battery()` so the parsing logic — in particular the
+    /// v0.9 (A-17) "charged" fix below — is unit-testable without shelling
+    /// out to `pmset`.
+    static func parseBatteryOutput(_ out: String) -> Battery {
         var percentage: Int?
         if let match = out.range(of: #"(\d{1,3})%"#, options: .regularExpression) {
             percentage = Int(out[match].replacingOccurrences(of: "%", with: ""))
@@ -79,14 +73,25 @@ actor SystemInfoController {
             timeRemaining = nil
         }
 
-        let battery = Battery(
+        return Battery(
             percentage: percentage,
             charging: charging,
             pluggedIn: pluggedIn,
             timeRemainingMinutes: timeRemaining,
             rawStatus: out.trimmingCharacters(in: .whitespacesAndNewlines)
         )
-        return Result(ok: true, data: battery, error: nil, exitCode: 0)
+    }
+
+    func battery() -> Result<Battery> {
+        let r = ProcessRunner.run("/usr/bin/pmset", ["-g", "batt"], timeout: 3)
+        guard r.ok else {
+            return Result(
+                ok: false, data: nil,
+                error: "pmset failed: \(r.stderr.trimmingCharacters(in: .whitespacesAndNewlines))",
+                exitCode: r.exitCode
+            )
+        }
+        return Result(ok: true, data: Self.parseBatteryOutput(r.stdout), error: nil, exitCode: 0)
     }
 
     // MARK: - CPU + memory load

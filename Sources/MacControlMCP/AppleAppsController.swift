@@ -372,55 +372,31 @@ actor AppleAppsController {
         public let list: String?
     }
 
-    #if canImport(EventKit)
-    /// v0.9 (A-7): `reminders_list`/`reminders_create` went through
-    /// AppleScript without ever checking the Reminders TCC status, so a
-    /// denied/not-yet-granted permission and a genuinely empty database
-    /// were indistinguishable — both returned `ok:true, reminders:[]}`.
-    /// Mirrors `requestCalendarAccess`: explicitly request access via
-    /// EventKit (the same `kTCCServiceReminders` bucket that gates the
-    /// AppleScript path) so the outcome can be classified precisely.
-    private func requestRemindersAccess() async -> (outcome: PermissionContext.AuthOutcome, status: String) {
-        let before = ToolRegistry.remindersPermissionStatusString()
-        switch before {
-        case "granted", "authorized_legacy": return (.granted, before)
-        case "denied": return (.deniedByUser, before)
-        case "write_only": return (.writeOnly, before)
-        case "restricted": return (.restricted, before)
-        case "info_plist_missing": return (.deniedWithoutPrompt, before)
-        default: break
-        }
-        let store = eventStore
-        let granted: Bool? = await PermissionContext.awaitCallback(timeout: Self.permissionPromptTimeout) { done in
-            store.requestFullAccessToReminders { granted, _ in done(granted) }
-        }
-        let after = ToolRegistry.remindersPermissionStatusString()
-        return (PermissionContext.classify(granted: granted, statusAfter: after), after)
+    /// v0.9 review fix (A-7): sending Apple Events to Reminders.app is
+    /// gated by the **Automation** TCC bucket, not by EventKit's
+    /// `kTCCServiceReminders` — those are independently toggled. An
+    /// earlier version of this fix pre-blocked `createReminder`/
+    /// `listReminders` on `remindersPermissionStatusString()`, which
+    /// wrongly refused a user who had granted Automation but never
+    /// touched EventKit reminders (still `not_determined`/`denied`
+    /// there) even though the AppleScript call would have worked fine.
+    /// So: never pre-block. Run the script, and classify whatever it
+    /// actually failed with via `AppleScriptErrorClassifier` — the same
+    /// approach `BrowserErrorClassifier` uses for browser AppleScript
+    /// calls. `ok:true, reminders:[]` is only ever returned after the
+    /// script itself succeeded.
+    private func classifiedFailure<T: Codable & Sendable>(stderr: String) -> Result<T> {
+        let trimmed = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        let c = AppleScriptErrorClassifier.classify(stderr: trimmed, appName: "Reminders")
+        return Result(ok: false, data: nil, error: trimmed.isEmpty ? c.error : trimmed, errorPayload: [
+            "error_code": .string(c.errorCode),
+            "pane": c.pane.map(JSONValue.string) ?? .null,
+            "hint": c.hint.map(JSONValue.string) ?? .null
+        ])
     }
-
-    /// nil when access is available; otherwise the structured refusal to
-    /// return directly from the caller.
-    private func ensureRemindersAccess<T: Codable & Sendable>() async -> Result<T>? {
-        let access = await requestRemindersAccess()
-        guard access.outcome != .granted else { return nil }
-        let failure = PermissionContext.permissionError(
-            service: "Reminders",
-            pane: "reminders",
-            entitlement: "com.apple.security.personal-information.calendars",
-            outcome: access.outcome,
-            statusAfter: access.status
-        )
-        return Result(ok: false, data: nil, error: failure.message, errorPayload: failure.payload)
-    }
-    #endif
 
     /// Create a reminder in Reminders.app. Optional `due` and `list`.
-    func createReminder(title: String, dueISO: String?, list: String?) async -> Result<Reminder> {
-        #if canImport(EventKit)
-        if let refused: Result<Reminder> = await ensureRemindersAccess() {
-            return refused
-        }
-        #endif
+    func createReminder(title: String, dueISO: String?, list: String?) -> Result<Reminder> {
         func esc(_ s: String) -> String {
             s.replacingOccurrences(of: "\\", with: "\\\\")
              .replacingOccurrences(of: "\"", with: "\\\"")
@@ -441,8 +417,7 @@ actor AppleAppsController {
         """
         let r = OsascriptRunner.run(script)
         guard r.ok else {
-            return Result(ok: false, data: nil,
-                          error: r.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+            return classifiedFailure(stderr: r.stderr)
         }
         return Result(ok: true, data: Reminder(title: title, dueISO: dueISO, list: list), error: nil)
     }
@@ -465,12 +440,7 @@ actor AppleAppsController {
 
     /// List reminders across all lists. Optional `includeCompleted` — default
     /// false so agents see only actionable items.
-    func listReminders(includeCompleted: Bool, limit: Int) async -> Result<ReminderListResult> {
-        #if canImport(EventKit)
-        if let refused: Result<ReminderListResult> = await ensureRemindersAccess() {
-            return refused
-        }
-        #endif
+    func listReminders(includeCompleted: Bool, limit: Int) -> Result<ReminderListResult> {
         let cap = max(1, min(limit, 200))
         let filter = includeCompleted ? "" : "whose completed is false"
         // `total` caps globally — the old `if n > cap` capped per list, so a
@@ -510,8 +480,7 @@ actor AppleAppsController {
         """
         let r = OsascriptRunner.run(script)
         guard r.ok else {
-            return Result(ok: false, data: nil,
-                          error: r.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+            return classifiedFailure(stderr: r.stderr)
         }
         let sections = r.stdout.components(separatedBy: "§§LISTS_END§§")
         let namesSection = sections.first ?? ""

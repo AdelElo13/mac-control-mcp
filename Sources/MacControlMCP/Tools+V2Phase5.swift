@@ -445,7 +445,7 @@ extension ToolRegistry {
             return errorResult(message, [
                 "ok": .bool(false),
                 "error": .string(message),
-                "error_code": .string("invalid_argument"),
+                "error_code": .string("no_such_display"),
                 "display_index": .number(Double(idx)),
                 "display_count": .number(Double(list.count)),
                 "valid_display_indices": .string(validRange)

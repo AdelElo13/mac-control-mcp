@@ -337,15 +337,21 @@ extension ToolRegistry {
         }
         let dueISO = arguments["due_iso"]?.stringValue
         let list = arguments["list"]?.stringValue
+        // v0.9 review fix (A-7): the osascript call is gated by Automation
+        // TCC, not EventKit reminders — never pre-block on
+        // `remindersPermissionStatusString()`. Run it, then report that
+        // EventKit status purely as informational context alongside the
+        // real result.
         let r = await appleApps.createReminder(title: title, dueISO: dueISO, list: list)
-        let authorization = ToolRegistry.remindersPermissionStatusString()
+        let eventkitAuthorization = ToolRegistry.remindersPermissionStatusString()
         if r.ok {
             return successResult("reminder created",
                                  ["ok": .bool(true), "result": encodeAsJSONValue(r),
-                                  "authorization": .string(authorization)])
+                                  "automation": .string("granted"),
+                                  "eventkit_authorization": .string(eventkitAuthorization)])
         }
         var payload: [String: JSONValue] = ["ok": .bool(false), "result": encodeAsJSONValue(r),
-                                             "authorization": .string(authorization)]
+                                             "eventkit_authorization": .string(eventkitAuthorization)]
         payload.merge(r.errorPayload ?? [:]) { _, structured in structured }
         return errorResult(r.error ?? "reminders_create failed", payload)
     }
@@ -356,11 +362,15 @@ extension ToolRegistry {
         }
         let includeCompleted = arguments["include_completed"]?.boolValue ?? false
         let limit = arguments["limit"]?.intValue ?? 50
+        // v0.9 review fix (A-7): same rationale as reminders_create — run
+        // the AppleScript unconditionally; only classify a failure the
+        // script itself produced. `ok:true, reminders:[]` is now only
+        // possible after the script actually succeeded.
         let r = await appleApps.listReminders(includeCompleted: includeCompleted, limit: limit)
-        let authorization = ToolRegistry.remindersPermissionStatusString()
+        let eventkitAuthorization = ToolRegistry.remindersPermissionStatusString()
         guard r.ok, let result = r.data else {
             var payload: [String: JSONValue] = ["ok": .bool(false), "error": .string(r.error ?? "reminders_list failed"),
-                                                 "authorization": .string(authorization)]
+                                                 "eventkit_authorization": .string(eventkitAuthorization)]
             payload.merge(r.errorPayload ?? [:]) { _, structured in structured }
             return errorResult(r.error ?? "reminders_list failed", payload)
         }
@@ -369,7 +379,8 @@ extension ToolRegistry {
                               "reminders": encodeAsJSONValue(result.reminders),
                               "count": .number(Double(result.reminders.count)),
                               "lists": .array(result.lists.map(JSONValue.string)),
-                              "authorization": .string(authorization)])
+                              "automation": .string("granted"),
+                              "eventkit_authorization": .string(eventkitAuthorization)])
     }
 
     func callContactsSearch(_ arguments: [String: JSONValue]) async -> ToolCallResult {
