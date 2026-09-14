@@ -59,9 +59,14 @@ jobs:
         # even when every assertion passes. We check the actual Swift
         # Testing output for real failures and only fail on those,
         # treating the spurious SIGPIPE as an ignored signal.
+        #
+        # `script` gives swift-testing a pty so its per-test lines reach
+        # the log as they happen; through a plain pipe they were fully
+        # buffered and a hanging test left 19 minutes of silence.
+        timeout-minutes: 12
         run: |
           set +e
-          swift test 2>&1 | tee /tmp/test.log
+          script -q /dev/null swift test --no-parallel 2>&1 | tee /tmp/test.log
           set -e
           if grep -qE "✘ Suite .* failed|✘ Test .* failed after" /tmp/test.log; then
             echo "Real test failures detected." >&2

@@ -26,7 +26,13 @@ import Darwin
 /// a deterministic Space layout. The harness matrix covers every control
 /// deterministically; this suite adds real-world confirmation where it
 /// can.
-@Suite("Real-world AppKit compat — Apple's own apps", .serialized, .timeLimit(.minutes(3)))
+@Suite(
+    "Real-world AppKit compat — Apple's own apps",
+    .serialized,
+    .timeLimit(.minutes(3)),
+    .enabled(if: ProcessInfo.processInfo.environment["CI"] == nil,
+             "Drives System Settings/Finder over AX; a headless CI runner has neither the windows nor the Accessibility grant. Skipped when CI=true.")
+)
 struct RealAppMatrixTests {
     static func projectRoot() -> URL {
         let dir = (#filePath as NSString).deletingLastPathComponent
@@ -397,7 +403,8 @@ struct RealAppMatrixTests {
 /// where Finder is always running with at least one visible window. If
 /// this assumption changes (e.g. running in CI with fake AX), this guard
 /// correctly fails loudly instead of silently passing.
-@Suite("Real-world coverage sanity", .serialized)
+@Suite("Real-world coverage sanity", .serialized,
+       .enabled(if: ProcessInfo.processInfo.environment["CI"] == nil))
 struct RealWorldCoverageGuard {
     @Test("at least one real-app assertion must strictly pass")
     func atLeastOneStrictPass() {
