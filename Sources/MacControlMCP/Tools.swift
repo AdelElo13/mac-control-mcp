@@ -148,7 +148,8 @@ final class ToolRegistry: @unchecked Sendable {
         Self.definitions + Self.definitionsV2 + Self.definitionsV2Phase2 +
             Self.definitionsV2Phase3 + Self.definitionsV2Phase4 + Self.definitionsV2Phase5 +
             Self.definitionsV2Phase6 + Self.definitionsV2Phase7 + Self.definitionsV2Phase8 +
-            Self.definitionsV2Phase9 + Self.definitionsV2Phase10 + Self.definitionsV2Phase11
+            Self.definitionsV2Phase9 + Self.definitionsV2Phase10 + Self.definitionsV2Phase11 +
+            Self.definitionsBatch
     }
 
     // MARK: - Tool dispatch
@@ -468,6 +469,9 @@ final class ToolRegistry: @unchecked Sendable {
             return await callListAppIntents()
         case "invoke_app_intent":
             return await callInvokeAppIntent(arguments)
+        // MARK: - v0.9 workstream C — batch / composite call (C-1)
+        case "batch":
+            return await callBatch(arguments)
         default:
             return errorResult("Unknown tool '\(name)'.")
         }
