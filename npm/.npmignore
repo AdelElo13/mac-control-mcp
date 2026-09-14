@@ -1,0 +1,9 @@
+# Belt-and-braces alongside the `files` whitelist in package.json.
+# vendor/ holds the downloaded .app bundle (~9 MB extracted) — it is produced
+# by postinstall on the user's machine and must NEVER end up in the published
+# tarball, both for size and because a bundle re-packed by npm would lose its
+# code signature.
+vendor/
+test/
+*.tgz
+.DS_Store
