@@ -211,6 +211,19 @@ actor ClipboardController {
         case noData(String)
         case invalidPath(String)
         case pasteboardRejectedWrite
+        /// v0.9 review follow-up (HIGH, #7): the path resolved to
+        /// something other than a plain file — a FIFO, socket, device
+        /// node, or a symlink that (after resolution) points at one of
+        /// those. Opening any of those can block the server forever
+        /// (`Data(contentsOf:)` on a FIFO with no writer never returns)
+        /// or hand back attacker-controlled device data, so it is
+        /// rejected before anything is ever opened.
+        case notRegularFile(String)
+        /// The file is a regular file, but larger than the cap this
+        /// input allows — rejected before `Data(contentsOf:)`/FileHandle
+        /// would load it (an unbounded read of a multi-GB file is a
+        /// resource-exhaustion / DoS vector).
+        case fileTooLarge(String, Int)
 
         var description: String {
             switch self {
@@ -228,6 +241,21 @@ actor ClipboardController {
                 return detail
             case .pasteboardRejectedWrite:
                 return "NSPasteboard rejected the write."
+            case .notRegularFile(let p):
+                return "'\(p)' is not a regular file (FIFOs, sockets and device nodes are refused)."
+            case .fileTooLarge(let p, let maxBytes):
+                return "'\(p)' exceeds the \(maxBytes / (1024 * 1024)) MB size limit for this input."
+            }
+        }
+
+        /// Machine-readable reason for the two new size/type failures —
+        /// surfaced alongside `error_code: "invalid_argument"` at the
+        /// tool layer (Tools+V2.swift) per the review's requested shape.
+        var reason: String? {
+            switch self {
+            case .notRegularFile: return "not_regular_file"
+            case .fileTooLarge: return "file_too_large"
+            default: return nil
             }
         }
     }
@@ -472,8 +500,8 @@ actor ClipboardController {
         var imageRepresentations: [(NSPasteboard.PasteboardType, Data)] = []
         if let imagePath = request.imagePath {
             let resolved = try Self.resolveExistingFile(imagePath)
-            guard let data = try? Data(contentsOf: URL(fileURLWithPath: resolved)),
-                  let source = CGImageSourceCreateWithData(data as CFData, nil),
+            let data = try Self.boundedReadForImage(at: resolved, originalPath: imagePath)
+            guard let source = CGImageSourceCreateWithData(data as CFData, nil),
                   let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
                 throw ClipboardError.unreadableImage(imagePath)
             }
@@ -604,12 +632,29 @@ actor ClipboardController {
         return data as Data
     }
 
+    /// v0.9 review follow-up (HIGH, #7): `image_path` is capped at 50 MB.
+    /// `files` entries are never loaded into memory at all (only their
+    /// path is placed on the pasteboard as an `NSURL`), so no size cap
+    /// applies to them — only the regular-file check in
+    /// `resolveExistingFile` does.
+    static let maxImageFileBytes = 50 * 1_048_576
+
     /// Input paths are READ, not written, so `PathValidator.validate`'s
     /// allowed-roots policy (which exists to stop the server overwriting
     /// arbitrary files) does not apply — confining it here would block the
     /// legitimate "put this repo file on the clipboard" case. What IS
-    /// enforced: the path must resolve to an existing regular file, with
+    /// enforced: the path must resolve to an existing REGULAR file, with
     /// symlinks and `..` normalised away first.
+    ///
+    /// v0.9 review follow-up (HIGH, #7): the original check only asked
+    /// "exists and is not a directory" — a FIFO, socket, or device node
+    /// passes that just as happily as a plain file, and opening one of
+    /// those (`Data(contentsOf:)`, downstream) can block the server
+    /// forever (a FIFO with no writer) or read from an unbounded/
+    /// non-file source. `resolvingSymlinksInPath()` above already chases
+    /// a symlink chain down to its real target, so checking the TYPE of
+    /// the resolved path covers "symlink to a FIFO" too — there is
+    /// nothing left to resolve by the time we stat it.
     private static func resolveExistingFile(_ path: String) throws -> String {
         let expanded = (path as NSString).expandingTildeInPath
         let resolved = URL(fileURLWithPath: expanded)
@@ -620,6 +665,50 @@ actor ClipboardController {
               !isDirectory.boolValue else {
             throw ClipboardError.fileNotFound(path)
         }
+        // `stat(2)` (what both fileExists and attributesOfItem use) never
+        // blocks and never opens the file, so this check is safe to run
+        // on a FIFO/socket/device node before anything tries to read it.
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: resolved.path),
+              (attributes[.type] as? FileAttributeType) == .typeRegular else {
+            throw ClipboardError.notRegularFile(path)
+        }
         return resolved.path
+    }
+
+    /// Reads an already-validated regular file's bytes for
+    /// `clipboard_write(image_path:)`, bounded on two sides:
+    ///
+    /// 1. The size is checked via `stat` (already known to be a regular
+    ///    file — see `resolveExistingFile`) BEFORE anything is opened, so
+    ///    a multi-GB file is rejected without ever being read.
+    /// 2. The actual read is capped via `FileHandle.read(upToCount:)`
+    ///    rather than `Data(contentsOf:)`, so a file that grows between
+    ///    the size check and the read (TOCTOU) still cannot hand back
+    ///    more than the cap — `read(upToCount:)` never over-reads.
+    private static func boundedReadForImage(at resolvedPath: String, originalPath: String) throws -> Data {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: resolvedPath)
+        let size = (attributes?[.size] as? Int) ?? 0
+        guard size <= maxImageFileBytes else {
+            throw ClipboardError.fileTooLarge(originalPath, maxImageFileBytes)
+        }
+
+        guard let handle = FileHandle(forReadingAtPath: resolvedPath) else {
+            throw ClipboardError.unreadableImage(originalPath)
+        }
+        defer { try? handle.close() }
+
+        let data: Data
+        do {
+            // Ask for one more byte than the cap so a file that grew
+            // after the stat() above is still caught here rather than
+            // silently truncated and misread as a smaller valid image.
+            data = try handle.read(upToCount: maxImageFileBytes + 1) ?? Data()
+        } catch {
+            throw ClipboardError.unreadableImage(originalPath)
+        }
+        guard data.count <= maxImageFileBytes else {
+            throw ClipboardError.fileTooLarge(originalPath, maxImageFileBytes)
+        }
+        return data
     }
 }
