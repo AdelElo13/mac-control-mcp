@@ -18,6 +18,7 @@ import ApplicationServices
 //
 // Writes go through AXSelectedText on the element handle: no synthetic
 // keystrokes, no clipboard, no select-all-and-retype.
+
 /// A step that either produced a value or already has the error result the
 /// tool should return. `Result` can't be used here: ToolCallResult is not an
 /// `Error` (it is a successful MCP response that happens to carry isError).
