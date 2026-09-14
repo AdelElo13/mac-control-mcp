@@ -27,7 +27,7 @@ Gives any MCP-compatible client (Claude Desktop, Claude Code, Cursor, etc.) the 
 
 ## Install
 
-Requires macOS 14.0+. Three options, in order of simplicity:
+Requires macOS 14.0+. Four options, in order of simplicity:
 
 ### 1. One-click install (Claude Desktop, recommended)
 
@@ -40,7 +40,68 @@ The server is published as an [MCP Bundle](https://github.com/anthropics/mcpb) �
 
 It's also listed on the [official MCP Registry](https://registry.modelcontextprotocol.io/) as `io.github.AdelElo13/mac-control-mcp`, so any MCP client that supports the registry will find it by searching for "mac-control".
 
-### 2. Download the prebuilt app
+### 2. Install via npm / npx
+
+For clients that are configured with a command line rather than a file path. The npm package [`mac-control-mcp`](https://www.npmjs.com/package/mac-control-mcp) is a thin launcher: it has no runtime dependencies, and on install it downloads the notarized `MacControlMCP.app` for that exact version from this repo's GitHub release, verifies it against the published `.sha256`, refuses any archive entry that escapes the install directory, and re-checks the bundle with `codesign --verify --deep --strict`, `spctl --assess --type execute` and a pinned Team ID (`A3W973JZ49`). The first run therefore pulls ~3 MB; later runs are local.
+
+Claude Desktop — `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "mac-control-mcp": {
+      "command": "npx",
+      "args": ["-y", "mac-control-mcp"]
+    }
+  }
+}
+```
+
+Claude Code:
+
+```bash
+claude mcp add mac-control-mcp -- npx -y mac-control-mcp
+```
+
+Cursor — `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "mac-control-mcp": {
+      "command": "npx",
+      "args": ["-y", "mac-control-mcp"]
+    }
+  }
+}
+```
+
+ChatGPT (developer mode, local MCP connector) — `mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "mac-control-mcp": {
+      "command": "npx",
+      "args": ["-y", "mac-control-mcp"],
+      "transport": "stdio"
+    }
+  }
+}
+```
+
+Two flags are handled by the launcher itself instead of being forwarded to the binary:
+
+```bash
+npx -y mac-control-mcp --version    # version of the bundled .app
+npx -y mac-control-mcp --app-path   # path to MacControlMCP.app
+```
+
+`--app-path` is what you need when granting macOS permissions by hand. Note that TCC grants go to the **MCP host application** that launches this process (Claude Desktop, Cursor, your terminal), not to `npx` or to the script — run the [`permissions_status`](docs/TOOLS.md) tool once from your client to see which grants are missing and which app they belong to.
+
+`MAC_CONTROL_MCP_SKIP_DOWNLOAD=1` skips the download (CI, sandboxed builds); `HTTPS_PROXY` and `NO_PROXY` are honoured.
+
+### 3. Download the prebuilt app
 
 If you don't use Claude Desktop or want manual control:
 
@@ -68,7 +129,7 @@ shasum -a 256 MacControlMCP-v<version>-macos-universal.tar.gz
 # should match MacControlMCP-v<version>-macos-universal.sha256 on the release
 ```
 
-### 3. Build from source
+### 4. Build from source
 
 For contributors or if you want to tweak the code. Requires Swift 6 / Xcode 16+:
 

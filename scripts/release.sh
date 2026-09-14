@@ -199,20 +199,52 @@ if [ -f "$SERVER_JSON" ]; then
     MCPB_SHA=$(shasum -a 256 "${OUT_DIR}/${MCPB_NAME}" | awk '{print $1}')
     MCPB_URL="https://github.com/AdelElo13/mac-control-mcp/releases/download/v${VERSION}/${MCPB_NAME}"
     # Use python to rewrite the JSON so we preserve formatting + escapes.
-    python3 - "$SERVER_JSON" "$VERSION" "$MCPB_URL" "$MCPB_SHA" <<'PY'
-import json, sys
-path, version, url, sha = sys.argv[1:]
+    # The npm launcher (npm/) derives its GitHub release URL from its own
+    # package.json version, and npm/scripts/prepack.js refuses to pack when
+    # that disagrees with server.json. Bump all three here so a release can
+    # never ship an npm package pointing at a tag that does not exist.
+    python3 - "$SERVER_JSON" "$VERSION" "$MCPB_URL" "$MCPB_SHA" "${PROJECT_ROOT}/npm/package.json" "${PROJECT_ROOT}/npm/package-lock.json" <<'PY'
+import json, os, sys
+path, version, url, sha, npm_pkg_path, npm_lock_path = sys.argv[1:]
 with open(path) as f: doc = json.load(f)
 doc["version"] = version
-pkg = doc.setdefault("packages", [{}])[0]
-pkg["registryType"] = "mcpb"
-pkg["identifier"] = url
-pkg["fileSha256"] = sha
-pkg.setdefault("transport", {"type": "stdio"})
+
+packages = doc.setdefault("packages", [])
+def entry(registry_type):
+    for p in packages:
+        if p.get("registryType") == registry_type:
+            return p
+    p = {"registryType": registry_type}
+    packages.append(p)
+    return p
+
+mcpb = entry("mcpb")
+mcpb["identifier"] = url
+mcpb["fileSha256"] = sha
+mcpb.setdefault("transport", {"type": "stdio"})
+
+npm_entry = entry("npm")
+npm_entry.setdefault("registryBaseUrl", "https://registry.npmjs.org")
+npm_entry["identifier"] = "mac-control-mcp"
+npm_entry["version"] = version
+npm_entry.setdefault("runtimeHint", "npx")
+npm_entry.setdefault("transport", {"type": "stdio"})
+
 with open(path, "w") as f: json.dump(doc, f, indent=2); f.write("\n")
 print(f"  version={version}")
 print(f"  identifier={url}")
 print(f"  fileSha256={sha}")
+
+for p in (npm_pkg_path, npm_lock_path):
+    if not os.path.exists(p):
+        continue
+    with open(p) as f: d = json.load(f)
+    d["version"] = version
+    root = d.get("packages", {}).get("")
+    if isinstance(root, dict):
+        root["version"] = version
+    with open(p, "w") as f: json.dump(d, f, indent=2); f.write("\n")
+    print(f"  {os.path.basename(p)} version={version}")
 PY
     echo "[release] validating server.json against MCP registry schema..."
     mcp-publisher validate
