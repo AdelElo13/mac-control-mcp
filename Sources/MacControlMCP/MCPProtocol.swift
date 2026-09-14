@@ -38,7 +38,18 @@ enum JSONValue: Codable, Equatable, Sendable {
         case .string(let value):
             try container.encode(value)
         case .number(let value):
-            try container.encode(value)
+            // v0.9 (found by the real-app suite on System Settings, present
+            // since v0.8): a SwiftUI element can report an AX frame whose
+            // position/size is NaN or infinite. JSON has no such number, so
+            // `JSONEncoder` (strategy `.throw`) failed on the WHOLE
+            // response and the server answered nothing — every client hung
+            // until its own timeout (90 s in ours). Emit `null` for the one
+            // field instead; the other 389 nodes are still worth having.
+            if value.isFinite {
+                try container.encode(value)
+            } else {
+                try container.encodeNil()
+            }
         case .bool(let value):
             try container.encode(value)
         case .object(let value):
@@ -277,6 +288,29 @@ enum StdioMessageFramer {
         var body = try encoder.encode(message)
         body.append(UInt8(ascii: "\n"))
         return body
+    }
+
+    /// `frame` for a response, with the guarantee that the client always
+    /// receives SOMETHING for its request id. If the response itself
+    /// cannot be encoded (v0.9: a tool result that `JSONEncoder` rejects),
+    /// the caller used to log and drop it — and the client waited forever.
+    /// Now the same id gets a JSON-RPC `internalError` naming the failure,
+    /// which is always encodable. `nil` only if even that cannot be framed.
+    static func frameOrInternalError(
+        _ response: JSONRPCResponse,
+        encoder: JSONEncoder
+    ) -> (data: Data, encodingFailure: String?)? {
+        if let data = try? frame(response, encoder: encoder) {
+            return (data, nil)
+        }
+        let fallback = JSONRPCResponse.failure(
+            id: response.id,
+            code: JSONRPCErrorCode.internalError.rawValue,
+            message: "Response could not be encoded as JSON.",
+            data: .object(["reason": .string("encoding_failed")])
+        )
+        guard let data = try? frame(fallback, encoder: encoder) else { return nil }
+        return (data, "response for id \(response.id.map { "\($0)" } ?? "null") was not encodable; sent internalError instead")
     }
 
     private struct HeaderBoundary {
