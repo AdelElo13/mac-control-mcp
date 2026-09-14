@@ -9,6 +9,45 @@
 const REPO_SLUG = 'AdelElo13/mac-control-mcp';
 const RELEASE_BASE = `https://github.com/${REPO_SLUG}/releases/download`;
 
+/**
+ * Environment variable that points the installer at a different release
+ * mirror. Intended for the end-to-end test suite and for enterprise mirrors
+ * that re-host the *unmodified* release assets; it changes only where the
+ * bytes are fetched from, never what is verified — checksum, codesign, Team
+ * ID, bundle id, version and spctl all still apply, so a mirror cannot serve
+ * anything we did not sign.
+ */
+const RELEASE_BASE_URL_ENV = 'MAC_CONTROL_MCP_RELEASE_BASE_URL';
+
+/**
+ * Base URL the release assets are fetched from: the GitHub release by
+ * default, or the {@link RELEASE_BASE_URL_ENV} override.
+ *
+ * The override must be an absolute https URL with no query string or
+ * fragment; anything else is a hard error rather than a silent fallback, so a
+ * typo cannot quietly send the installer back to GitHub (or to plaintext).
+ *
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {string} base URL without a trailing slash
+ */
+function releaseBaseUrl(env = process.env) {
+  const raw = env[RELEASE_BASE_URL_ENV];
+  if (raw === undefined || raw.trim() === '') return RELEASE_BASE;
+  let url;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    throw new Error(`${RELEASE_BASE_URL_ENV} is not a valid URL: ${JSON.stringify(raw)}`);
+  }
+  if (url.protocol !== 'https:') {
+    throw new Error(`${RELEASE_BASE_URL_ENV} must use https, got ${url.protocol.replace(/:$/, '')}`);
+  }
+  if (url.search !== '' || url.hash !== '') {
+    throw new Error(`${RELEASE_BASE_URL_ENV} must not carry a query string or fragment`);
+  }
+  return url.toString().replace(/\/+$/, '');
+}
+
 /** Semver (optionally with a prerelease/build suffix) as used by our tags. */
 const VERSION_RE = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 
@@ -45,9 +84,10 @@ function sha256Name(version) {
  * Build every URL the installer needs for a given version.
  *
  * @param {string} version
- * @returns {{tag: string, tarballName: string, sha256Name: string, tarballUrl: string, sha256Url: string}}
+ * @param {string} [baseUrl] defaults to {@link releaseBaseUrl}()
+ * @returns {{tag: string, tarballName: string, sha256Name: string, tarballUrl: string, sha256Url: string, baseUrl: string}}
  */
-function releaseUrls(version) {
+function releaseUrls(version, baseUrl = releaseBaseUrl()) {
   const tag = releaseTag(version);
   const tar = tarballName(version);
   const sha = sha256Name(version);
@@ -55,8 +95,9 @@ function releaseUrls(version) {
     tag,
     tarballName: tar,
     sha256Name: sha,
-    tarballUrl: `${RELEASE_BASE}/${tag}/${tar}`,
-    sha256Url: `${RELEASE_BASE}/${tag}/${sha}`,
+    tarballUrl: `${baseUrl}/${tag}/${tar}`,
+    sha256Url: `${baseUrl}/${tag}/${sha}`,
+    baseUrl,
   };
 }
 
@@ -286,6 +327,8 @@ function isTransientError(err) {
 module.exports = {
   REPO_SLUG,
   RELEASE_BASE,
+  RELEASE_BASE_URL_ENV,
+  releaseBaseUrl,
   SHA256_RE,
   VERSION_RE,
   EXPECTED_TEAM_ID,

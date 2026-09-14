@@ -15,6 +15,9 @@ const {
   assertSafeArchivePaths,
   assertSafeArchiveLinks,
   parseTeamIdentifier,
+  releaseBaseUrl,
+  RELEASE_BASE,
+  RELEASE_BASE_URL_ENV,
   EXPECTED_TEAM_ID,
 } = require('../lib/release');
 
@@ -31,6 +34,31 @@ test('releaseUrls builds the published asset URLs for a version', () => {
     u.sha256Url,
     'https://github.com/AdelElo13/mac-control-mcp/releases/download/v0.8.3/MacControlMCP-v0.8.3-macos-universal.sha256',
   );
+});
+
+test('releaseBaseUrl defaults to the GitHub release and honours a validated https override', () => {
+  assert.equal(releaseBaseUrl({}), RELEASE_BASE);
+  assert.equal(releaseBaseUrl({ [RELEASE_BASE_URL_ENV]: '   ' }), RELEASE_BASE);
+  assert.equal(
+    releaseBaseUrl({ [RELEASE_BASE_URL_ENV]: 'https://mirror.example.com/releases/download/' }),
+    'https://mirror.example.com/releases/download',
+  );
+  assert.equal(
+    releaseBaseUrl({ [RELEASE_BASE_URL_ENV]: 'https://localhost:8443/dl' }),
+    'https://localhost:8443/dl',
+  );
+  const u = releaseUrls('0.8.3', 'https://mirror.example.com/r');
+  assert.equal(u.baseUrl, 'https://mirror.example.com/r');
+  assert.equal(u.tarballUrl, 'https://mirror.example.com/r/v0.8.3/MacControlMCP-v0.8.3-macos-universal.tar.gz');
+  assert.equal(u.sha256Url, 'https://mirror.example.com/r/v0.8.3/MacControlMCP-v0.8.3-macos-universal.sha256');
+});
+
+test('releaseBaseUrl refuses plaintext, malformed and query-carrying overrides', () => {
+  assert.throws(() => releaseBaseUrl({ [RELEASE_BASE_URL_ENV]: 'http://mirror.example.com/r' }), /must use https/);
+  assert.throws(() => releaseBaseUrl({ [RELEASE_BASE_URL_ENV]: 'ftp://mirror/r' }), /must use https/);
+  assert.throws(() => releaseBaseUrl({ [RELEASE_BASE_URL_ENV]: 'not a url' }), /not a valid URL/);
+  assert.throws(() => releaseBaseUrl({ [RELEASE_BASE_URL_ENV]: 'https://m/r?x=1' }), /query string/);
+  assert.throws(() => releaseBaseUrl({ [RELEASE_BASE_URL_ENV]: 'https://m/r#frag' }), /query string or fragment/);
 });
 
 test('releaseUrls handles prerelease versions', () => {

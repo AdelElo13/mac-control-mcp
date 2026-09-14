@@ -22,13 +22,20 @@
  *    Team ID, bundle identifier and version are all checked *there*; only then
  *    is the bundle renamed into place. Any failure leaves the previously
  *    installed, previously verified bundle untouched.
- *  - The "already installed" fast path re-runs the cheap checks rather than
- *    trusting a leftover: a bundle that exists is not a bundle that passed.
+ *  - The "already installed" fast path re-runs the *same* checks as the fresh
+ *    path (codesign --deep --strict, Team ID, bundle id, version, spctl) rather
+ *    than trusting a leftover: a bundle that exists is not a bundle that
+ *    passed. One that fails is moved aside (`MacControlMCP.app.rejected-<ts>`)
+ *    before the download starts.
  *
- * Testing hook: MAC_CONTROL_MCP_TEST_VERSION pins the release version to
- * download, so a package whose own release assets are not published yet can be
- * exercised against an existing release. It never changes what gets verified —
- * the bundle's CFBundleShortVersionString must equal whatever version is used.
+ * Testing hooks:
+ *  - MAC_CONTROL_MCP_TEST_VERSION pins the release version to download, so a
+ *    package whose own release assets are not published yet can be exercised
+ *    against an existing release. It never changes what gets verified — the
+ *    bundle's CFBundleShortVersionString must equal whatever version is used.
+ *  - MAC_CONTROL_MCP_RELEASE_BASE_URL points at a release mirror (https only).
+ *    The e2e test serves a fixture from localhost through it. It changes where
+ *    the bytes come from and nothing about what is verified.
  */
 
 const fs = require('node:fs');
@@ -39,6 +46,9 @@ const { pipeline } = require('node:stream/promises');
 
 const {
   releaseUrls,
+  releaseBaseUrl,
+  RELEASE_BASE,
+  RELEASE_BASE_URL_ENV,
   parseSha256File,
   digestsMatch,
   isTransientError,
@@ -193,7 +203,7 @@ async function attemptInstall(version, urls) {
     // leaves whatever was installed before exactly where it was.
     promoteStagedBundle({ stagingDir, appPath: APP_PATH, expectedVersion: version });
     log(
-      `signature verified in staging (codesign --verify --deep --strict, spctl --assess, team ${EXPECTED_TEAM_ID}, bundle id ${EXPECTED_BUNDLE_ID}, version ${version}) — promoted atomically`,
+      `signature verified in staging (codesign --verify --deep --strict, team ${EXPECTED_TEAM_ID}, bundle id ${EXPECTED_BUNDLE_ID}, version ${version}, spctl --assess) — promoted atomically`,
     );
   } finally {
     fs.rmSync(stagingDir, { recursive: true, force: true });
@@ -218,15 +228,28 @@ async function main() {
   }
 
   // releaseUrls() validates the version string, so a hostile env var cannot
-  // steer the download at an arbitrary path.
-  const urls = releaseUrls(version);
+  // steer the download at an arbitrary path. The base URL may be redirected
+  // at a mirror (tests, enterprise re-hosts) but must be https, and every
+  // verification step below applies to whatever it serves.
+  const baseUrl = releaseBaseUrl();
+  if (baseUrl !== RELEASE_BASE) {
+    warn(`${RELEASE_BASE_URL_ENV}=${baseUrl} — fetching release assets from that mirror instead of ${RELEASE_BASE}. All signature checks still apply.`);
+  }
+  const urls = releaseUrls(version, baseUrl);
 
   cleanStagingLeftovers(VENDOR_DIR);
 
   const state = needsInstall({ appPath: APP_PATH, expectedVersion: version });
   if (!state.install) {
-    log(`MacControlMCP.app ${version} already installed and re-verified — nothing to do.`);
+    log(
+      `MacControlMCP.app ${version} already installed and re-verified (codesign --verify --deep --strict, team ${EXPECTED_TEAM_ID}, bundle id ${EXPECTED_BUNDLE_ID}, version ${version}, spctl --assess) — nothing to do.`,
+    );
     return;
+  }
+  if (state.quarantinedTo) {
+    warn(
+      `WARNING: existing MacControlMCP.app failed re-verification [${state.failedCheck}] — moved aside to ${state.quarantinedTo}; downloading a fresh copy.`,
+    );
   }
   log(`installing: ${state.reason}`);
 

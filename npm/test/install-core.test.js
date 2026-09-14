@@ -210,8 +210,53 @@ test('needsInstall reinstalls a corrupted leftover that a version check alone wo
   assert.equal(state.install, true);
   assert.match(state.reason, /failed re-verification/);
   assert.match(state.reason, /codesign --verify failed/);
+  assert.equal(state.failedCheck, 'codesign --verify failed (exit 1)');
   // Only the first line of the verifier's message leaks into the reason.
   assert.equal(state.reason.includes('\n'), false);
+});
+
+test('needsInstall quarantines a rejected leftover instead of leaving it at the exec path', (t) => {
+  const dir = tmpdir(t);
+  const vendor = path.join(dir, 'vendor');
+  const appPath = path.join(vendor, APP_BUNDLE_NAME);
+  makeFakeBundle(appPath, { version: '0.9.0', marker: 'PLANTED' });
+
+  const state = needsInstall({
+    appPath,
+    expectedVersion: '0.9.0',
+    verify: () => {
+      throw new Error('Signing team mismatch (expected TeamIdentifier A3W973JZ49, got <none>)');
+    },
+  });
+
+  assert.equal(state.install, true);
+  assert.equal(fs.existsSync(appPath), false, 'rejected bundle must be moved off the install path');
+  assert.equal(path.dirname(state.quarantinedTo), vendor);
+  assert.match(path.basename(state.quarantinedTo), /^MacControlMCP\.app\.rejected-\d+$/);
+  // Moved, not deleted: the evidence survives for inspection.
+  assert.equal(fs.readFileSync(path.join(state.quarantinedTo, BINARY_REL_PATH), 'utf8'), 'PLANTED');
+  // cleanStagingLeftovers must not sweep the quarantine away.
+  cleanStagingLeftovers(vendor);
+  assert.equal(fs.existsSync(state.quarantinedTo), true);
+});
+
+test('needsInstall can be told to leave a rejected bundle in place', (t) => {
+  const dir = tmpdir(t);
+  const appPath = path.join(dir, 'vendor', APP_BUNDLE_NAME);
+  makeFakeBundle(appPath, { version: '0.9.0' });
+
+  const state = needsInstall({
+    appPath,
+    expectedVersion: '0.9.0',
+    quarantine: false,
+    verify: () => {
+      throw new Error('spctl --assess --type execute failed (exit 3)');
+    },
+  });
+
+  assert.equal(state.install, true);
+  assert.equal(state.quarantinedTo, undefined);
+  assert.equal(fs.existsSync(appPath), true);
 });
 
 test('needsInstall reinstalls when the leftover is the wrong version or wrong app', (t) => {
