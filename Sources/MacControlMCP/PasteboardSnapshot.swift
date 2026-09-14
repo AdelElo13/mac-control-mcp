@@ -19,7 +19,14 @@ enum PasteboardSnapshot {
     }
 
     static func capture() -> Snapshot {
-        let pasteboard = NSPasteboard.general
+        capture(from: NSPasteboard.general)
+    }
+
+    /// Pasteboard-scoped variant (v0.9): `clipboard_write` snapshots the
+    /// board it is about to clear so a failed `writeObjects` can put the
+    /// old contents back, and the clipboard tests snapshot a private
+    /// board rather than the user's.
+    static func capture(from pasteboard: NSPasteboard) -> Snapshot {
         var captured: [[String: Data]] = []
         for item in pasteboard.pasteboardItems ?? [] {
             var entry: [String: Data] = [:]
@@ -34,7 +41,10 @@ enum PasteboardSnapshot {
     }
 
     static func restore(_ snapshot: Snapshot) {
-        let pasteboard = NSPasteboard.general
+        restore(snapshot, to: NSPasteboard.general)
+    }
+
+    static func restore(_ snapshot: Snapshot, to pasteboard: NSPasteboard) {
         pasteboard.clearContents()
         var rebuilt: [NSPasteboardItem] = []
         for entry in snapshot.items {

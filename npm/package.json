@@ -1,0 +1,59 @@
+{
+  "name": "mac-control-mcp",
+  "mcpName": "io.github.AdelElo13/mac-control-mcp",
+  "version": "0.9.0",
+  "description": "Native Swift macOS automation over MCP — 151 tools: Accessibility tree, screen capture, OCR, browser DOM, EventKit, voice, undo. Ships a Developer ID signed, notarized .app.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "macos",
+    "automation",
+    "accessibility",
+    "computer-use",
+    "ocr",
+    "screen-capture",
+    "applescript",
+    "claude",
+    "ai-agent"
+  ],
+  "homepage": "https://github.com/AdelElo13/mac-control-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/AdelElo13/mac-control-mcp/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AdelElo13/mac-control-mcp.git",
+    "directory": "npm"
+  },
+  "license": "MIT",
+  "author": "Adil El-Ouariachi",
+  "type": "commonjs",
+  "bin": {
+    "mac-control-mcp": "bin/mac-control-mcp.js"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "scripts/install.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "postinstall": "node scripts/install.js",
+    "prepack": "node scripts/prepack.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

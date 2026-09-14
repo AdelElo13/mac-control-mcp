@@ -57,19 +57,45 @@ struct RealAppMatrixTests {
             process.executableURL = URL(fileURLWithPath: binary)
             stdinPipe = Pipe()
             stdoutPipe = Pipe()
-            let stderrPipe = Pipe()
             process.standardInput = stdinPipe
             process.standardOutput = stdoutPipe
-            process.standardError = stderrPipe
+            // A Pipe nobody drains is a 64 KB trap: once the server has
+            // logged that much to stderr its write(2) blocks, it stops
+            // answering, and the test below waits for a frame that never
+            // comes (observed: a full-suite run stuck for four hours on the
+            // System Settings test while the screen was locked and the
+            // server kept logging). Discard stderr instead.
+            process.standardError = FileHandle.nullDevice
             do { try process.run() } catch { return nil }
             let fd = stdoutPipe.fileHandleForReading.fileDescriptor
             let flags = fcntl(fd, F_GETFL)
             _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
         }
 
+        /// Close stdin and wait for the server's EOF exit — bounded, and
+        /// WITHOUT `Process.waitUntilExit`. Observed twice (2026-09-15):
+        /// the whole suite parked in `waitUntilExit` for hours with NO
+        /// child process left — Foundation waits for a termination
+        /// notification that never arrives once the child has been reaped
+        /// by someone else in this test bundle. Liveness is therefore
+        /// judged by `kill(pid, 0)` on the real pid; after the grace the
+        /// server is terminated, then killed, and we return regardless.
         func close() {
             try? stdinPipe.fileHandleForWriting.close()
-            process.waitUntilExit()
+            let pid = process.processIdentifier
+            func alive() -> Bool { kill(pid, 0) == 0 }
+            let deadline = Date().addingTimeInterval(5)
+            while alive(), Date() < deadline {
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+            if alive() {
+                kill(pid, SIGTERM)
+                let killDeadline = Date().addingTimeInterval(2)
+                while alive(), Date() < killDeadline {
+                    Thread.sleep(forTimeInterval: 0.05)
+                }
+                if alive() { kill(pid, SIGKILL) }
+            }
         }
 
         func sendRPC(_ body: String, timeout: TimeInterval = 10) -> JSONValue? {

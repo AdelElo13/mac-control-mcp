@@ -117,7 +117,7 @@ actor MCPServer {
                 ]),
                 "serverInfo": .object([
                     "name": .string("mac-control-mcp"),
-                    "version": .string("0.8.3")
+                    "version": .string("0.9.0")
                 ]),
                 "accessibilityPermission": .bool(permission)
             ])
@@ -181,7 +181,14 @@ actor MCPServer {
     // that has stalled itself, so this is acceptable.
     private func write(response: JSONRPCResponse) {
         do {
-            let message = try StdioMessageFramer.frame(response, encoder: encoder)
+            // v0.9: never drop a response. An unencodable result becomes an
+            // internalError for the same id (see `frameOrInternalError`).
+            guard let framed = StdioMessageFramer.frameOrInternalError(response, encoder: encoder) else {
+                log("Failed to write response: not encodable, and neither was the fallback error.")
+                return
+            }
+            if let failure = framed.encodingFailure { log(failure) }
+            let message = framed.data
             // Bypass FileHandle and write via the raw POSIX descriptor so the
             // response arrives immediately even when the client keeps stdin
             // open between requests.

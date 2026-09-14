@@ -7,7 +7,10 @@ actor WindowController {
     struct WindowInfo: Codable, Sendable {
         let app: String
         let pid: Int32
-        let title: String?
+        /// v0.9 (C-2): ALWAYS present — "" for an untitled window. It used
+        /// to be omitted from the JSON entirely when the window had no
+        /// title, so a caller could not tell "no title" from "key missing".
+        let title: String
         let x: Double
         let y: Double
         let width: Double
@@ -19,10 +22,36 @@ actor WindowController {
         /// `WindowController.axDeadline` and this entry comes from the
         /// Window Server list instead. Absent (nil) otherwise.
         var axTimeout: Bool? = nil
+        /// v0.9 (C-2) — the window server's own stable handle (CGWindowID).
+        /// This is the preferred way to target a window in every other
+        /// tool. nil only when no window-server entry could be matched to
+        /// this AX window (rare: window closed between the two reads).
+        var windowID: CGWindowID? = nil
+        /// Index into `list_displays` of the display showing this window
+        /// (by window center). nil when the window is off every display.
+        var displayIndex: Int? = nil
+        /// True for the frontmost on-screen window (`z_order == 0`) — the
+        /// window that receives keystrokes. Not tied to the app's AX
+        /// `main` flag, which can name a different window of the same app.
+        var isFocused: Bool = false
+        /// Front-to-back position among all normal application windows:
+        /// 0 is the frontmost window on screen. nil when unmatched.
+        var zOrder: Int? = nil
+        /// v0.9.0 (Codex r2 #1) — the id the AX element itself reports via
+        /// `AXWindowID.of`, read when the row is built from AX. `enrich`
+        /// uses it to attach `window_id` EXACTLY instead of by frame.
+        /// Internal only: NOT in `CodingKeys`, so `list_windows` output is
+        /// unchanged (`window_id` is still the one public id). nil for
+        /// CG-fallback rows and when the private symbol is unavailable.
+        var axWindowID: CGWindowID? = nil
 
         enum CodingKeys: String, CodingKey {
             case app, pid, title, x, y, width, height, minimized, main, index
             case axTimeout = "ax_timeout"
+            case windowID = "window_id"
+            case displayIndex = "display_index"
+            case isFocused = "is_focused"
+            case zOrder = "z_order"
         }
     }
 
@@ -177,7 +206,7 @@ actor WindowController {
             // when no browser window is on that monitor).
             guard w > 1, h > 1 else { continue }
             if y < 1 && h < 60 { continue }
-            let title = dict[kCGWindowName as String] as? String
+            let title = (dict[kCGWindowName as String] as? String) ?? ""
             let onscreen = (dict[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue ?? false
             out.append(WindowInfo(
                 app: appName,
@@ -226,6 +255,280 @@ actor WindowController {
         return result
     }
 
+    // MARK: - v0.9 (C-2): window identity
+
+    /// Attach the window-server identity (`window_id`, `z_order`) plus
+    /// `display_index` and `is_focused` to an assembled window list.
+    ///
+    /// Matching rule, per window, in order (Codex r2 #1):
+    ///   1. **Exact.** The row carries `axWindowID` (read from the AX
+    ///      element via `AXWindowID.of`) → the window-server entry with
+    ///      that id, full stop. No frame, no title, no order involved.
+    ///   2. **Frame + title.** Rows without an exact id (CG-fallback rows,
+    ///      or the private symbol is unavailable) take the first **unused**
+    ///      entry of the same pid whose frame matches
+    ///      (`WindowIdentity.frameTolerance`) AND whose normalized title
+    ///      (trimmed; nil ≡ "") equals the row's.
+    ///   3. **Frame only.** Last resort, first unused frame match — for
+    ///      apps whose AX title and `kCGWindowName` disagree.
+    ///
+    /// Entries are consumed: an id attached exactly is marked used BEFORE
+    /// any fallback row is considered, so a heuristic row can never steal
+    /// an id that another row owns exactly, and two same-framed fallback
+    /// rows still get distinct ids. A window with no matching entry keeps
+    /// `window_id: null` rather than borrowing a neighbour's.
+    ///
+    /// Why not frame-only-first-unused, as v0.9.0-rc1 did: it assumed AX
+    /// order == CG z-order. Same-frame windows A/B listed B,A by AX and A,B
+    /// by CG gave row B the id of A — and `window_id` then acted on the
+    /// wrong window (Codex r2 #1).
+    ///
+    /// Pure: no AX, no CG, no AppKit calls. `cgEntries` and `displays`
+    /// are supplied by the caller.
+    ///
+    /// `is_focused` is the frontmost ON-SCREEN window (`z_order == 0`) —
+    /// the window server's own answer to "what receives keystrokes",
+    /// which costs no `NSWorkspace` MainActor hop. It deliberately does
+    /// NOT require the AX `main` flag: a second window of an app can be
+    /// frontmost while the app's AX main window is another one (observed
+    /// live with two ControlZoo windows), and requiring `main` then left
+    /// every window unfocused.
+    static func enrich(
+        windows: [WindowInfo],
+        cgEntries: [WindowIdentity.Entry],
+        displays: [WindowIdentity.DisplayBounds]
+    ) -> [WindowInfo] {
+        // Pass 1: exact ids. Reserved up front so no fallback row — even
+        // one listed EARLIER — can consume an entry that a later row owns
+        // exactly.
+        let byID = Dictionary(cgEntries.map { ($0.windowID, $0) }, uniquingKeysWith: { first, _ in first })
+        var used = Set<CGWindowID>()
+        let exact: [WindowIdentity.Entry?] = windows.map { window in
+            guard let id = window.axWindowID, let entry = byID[id], entry.pid == window.pid else { return nil }
+            used.insert(id)
+            return entry
+        }
+
+        // Pass 2: heuristics for the rest, consuming entries as they go.
+        func normalized(_ title: String) -> String {
+            title.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return zip(windows, exact).map { window, exactEntry in
+            var out = window
+            let frame = CGRect(x: window.x, y: window.y, width: window.width, height: window.height)
+            let match: WindowIdentity.Entry?
+            if let exactEntry {
+                match = exactEntry
+            } else if window.axWindowID != nil {
+                // Codex r3 #1: this row KNOWS its window-server id and the
+                // snapshot does not carry it (the window closed between the
+                // AX read and the CG read, or the id belongs to another
+                // pid). Falling through to frame/title would hand it the id
+                // of an identical-looking neighbour — exactly the retarget
+                // the exact pass exists to prevent. A stale row reports
+                // `window_id: null`; the next call sees the truth.
+                match = nil
+            } else {
+                let sameFrame: (WindowIdentity.Entry) -> Bool = { entry in
+                    entry.pid == window.pid
+                        && !used.contains(entry.windowID)
+                        && WindowIdentity.framesMatch(entry.bounds, frame)
+                }
+                let title = normalized(window.title)
+                match = cgEntries.first(where: { sameFrame($0) && normalized($0.title) == title })
+                    ?? cgEntries.first(where: sameFrame)
+                if let match { used.insert(match.windowID) }
+            }
+            if let match {
+                out.windowID = match.windowID
+                out.zOrder = match.zOrder
+            }
+            out.displayIndex = WindowIdentity.displayIndex(containing: frame, displays: displays)
+            out.isFocused = out.zOrder == 0
+            return out
+        }
+    }
+
+    /// A `window_id` resolved back to everything the AX-based window tools
+    /// need. `index` is nil when the owning app exposes no AX window with
+    /// this frame (Chrome's browser windows, some Electron apps): capture
+    /// and OCR still work by id, but move/resize/focus cannot.
+    struct ResolvedWindow: Sendable {
+        let windowID: CGWindowID
+        let pid: pid_t
+        /// Owning application name, from `kCGWindowOwnerName`.
+        let ownerName: String
+        let title: String
+        let bounds: CGRect
+        let isOnscreen: Bool
+        let index: Int?
+        /// v0.9.0 blocker fix (Codex r1 #1): the CONCRETE AX window this id
+        /// resolved to. Every mutating tool acts on THIS element, never on
+        /// a re-read `axWindows(pid:)[index]`, so a window reorder between
+        /// resolve and act cannot retarget.
+        let element: AXUIElement?
+        /// Non-nil when several AX windows are indistinguishable (same
+        /// frame, same title, no usable z-order). The tool layer turns this
+        /// into `error_code: ambiguous_window` with the candidates instead
+        /// of acting on a guess.
+        let ambiguousCandidates: [WindowTargeting.Candidate]?
+
+        init(
+            windowID: CGWindowID,
+            pid: pid_t,
+            ownerName: String,
+            title: String,
+            bounds: CGRect,
+            isOnscreen: Bool,
+            index: Int?,
+            element: AXUIElement? = nil,
+            ambiguousCandidates: [WindowTargeting.Candidate]? = nil
+        ) {
+            self.windowID = windowID
+            self.pid = pid
+            self.ownerName = ownerName
+            self.title = title
+            self.bounds = bounds
+            self.isOnscreen = isOnscreen
+            self.index = index
+            self.element = element
+            self.ambiguousCandidates = ambiguousCandidates
+        }
+
+        /// Identity echo for a tool response: enough for the caller to
+        /// see WHICH window an id resolved to. CGWindowIDs are recycled
+        /// by the window server after a window closes, so a stale id can
+        /// resolve to a different window — this is how a caller notices.
+        var payload: [String: JSONValue] {
+            [
+                "window_id": .number(Double(windowID)),
+                "owner_pid": .number(Double(pid)),
+                "owner_name": .string(ownerName),
+                "title": .string(title)
+            ]
+        }
+
+        /// Does this window satisfy the caller's `expect_pid` /
+        /// `expect_title_contains` guards? Returns the failing field, or
+        /// nil when everything matches (or nothing was asserted).
+        func mismatch(expectPID: pid_t?, expectTitleContains: String?) -> (field: String, expected: String, actual: String)? {
+            if let expectPID, expectPID != pid {
+                return ("expect_pid", String(expectPID), String(pid))
+            }
+            if let expectTitleContains, !expectTitleContains.isEmpty,
+               !title.localizedCaseInsensitiveContains(expectTitleContains) {
+                return ("expect_title_contains", expectTitleContains, title)
+            }
+            return nil
+        }
+    }
+
+    /// Exact id + frame + title of one AX window, in the shape
+    /// `WindowTargeting` disambiguates over. The id (Codex r2 #1) is what
+    /// makes resolution exact; frame and title only matter when the
+    /// private symbol is unavailable.
+    private static func snapshot(of element: AXUIElement, index: Int) -> WindowTargeting.AXWindow<AXUIElement> {
+        WindowTargeting.AXWindow(
+            handle: element,
+            index: index,
+            frame: axFrame(of: element),
+            title: axTitle(of: element),
+            windowID: AXWindowID.of(element)
+        )
+    }
+
+    /// `AXPosition` + `AXSize` as one rect, or nil when either is missing
+    /// or not an `AXValue`.
+    static func axFrame(of element: AXUIElement) -> CGRect? {
+        var posRef: CFTypeRef?
+        var sizeRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &posRef) == .success,
+              AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeRef) == .success,
+              let posValue = posRef, let sizeValue = sizeRef,
+              CFGetTypeID(posValue) == AXValueGetTypeID(),
+              CFGetTypeID(sizeValue) == AXValueGetTypeID()
+        else { return nil }
+        var point = CGPoint.zero
+        var size = CGSize.zero
+        guard AXValueGetValue(posValue as! AXValue, .cgPoint, &point),
+              AXValueGetValue(sizeValue as! AXValue, .cgSize, &size)
+        else { return nil }
+        return CGRect(origin: point, size: size)
+    }
+
+    static func axTitle(of element: AXUIElement) -> String? {
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &ref) == .success
+        else { return nil }
+        return ref as? String
+    }
+
+    /// Resolve a `CGWindowID` to the CONCRETE AX window it names.
+    /// Returns nil when no window-server entry carries that id.
+    ///
+    /// v0.9.0 blocker fix (Codex r1 #1): this used to be "the first AX
+    /// window whose frame matches", which mapped two same-framed windows of
+    /// one pid onto the same AX index. Codex r2 #1: the AX element now
+    /// reports its own id (`AXWindowID.of`), so the match is exact;
+    /// frame → title → refuse is the fallback for id-less elements only,
+    /// in `WindowTargeting`, which is pure and unit-tested. The element is
+    /// carried through to the action so no later re-indexing can retarget.
+    func resolve(windowID: CGWindowID) -> ResolvedWindow? {
+        let entries = WindowIdentity.copyEntries()
+        guard let entry = WindowIdentity.entry(id: windowID, in: entries) else { return nil }
+        let axCandidates = axWindows(pid: entry.pid).enumerated().map { index, element in
+            Self.snapshot(of: element, index: index)
+        }
+        let outcome = WindowTargeting.resolve(
+            entry: entry,
+            siblings: entries.filter { $0.pid == entry.pid },
+            axWindows: axCandidates
+        )
+        let index: Int?
+        let element: AXUIElement?
+        let ambiguous: [WindowTargeting.Candidate]?
+        switch outcome {
+        case .matched(let handle, let matchedIndex):
+            index = matchedIndex
+            element = handle
+            ambiguous = nil
+        case .noAXWindow:
+            index = nil
+            element = nil
+            ambiguous = nil
+        case .ambiguous(let candidates):
+            index = nil
+            element = nil
+            ambiguous = candidates
+        }
+        return ResolvedWindow(
+            windowID: entry.windowID,
+            pid: entry.pid,
+            ownerName: entry.ownerName,
+            title: entry.title,
+            bounds: entry.bounds,
+            isOnscreen: entry.isOnscreen,
+            index: index,
+            element: element,
+            ambiguousCandidates: ambiguous
+        )
+    }
+
+    /// Post-action identity check (v0.9.0, Codex r1 #1): after mutating
+    /// `element`, does it still describe the window `windowID` names?
+    ///
+    /// Compared against a FRESH window-server read, so `move_window` and
+    /// `resize_window` — where the frame legitimately changed — verify
+    /// too: entry and element moved together.
+    func verify(element: AXUIElement, windowID: CGWindowID) -> WindowTargeting.Verification {
+        let entry = WindowIdentity.entry(id: windowID, in: WindowIdentity.copyEntries())
+        return WindowTargeting.verifyIdentity(
+            entry: entry,
+            axFrame: Self.axFrame(of: element),
+            axTitle: Self.axTitle(of: element)
+        )
+    }
+
     /// Enumerate all windows of all regular running apps. Windows are ordered
     /// per-app in the AX child order, which approximately matches z-order for
     /// the active app and is stable across calls for inactive apps.
@@ -236,8 +539,14 @@ actor WindowController {
     /// at most `maxConcurrentAXApps` at a time, each bounded by
     /// `axDeadline`. An app that doesn't answer in time is reported from
     /// the Window Server list with `ax_timeout: true` instead of blocking
-    /// the call. The Window Server list is fetched at most once. Apps stay
-    /// in `runningApplications` order.
+    /// the call. Apps stay in `runningApplications` order.
+    ///
+    /// PERF (v0.9): window identity (window_id / z_order / display_index /
+    /// is_focused) adds no round trips. The Window Server list is fetched
+    /// EXACTLY ONCE per call and shared by the AX fallback and the
+    /// identity pass; display geometry comes from CoreGraphics on this
+    /// thread (no DisplayController actor hop) and the focused app from
+    /// that same window-server snapshot (no NSWorkspace MainActor hop).
     func listWindows() async -> [WindowInfo] {
         // NSWorkspace.runningApplications is main-actor-affine under strict
         // concurrency — snapshot the (pid, name) pairs on MainActor, then
@@ -268,10 +577,26 @@ actor WindowController {
             if outcome.value != nil { manualAccessibilityEnabled.insert(apps[i].pid) }
         }
 
-        return Self.assemble(
+        // ONE window-server snapshot per call, shared by the AX fallback
+        // (apps that expose no AX windows) and the identity pass.
+        let snapshot = Self.copyWindowServerList()
+        let assembled = Self.assemble(
             apps: apps.map { (pid: $0.pid, name: $0.name) },
             outcomes: outcomes,
-            windowServerList: Self.copyWindowServerList
+            windowServerList: { snapshot }
+        )
+        return Self.enriched(assembled, windowServerList: snapshot)
+    }
+
+    /// Shared tail of both list calls: attach window_id / z_order /
+    /// display_index / is_focused. Synchronous and hop-free — display
+    /// geometry is read from CoreGraphics here, the focused app comes out
+    /// of the snapshot itself.
+    private static func enriched(_ windows: [WindowInfo], windowServerList: [[String: Any]]) -> [WindowInfo] {
+        enrich(
+            windows: windows,
+            cgEntries: WindowIdentity.entries(from: windowServerList),
+            displays: WindowIdentity.displayBounds()
         )
     }
 
@@ -283,10 +608,13 @@ actor WindowController {
         }
 
         enableManualAccessibility(pid: pid)
+        let snapshot = Self.copyWindowServerList()
         let real = Self.realAXWindowInfos(pid: pid, appName: name, messagingTimeout: nil)
-        if !real.isEmpty { return real }
-        // Chrome / apps with no AX-exposed windows.
-        return Self.cgWindows(from: Self.copyWindowServerList(), pid: pid, appName: name)
+        let list = real.isEmpty
+            // Chrome / apps with no AX-exposed windows.
+            ? Self.cgWindows(from: snapshot, pid: pid, appName: name)
+            : real
+        return Self.enriched(list, windowServerList: snapshot)
     }
 
     /// Bring a window to the front. Raises the app first, then the window.
@@ -294,6 +622,16 @@ actor WindowController {
     /// succeed, so callers don't get a false-positive success when the AX
     /// tree rejects the request.
     func focusWindow(pid: pid_t, index: Int) async -> Bool {
+        let array = axWindows(pid: pid)
+        guard index < array.count else { return false }
+        return await focusWindow(element: array[index], pid: pid)
+    }
+
+    /// Focus a window by its CONCRETE AX element (v0.9.0, Codex r1 #1).
+    /// The `(pid, index)` overload resolves and delegates here, so there is
+    /// exactly one implementation and no window-array re-read between
+    /// resolution and the action.
+    func focusWindow(element: AXUIElement, pid: pid_t) async -> Bool {
         // NSRunningApplication activation is main-actor affine.
         let appActivated: Bool = await MainActor.run {
             guard let app = NSRunningApplication(processIdentifier: pid) else { return false }
@@ -302,31 +640,33 @@ actor WindowController {
         }
         guard appActivated else { return false }
 
-        let array = axWindows(pid: pid)
-        guard index < array.count else { return false }
-
-        let window = array[index]
-        let raise = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
-        let setMain = AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
+        let raise = AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+        let setMain = AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
         return raise == .success && setMain == .success
     }
 
     /// Move the window to an absolute position in global coordinates.
     func moveWindow(pid: pid_t, index: Int, to point: CGPoint) -> Bool {
         guard let window = window(pid: pid, index: index) else { return false }
+        return moveWindow(element: window, to: point)
+    }
+
+    func moveWindow(element: AXUIElement, to point: CGPoint) -> Bool {
         var p = point
         guard let value = AXValueCreate(.cgPoint, &p) else { return false }
-        let status = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value)
-        return status == .success
+        return AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, value) == .success
     }
 
     /// Resize a window to the given width/height.
     func resizeWindow(pid: pid_t, index: Int, to size: CGSize) -> Bool {
         guard let window = window(pid: pid, index: index) else { return false }
+        return resizeWindow(element: window, to: size)
+    }
+
+    func resizeWindow(element: AXUIElement, to size: CGSize) -> Bool {
         var s = size
         guard let value = AXValueCreate(.cgSize, &s) else { return false }
-        let status = AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, value)
-        return status == .success
+        return AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, value) == .success
     }
 
     /// Apply a high-level state transition. Accepts multiple names per
@@ -340,6 +680,10 @@ actor WindowController {
     /// "please show this window" without knowing the prior state.
     func setState(pid: pid_t, index: Int, state: String) -> Bool {
         guard let window = window(pid: pid, index: index) else { return false }
+        return setState(element: window, state: state)
+    }
+
+    func setState(element window: AXUIElement, state: String) -> Bool {
         switch state.lowercased() {
         case "minimize", "minimized":
             return AXUIElementSetAttributeValue(window, kAXMinimizedAttribute as CFString, kCFBooleanTrue) == .success
@@ -439,7 +783,7 @@ actor WindowController {
             }
         }
 
-        let title = slots[0] as? String
+        let title = (slots[0] as? String) ?? ""
         let point = AXAttributeBatch.point(slots[1]) ?? .zero
         let size = AXAttributeBatch.size(slots[2]) ?? .zero
         let minimized = (slots[3] as? NSNumber)?.boolValue ?? false
@@ -449,6 +793,9 @@ actor WindowController {
             return CFEqual(mainWindow, window)
         }()
 
+        // Codex r2 #1: ask the element which window-server entry it IS, so
+        // `enrich` can attach `window_id` exactly instead of by frame.
+        // One extra AX round trip per window; nil when unavailable.
         return WindowInfo(
             app: appName,
             pid: pid,
@@ -459,7 +806,8 @@ actor WindowController {
             height: Double(size.height),
             minimized: minimized,
             main: isMain,
-            index: index
+            index: index,
+            axWindowID: AXWindowID.of(window)
         )
     }
 }

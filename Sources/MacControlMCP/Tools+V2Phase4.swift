@@ -7,43 +7,46 @@ extension ToolRegistry {
     static let definitionsV2Phase4: [MCPToolDefinition] = [
         MCPToolDefinition(
             name: "move_window",
-            description: "Move a window to an absolute (x,y) position in global coordinates.",
+            description: "Move a window to an absolute (x,y) position in global coordinates. "
+                + ToolRegistry.windowIDPrecedenceNote,
             inputSchema: schema(
-                properties: [
+                properties: withWindowIDProperty([
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "index": .object(["type": .array([.string("integer"), .string("string")])]),
                     "x": .object(["type": .string("number")]),
                     "y": .object(["type": .string("number")])
-                ],
-                required: ["pid", "index", "x", "y"]
+                ]),
+                required: ["x", "y"]
             )
         ),
         MCPToolDefinition(
             name: "resize_window",
-            description: "Resize a window to the given width and height.",
+            description: "Resize a window to the given width and height. "
+                + ToolRegistry.windowIDPrecedenceNote,
             inputSchema: schema(
-                properties: [
+                properties: withWindowIDProperty([
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "index": .object(["type": .array([.string("integer"), .string("string")])]),
                     "width": .object(["type": .string("number")]),
                     "height": .object(["type": .string("number")])
-                ],
-                required: ["pid", "index", "width", "height"]
+                ]),
+                required: ["width", "height"]
             )
         ),
         MCPToolDefinition(
             name: "set_window_state",
-            description: "Apply a window state: minimize, unminimize, fullscreen, exit_fullscreen, or main.",
+            description: "Apply a window state: minimize, unminimize, fullscreen, exit_fullscreen, or main. "
+                + ToolRegistry.windowIDPrecedenceNote,
             inputSchema: schema(
-                properties: [
+                properties: withWindowIDProperty([
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "index": .object(["type": .array([.string("integer"), .string("string")])]),
                     "state": .object([
                         "type": .string("string"),
                         "description": .string("minimize | unminimize/restore | normal/default/show (unminimize + raise + main) | main/raise | fullscreen | exit_fullscreen/windowed")
                     ])
-                ],
-                required: ["pid", "index", "state"]
+                ]),
+                required: ["state"]
             )
         ),
         MCPToolDefinition(
@@ -82,74 +85,114 @@ extension ToolRegistry {
 
 extension ToolRegistry {
     func callMoveWindow(_ arguments: [String: JSONValue]) async -> ToolCallResult {
-        guard let pid = parsePID(arguments["pid"]) else {
-            return invalidArgument("move_window requires a positive integer pid.")
-        }
-        guard let index = arguments["index"]?.intValue, index >= 0 else {
-            return invalidArgument("move_window requires a non-negative index.")
-        }
         guard let x = arguments["x"]?.doubleValue, let y = arguments["y"]?.doubleValue else {
             return invalidArgument("move_window requires x and y.")
         }
+        let handle: WindowHandle
+        switch await windowHandle(arguments, tool: "move_window") {
+        case .success(let resolved): handle = resolved
+        case .failure(let box): return box.result
+        }
 
-        let ok = await windows.moveWindow(pid: pid, index: index, to: CGPoint(x: x, y: y))
-        let payload: [String: JSONValue] = [
+        // Act on the CONCRETE element resolved from window_id (v0.9.0,
+        // Codex r1 #1) — re-reading the AX window array by index here is
+        // what let a reorder retarget the move.
+        let ok = await {
+            if let element = handle.element {
+                return await windows.moveWindow(element: element, to: CGPoint(x: x, y: y))
+            }
+            return await windows.moveWindow(pid: handle.pid, index: handle.index, to: CGPoint(x: x, y: y))
+        }()
+        var payload: [String: JSONValue] = [
             "ok": .bool(ok),
-            "pid": .number(Double(pid)),
-            "index": .number(Double(index)),
             "x": .number(x),
             "y": .number(y)
         ]
+        payload.merge(handle.payload) { existing, _ in existing }
+        let verification = await verifyWindowIdentity(handle)
+        payload.merge(verification.payload) { _, new in new }
+        if let reason = verification.mismatch {
+            payload["ok"] = .bool(false)
+            return errorResult(
+                "move_window acted on a window that no longer matches the requested window_id (\(reason)).",
+                payload
+            )
+        }
         return ok
             ? successResult("Window moved.", payload)
             : errorResult("Failed to move window.", payload)
     }
 
     func callResizeWindow(_ arguments: [String: JSONValue]) async -> ToolCallResult {
-        guard let pid = parsePID(arguments["pid"]) else {
-            return invalidArgument("resize_window requires a positive integer pid.")
-        }
-        guard let index = arguments["index"]?.intValue, index >= 0 else {
-            return invalidArgument("resize_window requires a non-negative index.")
-        }
         guard let w = arguments["width"]?.doubleValue,
               let h = arguments["height"]?.doubleValue,
               w > 0, h > 0
         else {
             return invalidArgument("resize_window requires positive width and height.")
         }
+        let handle: WindowHandle
+        switch await windowHandle(arguments, tool: "resize_window") {
+        case .success(let resolved): handle = resolved
+        case .failure(let box): return box.result
+        }
 
-        let ok = await windows.resizeWindow(pid: pid, index: index, to: CGSize(width: w, height: h))
-        let payload: [String: JSONValue] = [
+        let ok = await {
+            if let element = handle.element {
+                return await windows.resizeWindow(element: element, to: CGSize(width: w, height: h))
+            }
+            return await windows.resizeWindow(pid: handle.pid, index: handle.index,
+                                              to: CGSize(width: w, height: h))
+        }()
+        var payload: [String: JSONValue] = [
             "ok": .bool(ok),
-            "pid": .number(Double(pid)),
-            "index": .number(Double(index)),
             "width": .number(w),
             "height": .number(h)
         ]
+        payload.merge(handle.payload) { existing, _ in existing }
+        let verification = await verifyWindowIdentity(handle)
+        payload.merge(verification.payload) { _, new in new }
+        if let reason = verification.mismatch {
+            payload["ok"] = .bool(false)
+            return errorResult(
+                "resize_window acted on a window that no longer matches the requested window_id (\(reason)).",
+                payload
+            )
+        }
         return ok
             ? successResult("Window resized.", payload)
             : errorResult("Failed to resize window.", payload)
     }
 
     func callSetWindowState(_ arguments: [String: JSONValue]) async -> ToolCallResult {
-        guard let pid = parsePID(arguments["pid"]) else {
-            return invalidArgument("set_window_state requires a positive integer pid.")
-        }
-        guard let index = arguments["index"]?.intValue, index >= 0 else {
-            return invalidArgument("set_window_state requires a non-negative index.")
-        }
         guard let state = arguments["state"]?.stringValue, !state.isEmpty else {
             return invalidArgument("set_window_state requires state.")
         }
+        let handle: WindowHandle
+        switch await windowHandle(arguments, tool: "set_window_state") {
+        case .success(let resolved): handle = resolved
+        case .failure(let box): return box.result
+        }
 
-        let ok = await windows.setState(pid: pid, index: index, state: state)
+        let ok = await {
+            if let element = handle.element {
+                return await windows.setState(element: element, state: state)
+            }
+            return await windows.setState(pid: handle.pid, index: handle.index, state: state)
+        }()
         var payload: [String: JSONValue] = [
             "ok": .bool(ok),
-            "pid": .number(Double(pid)),
-            "index": .number(Double(index)),
             "state": .string(state)
         ]
+        payload.merge(handle.payload) { existing, _ in existing }
+        let verification = await verifyWindowIdentity(handle)
+        payload.merge(verification.payload) { _, new in new }
+        if let reason = verification.mismatch {
+            payload["ok"] = .bool(false)
+            return errorResult(
+                "set_window_state acted on a window that no longer matches the requested window_id (\(reason)).",
+                payload
+            )
+        }
         if ok {
             return successResult("Window state applied.", payload)
         }

@@ -33,9 +33,24 @@ extension ToolRegistry {
                 are covered by other windows), 'auto' (AX first, OCR fallback). \
                 Returns (x,y) plus the match's bounds, element_id and \
                 max_depth_used, with confidence 0..1 + candidate list.
+                Pass window_id (from list_windows) to scope BOTH strategies \
+                to one window: the AX search is rooted at that window's \
+                Accessibility window and the OCR pass captures exactly that \
+                window. window_id takes precedence — pid is then ignored. \
+                With a window_id the response carries `ax_scope`: \
+                "window_subtree" when AX ran inside that window, or "none" \
+                when the window has NO attributable Accessibility window \
+                (Chrome browser windows, parts of Electron, minimized \
+                windows, or several indistinguishable AX windows) — then \
+                the AX strategy is SKIPPED, `ax_skipped_reason` says why \
+                ("no_ax_window" / "ambiguous_window"), and only OCR runs; \
+                AX elements are never taken from an app-wide walk, because \
+                they could belong to an overlapping window of the same \
+                app. strategy="ax" on such a window fails with that reason \
+                as error_code (plus `candidates` when ambiguous).
                 """,
             inputSchema: schema(
-                properties: [
+                properties: withWindowIDProperty([
                     "target": .object(["type": .string("string")]),
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "strategy": .object([
@@ -46,8 +61,8 @@ extension ToolRegistry {
                         "type": .array([.string("integer"), .string("string")]),
                         "description": .string("AX search depth. Default 32 (same as find_elements), clamped 1-64.")
                     ])
-                ],
-                required: ["target", "pid"]
+                ]),
+                required: ["target"]
             )
         ),
         MCPToolDefinition(
@@ -60,17 +75,29 @@ extension ToolRegistry {
                 Useful for Electron/Chromium/Canvas apps where native AX is sparse. \
                 Trimmed to max_nodes (default 300, range 50-1000) with labelled \
                 elements preferred over unlabelled when truncating.
+                Pass window_id (from list_windows) to scope the tree AND the OCR \
+                pass to ONE window — required to get sane labels from an app \
+                with several windows. window_id takes precedence over pid. \
+                The response carries `ax_scope`: "window_subtree" when the \
+                walk was rooted at that window's Accessibility window, \
+                "app_root" when no window was requested (plain pid), or \
+                "none" when the window has NO attributable Accessibility \
+                window (Chrome browser windows, parts of Electron, minimized \
+                windows, or several indistinguishable AX windows) — then \
+                `nodes` is EMPTY, `ax_scope_reason` is "no_ax_window" or \
+                "ambiguous_window" (with `candidates`) and `hint` names the \
+                alternatives; nodes are never taken from an app-wide walk \
+                for a targeted window.
                 """,
             inputSchema: schema(
-                properties: [
+                properties: withWindowIDProperty([
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "max_depth": .object(["type": .array([.string("integer"), .string("string")])]),
                     "max_nodes": .object([
                         "type": .array([.string("integer"), .string("string")]),
                         "description": .string("Output cap. Default 300, clamped 50-1000.")
                     ])
-                ],
-                required: ["pid"]
+                ])
             )
         ),
         MCPToolDefinition(
@@ -229,8 +256,18 @@ extension ToolRegistry {
         guard let target = arguments["target"]?.stringValue, !target.isEmpty else {
             return invalidArgument("ground requires 'target'.")
         }
-        guard let pid = parsePID(arguments["pid"]) else {
-            return invalidArgument("ground requires a positive integer 'pid'.")
+        let scope: GroundingController.WindowScope?
+        switch await windowScope(arguments, tool: "ground") {
+        case .success(let resolved): scope = resolved
+        case .failure(let box): return box.result
+        }
+        let pid: pid_t
+        if let scope {
+            pid = scope.pid
+        } else if let parsed = parsePID(arguments["pid"]) {
+            pid = parsed
+        } else {
+            return invalidArgument("ground requires a positive integer 'pid', or a window_id from list_windows.")
         }
         let stratRaw = arguments["strategy"]?.stringValue?.lowercased() ?? "auto"
         let strategy: GroundingController.Strategy
@@ -240,14 +277,32 @@ extension ToolRegistry {
         default:     strategy = .auto
         }
         let r = await grounding.ground(target: target, pid: pid, strategy: strategy,
-                                       maxDepth: arguments["max_depth"]?.intValue)
+                                       maxDepth: arguments["max_depth"]?.intValue,
+                                       window: scope)
         var payload: [String: JSONValue] = [
             "ok": .bool(r.ok),
             "result": encodeAsJSONValue(r),
+            "pid": .number(Double(pid)),
             // Snake-case echoes alongside the nested camelCase result, so a
             // caller does not have to know both spellings (A-2 / A-14 / D-4).
             "max_depth_used": .number(Double(r.maxDepthUsed))
         ]
+        if let scope {
+            payload.merge(scope.payload) { existing, _ in existing }
+            // Codex r2 #2: say whether AX really ran inside this window
+            // ("window_subtree") or was withheld ("none") because the
+            // window has no attributable AXWindow — and why. An agent
+            // that sees "none" knows the OCR hit is all it will get and
+            // should not retry with strategy="ax".
+            payload["ax_scope"] = .string(scope.axScope)
+            if let reason = r.axSkippedReason {
+                payload["ax_skipped_reason"] = .string(reason)
+            }
+            if let candidates = scope.ambiguousCandidates {
+                payload["candidate_count"] = .number(Double(candidates.count))
+                payload["candidates"] = .array(candidates.map { .object($0.payload) })
+            }
+        }
         if let id = r.elementId { payload["element_id"] = .string(id) }
         if let b = r.bounds { payload["bounds"] = encodeAsJSONValue(b) }
         if let c = r.errorCode { payload["error_code"] = .string(c) }
@@ -258,23 +313,71 @@ extension ToolRegistry {
     }
 
     func callAXTreeAugmented(_ arguments: [String: JSONValue]) async -> ToolCallResult {
-        guard let pid = parsePID(arguments["pid"]) else {
-            return invalidArgument("ax_tree_augmented requires a positive integer 'pid'.")
+        let scope: GroundingController.WindowScope?
+        switch await windowScope(arguments, tool: "ax_tree_augmented") {
+        case .success(let resolved): scope = resolved
+        case .failure(let box): return box.result
+        }
+        let pid: pid_t
+        if let scope {
+            pid = scope.pid
+        } else if let parsed = parsePID(arguments["pid"]) {
+            pid = parsed
+        } else {
+            return invalidArgument(
+                "ax_tree_augmented requires a positive integer 'pid', or a window_id from list_windows."
+            )
         }
         let maxDepth = max(1, min(arguments["max_depth"]?.intValue ?? 12, 32))
         // v0.7.1: expose the maxNodes cap to callers; clamp 50..1000.
         let maxNodes = max(50, min(arguments["max_nodes"]?.intValue ?? 300, 1000))
-        let r = await grounding.axTreeAugmented(pid: pid, maxDepth: maxDepth, maxNodes: maxNodes)
+        let r = await grounding.axTreeAugmented(pid: pid, maxDepth: maxDepth, maxNodes: maxNodes, window: scope)
         var payload: [String: JSONValue] = [
             "ok": .bool(r.ok),
             "result": encodeAsJSONValue(r),
-            "max_depth_used": .number(Double(r.maxDepthUsed))
+            "max_depth_used": .number(Double(r.maxDepthUsed)),
+            // Codex r2 #2: which AX tree the nodes come from (see
+            // `withheldAugmentedFields` for the withheld shape).
+            "ax_scope": .string(r.axScope)
         ]
+        if let scope { payload.merge(scope.payload) { existing, _ in existing } }
+        if let scope, let reasonRaw = r.axScopeReason,
+           let reason = AXScopePolicy.WithheldReason(rawValue: reasonRaw) {
+            payload.merge(Self.withheldAugmentedFields(
+                reason: reason, windowID: scope.windowID, ownerName: scope.ownerName,
+                candidates: scope.ambiguousCandidates
+            )) { _, new in new }
+        }
         if let c = r.errorCode { payload["error_code"] = .string(c) }
         return r.ok
             ? successResult("augmented tree: \(r.nodeCount) nodes, \(r.inferredCount) inferred in \(r.elapsedMs)ms",
                             payload)
             : errorResult(r.error ?? "ax_tree_augmented failed", payload)
+    }
+
+    /// Codex r2 #2: the top-level fields `ax_tree_augmented` reports when
+    /// a targeted window has no attributable AXWindow. Pure, so the shape
+    /// is unit-tested without a live window.
+    static func withheldAugmentedFields(
+        reason: AXScopePolicy.WithheldReason,
+        windowID: CGWindowID?,
+        ownerName: String,
+        candidates: [WindowTargeting.Candidate]?
+    ) -> [String: JSONValue] {
+        var fields: [String: JSONValue] = [
+            "nodes": .array([]),
+            "node_count": .number(0),
+            "ax_scope": .string(AXScopePolicy.Decision.withheld(reason).axScope),
+            "ax_scope_reason": .string(reason.rawValue),
+            "hint": .string(AXScopePolicy.withheldHint(
+                tool: "ax_tree_augmented", reason: reason, windowID: windowID, ownerName: ownerName
+            ))
+        ]
+        if let candidates {
+            fields["candidate_count"] = .number(Double(candidates.count))
+            fields["candidates"] = .array(candidates.map { .object($0.payload) })
+        }
+        return fields
     }
 
     func callAXSnapshotCapture(_ arguments: [String: JSONValue]) async -> ToolCallResult {

@@ -99,6 +99,76 @@ struct ElementCacheTests {
         #expect(await cache.resolve(older) == nil)
     }
 
+    // MARK: - Id collisions (Codex review 3)
+
+    /// SHA-256 makes a real collision unreachable from a test, so the guard
+    /// is exercised through the injectable id function: a deliberately
+    /// degenerate hash forces two DIFFERENT paths onto one id.
+    private static let collidingIdentify: @Sendable (pid_t, [AXPathComponent]) -> String = { _, _ in
+        "el_collision"
+    }
+
+    private func component(_ role: String, _ index: Int) -> AXPathComponent {
+        AXPathComponent(role: role, index: index, identifier: nil)
+    }
+
+    @Test("a colliding id never silently retargets the existing entry")
+    func collisionDoesNotOverwrite() async {
+        let cache = ElementCache(identify: Self.collidingIdentify)
+        let first = AXUIElementCreateApplication(101)
+        let second = AXUIElementCreateApplication(202)
+
+        let idA = await cache.store(first, pid: 7, path: [component("AXWindow", 0)])
+        #expect(idA == "el_collision")
+        #expect(await cache.resolve(idA).map { CFEqual($0, first) } == true)
+
+        // Same id, different path → must NOT overwrite the first entry.
+        let idB = await cache.store(second, pid: 7, path: [component("AXButton", 1)])
+        #expect(idB != idA, "a colliding element must not inherit the existing id")
+        #expect(await cache.collisions == 1)
+        // The poisoned id is evicted rather than left pointing at either
+        // element: whoever holds it gets unknown_element_id and re-searches.
+        #expect(await cache.resolve(idA) == nil)
+        #expect(await cache.resolve(idB).map { CFEqual($0, second) } == true)
+    }
+
+    @Test("re-storing the same (pid, path) still refreshes in place")
+    func samePathRefreshes() async {
+        let cache = ElementCache(identify: Self.collidingIdentify)
+        let element = AXUIElementCreateApplication(101)
+        let path = [component("AXWindow", 0)]
+        let first = await cache.store(element, pid: 7, path: path)
+        let second = await cache.store(element, pid: 7, path: path)
+        #expect(first == second)
+        #expect(await cache.collisions == 0)
+        #expect(await cache.count == 1)
+    }
+
+    @Test("a colliding id across pids is a collision too")
+    func collisionAcrossPIDs() async {
+        let cache = ElementCache(identify: Self.collidingIdentify)
+        let path = [component("AXWindow", 0)]
+        let idA = await cache.store(AXUIElementCreateApplication(101), pid: 7, path: path)
+        let idB = await cache.store(AXUIElementCreateApplication(202), pid: 8, path: path)
+        #expect(idA != idB)
+        #expect(await cache.collisions == 1)
+    }
+
+    @Test("real paths that naively concatenate the same get distinct cache ids")
+    func craftedPathsGetDistinctIDs() async {
+        let cache = ElementCache()
+        let forged = [AXPathComponent(role: "AXButton", index: 1, identifier: "x/AXButton[1]#y")]
+        let genuine = [
+            AXPathComponent(role: "AXButton", index: 1, identifier: "x"),
+            AXPathComponent(role: "AXButton", index: 1, identifier: "y")
+        ]
+        let idA = await cache.store(AXUIElementCreateApplication(101), pid: 7, path: forged)
+        let idB = await cache.store(AXUIElementCreateApplication(202), pid: 7, path: genuine)
+        #expect(idA != idB)
+        #expect(await cache.collisions == 0)
+        #expect(await cache.count == 2)
+    }
+
     @Test("storeMany drops expired entries before inserting")
     func storeManyExpiry() async throws {
         let cache = ElementCache(ttl: 0.05, maxEntries: 100)

@@ -68,6 +68,8 @@ final class ToolRegistry: @unchecked Sendable {
     let appleNative: AppleNativeController
     let undo: UndoController
     let artifactStore: ArtifactStore
+    // v0.9 workstream E — text editing primitives (gap-audit C-7 / B-15)
+    let textEditing: TextEditingController
 
     init(
         accessibility: AccessibilityController,
@@ -102,7 +104,8 @@ final class ToolRegistry: @unchecked Sendable {
         browserDOM: BrowserDOMController? = nil,
         appleNative: AppleNativeController = AppleNativeController(),
         undoCtrl: UndoController = UndoController(),
-        artifactStore: ArtifactStore = ArtifactStore()
+        artifactStore: ArtifactStore = ArtifactStore(),
+        textEditing: TextEditingController = TextEditingController()
     ) {
         self.accessibility = accessibility
         self.elementCache = elementCache
@@ -142,13 +145,16 @@ final class ToolRegistry: @unchecked Sendable {
         self.appleNative = appleNative
         self.undo = undoCtrl
         self.artifactStore = artifactStore
+        self.textEditing = textEditing
     }
 
     var toolDefinitions: [MCPToolDefinition] {
         Self.definitions + Self.definitionsV2 + Self.definitionsV2Phase2 +
             Self.definitionsV2Phase3 + Self.definitionsV2Phase4 + Self.definitionsV2Phase5 +
             Self.definitionsV2Phase6 + Self.definitionsV2Phase7 + Self.definitionsV2Phase8 +
-            Self.definitionsV2Phase9 + Self.definitionsV2Phase10 + Self.definitionsV2Phase11
+            Self.definitionsV2Phase9 + Self.definitionsV2Phase10 + Self.definitionsV2Phase11 +
+            Self.definitionsBatch + Self.definitionsV0_9AXCore + Self.definitionsAnnotate +
+            Self.definitionsTextEditing
     }
 
     // MARK: - Tool dispatch
@@ -204,7 +210,7 @@ final class ToolRegistry: @unchecked Sendable {
         case "list_menu_titles":
             return await callListMenuTitles(arguments)
         case "clipboard_read":
-            return await callClipboardRead()
+            return await callClipboardRead(arguments)
         case "clipboard_write":
             return await callClipboardWrite(arguments)
         case "permissions_status":
@@ -215,6 +221,8 @@ final class ToolRegistry: @unchecked Sendable {
             return await callMcpServerInfo()
         case "probe_ax_tree":
             return await callProbeAXTree(arguments)
+        case "element_at_point":
+            return await callElementAtPoint(arguments)
         case "browser_list_tabs":
             return await callBrowserListTabs(arguments)
         case "browser_get_active_tab":
@@ -468,6 +476,25 @@ final class ToolRegistry: @unchecked Sendable {
             return await callListAppIntents()
         case "invoke_app_intent":
             return await callInvokeAppIntent(arguments)
+        // MARK: - v0.9 workstream C — batch / composite call (C-1)
+        case "batch":
+            return await callBatch(arguments)
+        // MARK: - v0.9 workstream F — annotated screenshot (C-13)
+        case "capture_annotated":
+            return await callCaptureAnnotated(arguments)
+        // v0.9 workstream E — text editing primitives
+        case "text_get_selection":
+            return await callTextGetSelection(arguments)
+        case "text_get_caret":
+            return await callTextGetCaret(arguments)
+        case "text_set_selection":
+            return await callTextSetSelection(arguments)
+        case "text_insert_at_caret":
+            return await callTextInsertAtCaret(arguments)
+        case "text_replace_range":
+            return await callTextReplaceRange(arguments)
+        case "text_get_value":
+            return await callTextGetValue(arguments)
         default:
             return errorResult("Unknown tool '\(name)'.")
         }
@@ -479,16 +506,38 @@ final class ToolRegistry: @unchecked Sendable {
         }
         if let dead = noSuchProcessResult(pid: pid, tool: "list_elements") { return dead }
 
-        let maxDepth = max(1, min(arguments["max_depth"]?.intValue ?? 8, 32))
+        let maxDepth = AXDepth.resolve(arguments["max_depth"]?.intValue)
         let elements = await accessibility.listElements(pid: pid, maxDepth: maxDepth)
+        let budget = PayloadOptions(arguments, known: AXPayload.elementFields)
+
+        // list_elements is already role-filtered to actionable controls,
+        // so `interactive_only` is a no-op here; `viewport_only`,
+        // `fields` and `max_bytes` still apply (v0.9 C-9).
+        let windows = budget.viewportOnly ? await accessibility.windowFrames(pid: pid) : []
+        let visible = budget.viewportOnly
+            ? elements.filter {
+                AXPayload.isInViewport(
+                    frame: ToolRegistry.frame(position: $0.position, size: $0.size),
+                    windows: windows
+                )
+            }
+            : elements
+        let encoded = visible.map { encodeElement(info: $0, id: nil, fields: budget.fields) }
+        let budgeted = AXPayload.applyByteBudget(encoded, maxBytes: budget.maxBytes)
 
         var payload: [String: JSONValue] = [
             "ok": .bool(true),
             "pid": .number(Double(pid)),
             "max_depth": .number(Double(maxDepth)),
-            "count": .number(Double(elements.count)),
-            "elements": encodeAsJSONValue(elements)
+            "count": .number(Double(budgeted.items.count)),
+            "elements": .array(budgeted.items)
         ]
+        budget.annotate(
+            &payload,
+            maxDepthUsed: maxDepth,
+            nodesVisited: elements.count,
+            truncated: budgeted.truncated
+        )
         if let hint = await axEmptyHint(pid: pid, whenEmpty: elements.isEmpty) {
             payload["ax_tree_hint"] = .string(hint)
         }
@@ -503,13 +552,20 @@ final class ToolRegistry: @unchecked Sendable {
 
         let role = arguments["role"]?.stringValue
         let title = arguments["title"]?.stringValue
+        // v0.9 (A-9): opt-in equality matching. Default stays substring.
+        let exact = AXPayload.flag(arguments["exact"])
+        let maxDepth = AXDepth.resolve(arguments["max_depth"]?.intValue)
 
-        guard let element = await accessibility.findElement(pid: pid, role: role, title: title) else {
+        guard let hit = await accessibility.findElementWithPath(
+            pid: pid, role: role, title: title, exact: exact, maxDepth: maxDepth
+        ) else {
             var payload: [String: JSONValue] = [
                 "ok": .bool(false),
                 "pid": .number(Double(pid)),
                 "role": role.map(JSONValue.string) ?? .null,
-                "title": title.map(JSONValue.string) ?? .null
+                "title": title.map(JSONValue.string) ?? .null,
+                "exact": .bool(exact),
+                "max_depth_used": .number(Double(maxDepth))
             ]
             if let hint = await axEmptyHint(pid: pid, whenEmpty: true) {
                 payload["ax_tree_hint"] = .string(hint)
@@ -517,12 +573,19 @@ final class ToolRegistry: @unchecked Sendable {
             return errorResult("No matching element found.", payload)
         }
 
-        let info = await accessibility.getElementInfo(element: element)
+        let info = await accessibility.getElementInfo(element: hit.element)
+        // v0.9 (C-5 / A-9): find_element now returns an element_id too,
+        // so the cheapest entry-point tool no longer forces a second
+        // find_elements call just to get a handle.
+        let id = await elementCache.store(hit.element, pid: pid, path: hit.path)
         return successResult(
             "Element found.",
             [
                 "ok": .bool(true),
                 "pid": .number(Double(pid)),
+                "element_id": .string(id),
+                "exact": .bool(exact),
+                "max_depth_used": .number(Double(maxDepth)),
                 "element": encodeAsJSONValue(info)
             ]
         )
@@ -996,8 +1059,8 @@ final class ToolRegistry: @unchecked Sendable {
     private static let definitions: [MCPToolDefinition] = [
         MCPToolDefinition(
             name: "list_elements",
-            description: "Survey the ACTIONABLE controls of an app (fixed role whitelist: buttons, links, text fields/areas, checkboxes, radio buttons, pop-up/menu buttons, sliders, switches, steppers… — no containers, rows or static text) down to max_depth (default 8). "
-                + "No filters and no element ids. Use it to answer \"what can I interact with here?\"; use find_elements / query_elements to target specific elements and get ids for follow-up calls, and get_ui_tree for the full structure including containers.",
+            description: "Survey the ACTIONABLE controls of an app (fixed role whitelist: buttons, links, text fields/areas, checkboxes, radio buttons, pop-up/menu buttons, sliders, switches, steppers… — no containers, rows or static text) down to max_depth (default 24). "
+                + "No filters and no element ids. Use it to answer \"what can I interact with here?\"; use find_elements / query_elements to target specific elements and get ids for follow-up calls, and get_ui_tree for the full structure including containers. " + axPayloadBudgetDoc,
             inputSchema: schema(
                 properties: [
                     "pid": .object([
@@ -1006,7 +1069,24 @@ final class ToolRegistry: @unchecked Sendable {
                     ]),
                     "max_depth": .object([
                         "type": .array([.string("integer"), .string("string")]),
-                        "description": .string("Traversal depth limit (default 8).")
+                        "description": .string("Traversal depth limit. Default 24 (project-wide AX default), max 64.")
+                    ]),
+                    "fields": .object([
+                        "type": .string("array"),
+                        "items": .object(["type": .string("string")]),
+                        "description": .string("Payload budget (v0.9): only emit these per-node keys. Default: all of id, role, title, value, position, size, depth.")
+                    ]),
+                    "interactive_only": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Payload budget: keep only actionable roles (buttons, links, fields, checkboxes, …). Default false.")
+                    ]),
+                    "viewport_only": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Payload budget: drop nodes whose frame lies outside the app's on-screen window bounds. Default false.")
+                    ]),
+                    "max_bytes": .object([
+                        "type": .array([.string("integer"), .string("string")]),
+                        "description": .string("Payload budget: soft cap on the encoded element/node bytes. Emission stops when the next item would exceed it and truncated=true is returned. Default: no cap.")
                     ])
                 ],
                 required: ["pid"]
@@ -1014,9 +1094,10 @@ final class ToolRegistry: @unchecked Sendable {
         ),
         MCPToolDefinition(
             name: "find_element",
-            description: "Return the FIRST element (depth-first, depth <= 20, 5 s budget) whose role contains `role` and whose title contains `title` — case-insensitive substring; title matches AXTitle → AXDescription → AXIdentifier and falls back to AXValue. "
-                + "Returns role/title/value/position/size but NO element id. Cheapest existence/geometry check. "
-                + "Use find_elements when you need every match or an element id for perform_element_action / get_element_attributes / set_element_attribute; query_elements for regex (e.g. exact ^Save$); list_elements to survey controls; get_ui_tree for full structure.",
+            description: "Return the FIRST element (depth-first, max_depth default 24, 5 s budget) whose role contains `role` and whose title contains `title` — case-insensitive SUBSTRING by default; title matches AXTitle → AXDescription → AXIdentifier and falls back to AXValue. "
+                + "WARNING: substring matching on role is wider than it looks — role \"Button\" also matches AXRadioButton, AXMenuButton and AXPopUpButton (a Safari tab was returned for role=Button title=Sign). Pass exact:true for equality matching when you know the exact role/title. "
+                + "Returns role/title/value/position/size plus a content-addressed element_id usable with perform_element_action / get_element_attributes / set_element_attribute. "
+                + "Use find_elements when you need every match; query_elements for regex (e.g. ^Save$); list_elements to survey controls; get_ui_tree for full structure.",
             inputSchema: schema(
                 properties: [
                     "pid": .object([
@@ -1025,11 +1106,19 @@ final class ToolRegistry: @unchecked Sendable {
                     ]),
                     "role": .object([
                         "type": .string("string"),
-                        "description": .string("Case-insensitive role filter.")
+                        "description": .string("Case-insensitive role filter (substring unless exact=true).")
                     ]),
                     "title": .object([
                         "type": .string("string"),
-                        "description": .string("Case-insensitive title filter.")
+                        "description": .string("Case-insensitive title filter (substring unless exact=true).")
+                    ]),
+                    "exact": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Match role and title by case-insensitive EQUALITY instead of substring. Default false for compatibility.")
+                    ]),
+                    "max_depth": .object([
+                        "type": .array([.string("integer"), .string("string")]),
+                        "description": .string("Traversal depth limit. Default 24 (project-wide AX default), max 64.")
                     ])
                 ],
                 required: ["pid"]

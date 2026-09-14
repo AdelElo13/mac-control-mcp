@@ -77,3 +77,62 @@ jobs:
             exit 1
           fi
           echo "All Swift Testing suites passed."
+
+  npm-package:
+    name: npm launcher (npm/)
+    # macos-15 so `npm pack` and the launcher tests run on the same platform
+    # the package targets (`"os": ["darwin"]`).
+    runs-on: macos-15
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: npm ci
+        # --ignore-scripts keeps the postinstall from downloading the release
+        # tarball: CI only exercises the launcher and the pure helpers.
+        working-directory: npm
+        run: npm ci --ignore-scripts
+
+      - name: Fetch a notarized bundle as the signed test fixture
+        # The fast-path and postinstall e2e tests need a real Developer ID
+        # signed MacControlMCP.app (codesign / Team ID / spctl cannot be
+        # faked) and skip without one. Pull the published v0.8.3 release and
+        # check it against its .sha256 asset before handing it to the tests.
+        env:
+          FIXTURE_VERSION: 0.8.3
+        run: |
+          set -euo pipefail
+          BASE="https://github.com/AdelElo13/mac-control-mcp/releases/download/v${FIXTURE_VERSION}"
+          NAME="MacControlMCP-v${FIXTURE_VERSION}-macos-universal"
+          DIR="$RUNNER_TEMP/fixture"
+          mkdir -p "$DIR"
+          curl -fsSL --retry 3 -o "$DIR/$NAME.tar.gz" "$BASE/$NAME.tar.gz"
+          curl -fsSL --retry 3 -o "$DIR/$NAME.sha256" "$BASE/$NAME.sha256"
+          (cd "$DIR" && shasum -a 256 -c "$NAME.sha256")
+          tar -xzf "$DIR/$NAME.tar.gz" -C "$DIR"
+          codesign -dv --verbose=4 "$DIR/MacControlMCP.app" 2>&1 | grep -E '^TeamIdentifier=A3W973JZ49$'
+          echo "MAC_CONTROL_MCP_TEST_FIXTURE_APP=$DIR/MacControlMCP.app" >> "$GITHUB_ENV"
+
+      - name: node --test
+        working-directory: npm
+        run: |
+          node --test 2>&1 | tee /tmp/node-test.log
+          test "${PIPESTATUS[0]}" -eq 0
+          # The signed-fixture tests must have run, not skipped: a skip here
+          # means the fixture step silently stopped delivering coverage.
+          if grep -qE '^ok .*# SKIP' /tmp/node-test.log; then
+            echo "Skipped tests detected — the signed fixture was not usable." >&2
+            exit 1
+          fi
+
+      - name: npm pack --dry-run
+        # Runs the prepack gate, which fails the job if npm/package.json and
+        # server.json ever drift apart, and prints the published file list so
+        # a stray vendor/ or test/ file is visible in the log.
+        working-directory: npm
+        run: npm pack --dry-run

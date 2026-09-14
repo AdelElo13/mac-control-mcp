@@ -124,11 +124,43 @@ enum ToolTimeouts {
         "speech_to_text": 180
     ]
 
+    /// v0.9 (`batch` tool, C-1): a batch's own `tools/call` timeout — the
+    /// one `main.swift` wraps `callTool(name: "batch", ...)` in — must
+    /// cover however long its sequential sub-calls will actually take,
+    /// or the outer wrapper fires a generic timeout while the batch
+    /// handler keeps running underneath it (per `AsyncTimeout.run`'s
+    /// "late result discarded" semantics). Sum each sub-call's own limit
+    /// (computed the same way a standalone `tools/call` would) plus the
+    /// inter-call `delay_ms` overhead. `callBatch` (Tools+Batch.swift)
+    /// rejects any batch whose sum exceeds `batchCap -
+    /// batchHandlerSlack` up front, before anything runs — this constant
+    /// is that ceiling, not a truncation applied to the outer timeout
+    /// itself (see `batchLimit` below).
+    static let batchCap: TimeInterval = 300
+
+    /// v0.9 review follow-up (MEDIUM, #8): the outer `tools/call` wrapper
+    /// timeout for `batch` used to equal the sum of the inner per-call
+    /// budgets EXACTLY (`min(batchCap, sum + delayOverhead)`), with zero
+    /// margin for the handler's own overhead (loop bookkeeping, per-call
+    /// permission-context enrichment, JSON encoding of accumulated
+    /// results). Near the 300s cap, that let the outer wrapper's
+    /// `AsyncTimeout.run` answer the client with a generic timeout while
+    /// `callBatch` (Tools+Batch.swift) was still executing — and, per
+    /// that helper's documented "late result discarded" semantics, kept
+    /// running side-effecting sub-calls in the background afterwards.
+    /// This slack is added on top of the inner sum so the outer timeout
+    /// always has room to let the inner work finish and report its own
+    /// result first.
+    static let batchHandlerSlack: TimeInterval = 5
+
     static func limit(
         for name: String,
         arguments: [String: JSONValue],
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> TimeInterval {
+        if name == "batch" {
+            return batchLimit(arguments: arguments, environment: environment)
+        }
         var base = perToolLimit[name] ?? defaultLimit
         if let raw = environment[environmentKey], let value = Double(raw), value > 0 {
             base = value
@@ -139,6 +171,42 @@ enum ToolTimeouts {
             .max()
         guard let requested else { return base }
         return max(base, requested + slack)
+    }
+
+    private static func batchLimit(
+        arguments: [String: JSONValue],
+        environment: [String: String]
+    ) -> TimeInterval {
+        guard let calls = arguments["calls"]?.arrayValue, !calls.isEmpty else {
+            return defaultLimit
+        }
+
+        let rawDelay = arguments["delay_ms"]?.doubleValue ?? 0
+        let delayMs = rawDelay.isFinite ? min(max(rawDelay, 0), 5000) : 0
+        let delayOverhead = (delayMs / 1000) * Double(max(0, calls.count - 1))
+
+        let sum = calls.reduce(TimeInterval(0)) { total, call in
+            guard let object = call.objectValue, let subName = object["name"]?.stringValue else {
+                return total
+            }
+            // A nested "batch" entry is rejected outright by the handler
+            // before it ever runs — don't recurse into it, just budget the
+            // default so a deeply/self-nested payload can't blow the stack.
+            guard subName != "batch" else { return total + defaultLimit }
+            let subArguments = object["arguments"]?.objectValue ?? [:]
+            return total + limit(for: subName, arguments: subArguments, environment: environment)
+        }
+
+        // No `min(batchCap, ...)` here: the REJECTION of an over-budget
+        // batch happens inside `callBatch` itself (Tools+Batch.swift),
+        // which refuses any batch whose inner sum already leaves no room
+        // for `batchHandlerSlack` under `batchCap`. By the time a batch
+        // actually runs, `sum + delayOverhead <= batchCap -
+        // batchHandlerSlack`, so this outer limit is bounded by
+        // `batchCap` anyway — but it must never be capped to LESS than
+        // the inner work, which capping here (before that rejection
+        // check has even run) risked doing.
+        return sum + delayOverhead + batchHandlerSlack
     }
 
     static func timeoutResult(name: String, limit: TimeInterval) -> ToolCallResult {

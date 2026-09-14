@@ -30,17 +30,17 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "capture_window",
-            description: "Screenshot ONE window of an app by pid (optional title_contains). Picks the largest onscreen, layer-0 window matching the filter and captures just that window via ScreenCaptureKit — it works when the window is occluded or on another Space (legacy CG fallbacks otherwise). "
+            description: "Screenshot ONE window — by window_id (preferred, unambiguous) or by pid (optional title_contains). With pid it picks the largest onscreen, layer-0 window matching the filter; with window_id it captures exactly that window. Captures just that window via ScreenCaptureKit — it works when the window is occluded or on another Space (legacy CG fallbacks otherwise). "
                 + "Use this instead of capture_screen + cropping when you want a specific app window; use capture_screen for the whole main display or an arbitrary region. "
                 + "Returns path/width/height plus format, scale, source size, pixels_per_point (image pixels per window point, from the window's top-left) and window_bounds. "
-                + "pixels_per_point and window_bounds derive from the window bounds read from the window server immediately BEFORE the capture (geometry_source=window_bounds_before_capture); if the window moves or resizes in between, re-capture before mapping image coordinates to clicks. Supports max_width / format / quality.",
+                + "pixels_per_point and window_bounds derive from the window bounds read from the window server immediately BEFORE the capture (geometry_source=window_bounds_before_capture); if the window moves or resizes in between, re-capture before mapping image coordinates to clicks. Supports max_width / format / quality. "
+                + ToolRegistry.windowIDPrecedenceNote,
             inputSchema: schema(
-                properties: withImageOutputProperties([
+                properties: withWindowIDProperty(withImageOutputProperties([
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "title_contains": .object(["type": .string("string")]),
                     "output_path": .object(["type": .string("string")])
-                ]),
-                required: ["pid"]
+                ]))
             )
         ),
         MCPToolDefinition(
@@ -228,14 +228,15 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "move_window_to_display",
-            description: "Move a window to the specified display (by display_index), preserving its size.",
+            description: "Move a window to the specified display (by display_index), preserving its size. "
+                + ToolRegistry.windowIDPrecedenceNote,
             inputSchema: schema(
-                properties: [
+                properties: withWindowIDProperty([
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "index": .object(["type": .array([.string("integer"), .string("string")])]),
                     "display_index": .object(["type": .array([.string("integer"), .string("string")])])
-                ],
-                required: ["pid", "index", "display_index"]
+                ]),
+                required: ["display_index"]
             )
         ),
         MCPToolDefinition(
@@ -343,10 +344,21 @@ extension ToolRegistry {
     }
 
     func callCaptureWindow(_ arguments: [String: JSONValue]) async -> ToolCallResult {
-        guard let pid = parsePID(arguments["pid"]) else {
-            return invalidArgument("capture_window requires a positive integer pid.")
+        // window_id wins over pid/title_contains when present.
+        let resolved: WindowController.ResolvedWindow?
+        switch await resolveWindowTarget(arguments, tool: "capture_window") {
+        case .success(let target): resolved = target
+        case .failure(let box): return box.result
         }
-        let title = arguments["title_contains"]?.stringValue
+        let pid: pid_t
+        if let resolved {
+            pid = resolved.pid
+        } else if let parsed = parsePID(arguments["pid"]) {
+            pid = parsed
+        } else {
+            return invalidArgument("capture_window requires a positive integer pid, or a window_id from list_windows.")
+        }
+        let title = resolved == nil ? arguments["title_contains"]?.stringValue : nil
         let rawPath = arguments["output_path"]?.stringValue
         let outputPath: String?
         do {
@@ -360,15 +372,24 @@ extension ToolRegistry {
         case .failure(let box): return box.result
         }
         do {
-            let capture = try await screen.captureWindow(
-                ownerPID: pid, titleContains: title, outputPath: outputPath, options: options
-            )
+            let capture: ScreenController.CaptureResult
+            if let resolved {
+                capture = try await screen.captureWindow(
+                    selected: Self.selectedWindow(resolved), outputPath: outputPath, options: options
+                )
+            } else {
+                capture = try await screen.captureWindow(
+                    ownerPID: pid, titleContains: title, outputPath: outputPath, options: options
+                )
+            }
             var payload: [String: JSONValue] = [
                 "ok": .bool(true),
                 "path": .string(capture.path),
                 "width": .number(Double(capture.width)),
-                "height": .number(Double(capture.height))
+                "height": .number(Double(capture.height)),
+                "pid": .number(Double(pid))
             ]
+            if let resolved { payload.merge(resolved.payload) { existing, _ in existing } }
             payload.merge(Self.captureMetadata(capture)) { existing, _ in existing }
             return successResult("Captured window to \(capture.path).", payload)
         } catch {
@@ -696,7 +717,7 @@ extension ToolRegistry {
             let list = await windows.listAppWindows(pid: pid)
             if let match = list.first(where: { w in
                 guard let filter = titleFilter, !filter.isEmpty else { return true }
-                return (w.title ?? "").lowercased().contains(filter)
+                return w.title.lowercased().contains(filter)
             }) {
                 return successResult(
                     "Window appeared.",
@@ -827,30 +848,49 @@ extension ToolRegistry {
     }
 
     func callMoveWindowToDisplay(_ arguments: [String: JSONValue]) async -> ToolCallResult {
-        guard let pid = parsePID(arguments["pid"]) else {
-            return invalidArgument("move_window_to_display requires a positive integer pid.")
-        }
-        guard let index = arguments["index"]?.intValue, index >= 0 else {
-            return invalidArgument("move_window_to_display requires a non-negative index.")
-        }
         guard let displayIdx = arguments["display_index"]?.intValue, displayIdx >= 0 else {
             return invalidArgument("move_window_to_display requires display_index.")
         }
+        let handle: WindowHandle
+        switch await windowHandle(arguments, tool: "move_window_to_display") {
+        case .success(let resolved): handle = resolved
+        case .failure(let box): return box.result
+        }
         let list = await displays.list()
         guard displayIdx < list.count else {
-            return errorResult("display_index out of range — found \(list.count) display(s).",
-                               ["ok": .bool(false)])
+            return errorResult(
+                "display_index out of range — found \(list.count) display(s).",
+                [
+                    "ok": .bool(false),
+                    "error_code": .string("no_such_display"),
+                    "display_count": .number(Double(list.count))
+                ]
+            )
         }
         let target = list[displayIdx]
-        let ok = await windows.moveWindow(pid: pid, index: index, to: CGPoint(x: target.x, y: target.y))
-        let payload: [String: JSONValue] = [
+        let ok = await {
+            if let element = handle.element {
+                return await windows.moveWindow(element: element, to: CGPoint(x: target.x, y: target.y))
+            }
+            return await windows.moveWindow(pid: handle.pid, index: handle.index,
+                                            to: CGPoint(x: target.x, y: target.y))
+        }()
+        var payload: [String: JSONValue] = [
             "ok": .bool(ok),
-            "pid": .number(Double(pid)),
-            "index": .number(Double(index)),
             "display_index": .number(Double(displayIdx)),
             "x": .number(target.x),
             "y": .number(target.y)
         ]
+        payload.merge(handle.payload) { existing, _ in existing }
+        let verification = await verifyWindowIdentity(handle)
+        payload.merge(verification.payload) { _, new in new }
+        if let reason = verification.mismatch {
+            payload["ok"] = .bool(false)
+            return errorResult(
+                "move_window_to_display acted on a window that no longer matches the requested window_id (\(reason)).",
+                payload
+            )
+        }
         return ok
             ? successResult("Window moved to display \(displayIdx).", payload)
             : errorResult("Window move failed.", payload)
@@ -871,9 +911,9 @@ extension ToolRegistry {
         let maxScrolls = max(1, min(arguments["max_scrolls"]?.intValue ?? 30, 200))
 
         for attempt in 0..<maxScrolls {
-            if let element = await accessibility.findElement(pid: pid, role: role, title: title) {
-                let info = await accessibility.getElementInfo(element: element)
-                let id = await elementCache.store(element, pid: pid)
+            if let hit = await accessibility.findElementWithPath(pid: pid, role: role, title: title) {
+                let info = await accessibility.getElementInfo(element: hit.element)
+                let id = await elementCache.store(hit.element, pid: pid, path: hit.path)
                 return successResult(
                     "Element visible after \(attempt) scroll(s).",
                     [

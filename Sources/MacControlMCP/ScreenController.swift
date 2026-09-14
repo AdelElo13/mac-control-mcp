@@ -76,7 +76,7 @@ actor ScreenController {
     /// (see `ScreenError`) so the caller can see WHICH window was picked
     /// and why the pick might be wrong — e.g. a 1x22 helper window instead
     /// of the intended content window.
-    struct SelectedWindowInfo: Sendable {
+    struct SelectedWindowInfo: Sendable, Equatable {
         let windowID: CGWindowID
         let title: String
         let bounds: CGRect
@@ -321,6 +321,129 @@ actor ScreenController {
         return try ImageEncoder.encode(image, options: effective)
     }
 
+    // MARK: - Annotated capture (v0.9 / C-13)
+
+    /// What `captureAnnotated` should photograph.
+    enum AnnotateTarget: Sendable, Equatable {
+        /// The app's best window, chosen by `selectWindow` (same rules as
+        /// capture_window).
+        case window(pid: pid_t, titleContains: String?)
+        /// One already-selected window (v0.9.0, Codex r1 #2) — either a
+        /// `window_id` the caller passed, or the window `selectWindow`
+        /// picked BEFORE the AX walk, so the walk can be rooted at that
+        /// window's AX element and the capture is guaranteed to be the
+        /// same window the elements came from.
+        case selectedWindow(SelectedWindowInfo)
+        case mainDisplay
+    }
+
+    struct AnnotatedCapture: Sendable {
+        let data: Data
+        let encoded: EncodedImage
+        /// Global-point frame of what was captured (window frame, or the
+        /// main display's bounds).
+        let pointBounds: CGRect
+        /// Indices into the `elements` array passed in, in draw order — so
+        /// index 0 of this array is the box labelled "1" on the image.
+        let drawnIndices: [Int]
+        /// False when the overlay could not be rendered (bitmap context
+        /// creation failed) and the plain capture was encoded instead.
+        let annotated: Bool
+        /// The rects every reported element was clipped against (the
+        /// captured region, plus the display union when known), so the
+        /// tool layer computes each element's `center` with exactly the
+        /// same geometry the filter used (v0.9.0, Codex r1 #2).
+        let clipRects: [CGRect]
+    }
+
+    /// Capture → filter → draw numbered boxes → encode, all in one actor
+    /// hop, so no `CGImage` ever crosses an isolation boundary.
+    ///
+    /// The overlay is drawn at the CAPTURED resolution and `options`
+    /// (format / quality / max_width) are applied afterwards, so boxes
+    /// downscale with the content instead of being drawn at the wrong
+    /// scale.
+    ///
+    /// CAVEAT, deliberately not papered over: the caller walks the AX tree
+    /// BEFORE calling this, so if the window moves or its content scrolls
+    /// between the walk and the capture, the boxes are stale by exactly
+    /// that change — the same "geometry read before capture" caveat
+    /// `capture_window` documents. Re-capture before clicking if the UI is
+    /// animating.
+    func captureAnnotated(
+        target: AnnotateTarget,
+        elements: [ScreenAnnotator.ElementGeometry],
+        limit: Int,
+        options: ImageOutputOptions
+    ) async throws -> AnnotatedCapture {
+        let image: CGImage
+        let bounds: CGRect
+        switch target {
+        case .window(let pid, let titleContains):
+            let (captured, selected) = try await windowImage(ownerPID: pid, titleContains: titleContains)
+            image = captured
+            bounds = selected.bounds
+        case .selectedWindow(let selected):
+            image = try await captureSelected(selected)
+            bounds = selected.bounds
+        case .mainDisplay:
+            let id = CGMainDisplayID()
+            image = try displayImage(id)
+            bounds = CGDisplayBounds(id)
+        }
+
+        let geometry = ScreenAnnotator.Geometry(
+            origin: bounds.origin,
+            pointSize: bounds.size,
+            pixelWidth: image.width,
+            pixelHeight: image.height
+        )
+        // v0.9.0 (Codex r1 #2): clip against the captured region AND the
+        // display union, and drop anything with less than
+        // `minVisibleArea` left — a sliver's reported centre would
+        // otherwise land outside the image it is supposed to index.
+        let displayUnion = WindowIdentity.unionBounds(of: WindowIdentity.displayBounds())
+        let clips = [geometry.captureRect] + (displayUnion.map { [$0] } ?? [])
+        let picked = ScreenAnnotator.filterInteractive(
+            elements, captureRect: geometry.captureRect, displayBounds: displayUnion, limit: limit
+        )
+        let boxes = picked.enumerated().map { offset, elementIndex in
+            ScreenAnnotator.AnnotationBox(index: offset + 1, globalRect: elements[elementIndex].frame)
+        }
+
+        let overlay = ScreenAnnotator.draw(boxes: boxes, on: image, geometry: geometry)
+        let (data, encoded) = try ImageEncoder.encode(overlay ?? image, options: options)
+        return AnnotatedCapture(
+            data: data,
+            encoded: encoded,
+            pointBounds: bounds,
+            drawnIndices: picked,
+            annotated: overlay != nil,
+            clipRects: clips
+        )
+    }
+
+    /// Pick the window `capture_window` would capture, WITHOUT capturing
+    /// it (v0.9.0, Codex r1 #2).
+    ///
+    /// `capture_annotated` needs the selection before it walks the AX tree,
+    /// so the walk can be rooted at that window's AX element instead of the
+    /// application element — otherwise an overlapping window of the same
+    /// app contributes elements to the picture it is not in.
+    func selectWindowInfo(ownerPID: pid_t, titleContains: String?) throws -> SelectedWindowInfo {
+        let listOptions: CGWindowListOption = [.optionAll, .excludeDesktopElements]
+        guard let info = CGWindowListCopyWindowInfo(listOptions, kCGNullWindowID) as? [[String: Any]] else {
+            throw ScreenError.captureFailed
+        }
+        let candidates = info.filter {
+            ($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == ownerPID
+        }
+        guard let match = Self.selectWindow(from: candidates, titleContains: titleContains) else {
+            throw ScreenError.noMatchingWindow(titleContains: titleContains)
+        }
+        return Self.selectedWindowInfo(from: match)
+    }
+
     /// Capture a specific on-screen window.
     ///
     /// CGWindowListCopyWindowInfo bridges numeric CF values into NSNumber
@@ -392,6 +515,50 @@ actor ScreenController {
         return (capture, try ocr(image: image, options: options))
     }
 
+    /// v0.9 (C-2/C-3): capture ONE window named by its `CGWindowID`,
+    /// skipping the pid + title_contains selection heuristic entirely.
+    /// The caller (tool layer) has already resolved the id against the
+    /// window server, so `selected` carries that entry's real bounds.
+    func captureWindow(
+        selected: SelectedWindowInfo,
+        outputPath: String? = nil,
+        options: ImageOutputOptions = .default
+    ) async throws -> CaptureResult {
+        let image = try await captureSelected(selected)
+        return try finish(image, outputPath: outputPath, options: options,
+                          pointWidth: Double(selected.bounds.width), pointBounds: selected.bounds)
+    }
+
+    /// OCR ONE window named by its `CGWindowID`, in memory. Same
+    /// per-window ScreenCaptureKit path `ground`/`ax_tree_augmented`
+    /// already use, so an occluded window reads its own text.
+    func ocrWindow(
+        selected: SelectedWindowInfo,
+        keepImage: Bool = false,
+        options: OCRRequestOptions = OCRRequestOptions()
+    ) async throws -> (CaptureResult, OCRResult) {
+        let image = try await captureSelected(selected)
+        let capture: CaptureResult
+        if keepImage {
+            capture = try finish(image, outputPath: nil, options: .default,
+                                 pointWidth: Double(selected.bounds.width), pointBounds: selected.bounds)
+        } else {
+            capture = CaptureResult(
+                path: "", width: image.width, height: image.height,
+                sourceWidth: image.width, sourceHeight: image.height,
+                format: "png",
+                pointWidth: Double(selected.bounds.width),
+                pointBounds: selected.bounds
+            )
+        }
+        do {
+            return (capture, try ocr(image: image, options: options))
+        } catch {
+            if keepImage { try? FileManager.default.removeItem(atPath: capture.path) }
+            throw error
+        }
+    }
+
     /// Shared window-selection + three-strategy capture chain used by both
     /// `captureWindow` (writes a file) and `ocrWindow` (stays in memory).
     private func windowImage(
@@ -413,17 +580,24 @@ actor ScreenController {
         }
         let selected = Self.selectedWindowInfo(from: match)
 
-        guard let wnum = match[kCGWindowNumber as String] as? NSNumber else {
+        guard match[kCGWindowNumber as String] is NSNumber else {
             throw ScreenError.windowCaptureFailed(window: selected, underlying: "Matched window dictionary had no kCGWindowNumber.")
         }
-        let windowID = CGWindowID(wnum.uint32Value)
+        return (try await captureSelected(selected), selected)
+    }
+
+    /// The three-strategy capture chain for ONE already-selected window.
+    /// Split out of `windowImage` so a caller that already knows exactly
+    /// which window it wants (a `window_id`) skips selection entirely.
+    private func captureSelected(_ selected: SelectedWindowInfo) async throws -> CGImage {
+        let windowID = selected.windowID
 
         // Strategy 1: ScreenCaptureKit. The window's CURRENT CG bounds
         // are passed for sizing so a briefly cached SCShareableContent
         // entry can't produce a wrongly-sized capture.
         do {
             let image = try await ScreenCaptureKitBridge.captureWindow(windowID: windowID, frame: selected.bounds)
-            return (image, selected)
+            return image
         } catch {
             if let bridgeError = error as? ScreenCaptureKitBridge.BridgeError,
                case .permissionDenied = bridgeError {
@@ -448,7 +622,7 @@ actor ScreenController {
             windowID,
             [.bestResolution, .boundsIgnoreFraming]
         ) {
-            return (image, selected)
+            return image
         }
 
         // Strategy 3 (last resort): crop the window's bounds from the
@@ -472,7 +646,7 @@ actor ScreenController {
             throw ScreenError.windowCaptureFailed(window: selected, underlying: "CGWindowListCreateImage region crop returned nil.")
         }
 
-        return (image, selected)
+        return image
     }
 
     // MARK: - OCR
