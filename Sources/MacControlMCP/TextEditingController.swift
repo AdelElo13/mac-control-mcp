@@ -222,7 +222,7 @@ actor TextEditingController {
         /// element is focused explicitly (`AXFocused`) before selecting
         /// (Codex r7). Tool arguments are spelled as the schema takes them.
         var alternativeRoutes: String {
-            "visually (capture_annotated / ocr_screen on the window) or via the clipboard (activate_app on the element's pid; set_element_attribute element_id, attribute: \"AXFocused\", value: true; text_set_selection location: \(range.location), length: \(insertedCharacters); press_key key: \"c\", modifiers: [\"cmd\"]; clipboard_read)"
+            "visually (capture_annotated / ocr_screen on the window) or via the clipboard (activate_app on the element's pid; set_element_attribute element_id, name: \"AXFocused\", value: true; text_set_selection location: \(range.location), length: \(insertedCharacters); press_key key: \"c\", modifiers: [\"cmd\"]; clipboard_read)"
         }
     }
 

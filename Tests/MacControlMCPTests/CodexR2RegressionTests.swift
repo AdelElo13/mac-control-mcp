@@ -196,7 +196,10 @@ struct CodexR2RegressionTests {
         // Codex r7: AXSelectedTextRange does not move keyboard focus; with
         // two documents open Cmd-C copies from the focused one. The route
         // must focus the element before selecting.
-        #expect(outcome.warning?.contains("\"AXFocused\"") == true)
+        // Codex r8: the step must be spelled with the tool's real
+        // argument names (`name`, not `attribute`), or following it
+        // returns "set_element_attribute requires name."
+        #expect(outcome.warning?.contains("set_element_attribute element_id, name: \"AXFocused\", value: true") == true)
         let focusAt = outcome.warning?.range(of: "AXFocused")?.lowerBound
         let selectAt = outcome.warning?.range(of: "text_set_selection")?.lowerBound
         #expect(focusAt != nil && selectAt != nil && focusAt! < selectAt!)
