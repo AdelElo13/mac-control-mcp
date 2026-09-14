@@ -73,7 +73,7 @@ fi
 # and CI can verify them without running this script. See the comments in
 # those files for why each key exists.
 BUNDLE_SRC="${PROJECT_ROOT}/scripts/bundle"
-sed "s/__VERSION__/${VERSION:-0.8.3}/" "${BUNDLE_SRC}/Info.plist" > "${APP_PATH}/Contents/Info.plist"
+sed "s/__VERSION__/${VERSION:-0.9.0}/" "${BUNDLE_SRC}/Info.plist" > "${APP_PATH}/Contents/Info.plist"
 plutil -lint "${APP_PATH}/Contents/Info.plist" >/dev/null
 # Hardened-runtime resource entitlements. Under `--options runtime` TCC
 # denies a resource WITHOUT prompting when the responsible process lacks
