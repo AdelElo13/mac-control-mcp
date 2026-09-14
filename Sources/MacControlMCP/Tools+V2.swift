@@ -101,13 +101,13 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "focus_window",
-            description: "Bring a window to the front by pid + window index (from list_windows).",
+            description: "Bring a window to the front by window_id, or by pid + window index (both from list_windows). "
+                + ToolRegistry.windowIDPrecedenceNote,
             inputSchema: schema(
-                properties: [
+                properties: withWindowIDProperty([
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "index": .object(["type": .array([.string("integer"), .string("string")])])
-                ],
-                required: ["pid", "index"]
+                ])
             )
         ),
         MCPToolDefinition(
@@ -456,18 +456,14 @@ extension ToolRegistry {
     }
 
     func callFocusWindow(_ arguments: [String: JSONValue]) async -> ToolCallResult {
-        guard let pid = parsePID(arguments["pid"]) else {
-            return invalidArgument("focus_window requires a positive integer pid.")
+        let handle: WindowHandle
+        switch await windowHandle(arguments, tool: "focus_window") {
+        case .success(let resolved): handle = resolved
+        case .failure(let box): return box.result
         }
-        guard let index = arguments["index"]?.intValue, index >= 0 else {
-            return invalidArgument("focus_window requires a non-negative index.")
-        }
-        let success = await windows.focusWindow(pid: pid, index: index)
-        let payload: [String: JSONValue] = [
-            "ok": .bool(success),
-            "pid": .number(Double(pid)),
-            "index": .number(Double(index))
-        ]
+        let success = await windows.focusWindow(pid: handle.pid, index: handle.index)
+        var payload: [String: JSONValue] = ["ok": .bool(success)]
+        payload.merge(handle.payload) { existing, _ in existing }
         return success
             ? successResult("Window focused.", payload)
             : errorResult("Failed to focus window (invalid pid or index).", payload)

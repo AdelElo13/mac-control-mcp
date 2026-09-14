@@ -392,6 +392,50 @@ actor ScreenController {
         return (capture, try ocr(image: image, options: options))
     }
 
+    /// v0.9 (C-2/C-3): capture ONE window named by its `CGWindowID`,
+    /// skipping the pid + title_contains selection heuristic entirely.
+    /// The caller (tool layer) has already resolved the id against the
+    /// window server, so `selected` carries that entry's real bounds.
+    func captureWindow(
+        selected: SelectedWindowInfo,
+        outputPath: String? = nil,
+        options: ImageOutputOptions = .default
+    ) async throws -> CaptureResult {
+        let image = try await captureSelected(selected)
+        return try finish(image, outputPath: outputPath, options: options,
+                          pointWidth: Double(selected.bounds.width), pointBounds: selected.bounds)
+    }
+
+    /// OCR ONE window named by its `CGWindowID`, in memory. Same
+    /// per-window ScreenCaptureKit path `ground`/`ax_tree_augmented`
+    /// already use, so an occluded window reads its own text.
+    func ocrWindow(
+        selected: SelectedWindowInfo,
+        keepImage: Bool = false,
+        options: OCRRequestOptions = OCRRequestOptions()
+    ) async throws -> (CaptureResult, OCRResult) {
+        let image = try await captureSelected(selected)
+        let capture: CaptureResult
+        if keepImage {
+            capture = try finish(image, outputPath: nil, options: .default,
+                                 pointWidth: Double(selected.bounds.width), pointBounds: selected.bounds)
+        } else {
+            capture = CaptureResult(
+                path: "", width: image.width, height: image.height,
+                sourceWidth: image.width, sourceHeight: image.height,
+                format: "png",
+                pointWidth: Double(selected.bounds.width),
+                pointBounds: selected.bounds
+            )
+        }
+        do {
+            return (capture, try ocr(image: image, options: options))
+        } catch {
+            if keepImage { try? FileManager.default.removeItem(atPath: capture.path) }
+            throw error
+        }
+    }
+
     /// Shared window-selection + three-strategy capture chain used by both
     /// `captureWindow` (writes a file) and `ocrWindow` (stays in memory).
     private func windowImage(
@@ -413,17 +457,24 @@ actor ScreenController {
         }
         let selected = Self.selectedWindowInfo(from: match)
 
-        guard let wnum = match[kCGWindowNumber as String] as? NSNumber else {
+        guard match[kCGWindowNumber as String] is NSNumber else {
             throw ScreenError.windowCaptureFailed(window: selected, underlying: "Matched window dictionary had no kCGWindowNumber.")
         }
-        let windowID = CGWindowID(wnum.uint32Value)
+        return (try await captureSelected(selected), selected)
+    }
+
+    /// The three-strategy capture chain for ONE already-selected window.
+    /// Split out of `windowImage` so a caller that already knows exactly
+    /// which window it wants (a `window_id`) skips selection entirely.
+    private func captureSelected(_ selected: SelectedWindowInfo) async throws -> CGImage {
+        let windowID = selected.windowID
 
         // Strategy 1: ScreenCaptureKit. The window's CURRENT CG bounds
         // are passed for sizing so a briefly cached SCShareableContent
         // entry can't produce a wrongly-sized capture.
         do {
             let image = try await ScreenCaptureKitBridge.captureWindow(windowID: windowID, frame: selected.bounds)
-            return (image, selected)
+            return image
         } catch {
             if let bridgeError = error as? ScreenCaptureKitBridge.BridgeError,
                case .permissionDenied = bridgeError {
@@ -448,7 +499,7 @@ actor ScreenController {
             windowID,
             [.bestResolution, .boundsIgnoreFraming]
         ) {
-            return (image, selected)
+            return image
         }
 
         // Strategy 3 (last resort): crop the window's bounds from the
@@ -472,7 +523,7 @@ actor ScreenController {
             throw ScreenError.windowCaptureFailed(window: selected, underlying: "CGWindowListCreateImage region crop returned nil.")
         }
 
-        return (image, selected)
+        return image
     }
 
     // MARK: - OCR
