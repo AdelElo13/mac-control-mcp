@@ -12,14 +12,24 @@ import CoreGraphics
 /// `set_window_state` mutated whichever one AX happened to list first.
 ///
 /// This type replaces that with:
+///   0. exact id — the AX window whose `_AXUIElementGetWindow` id
+///      (`AXWindowID.of`) IS the entry's `CGWindowID`. When every AX window
+///      carries an id and none is the entry's, there is no AX window for
+///      it (`.noAXWindow`); only id-less AX windows fall through to the
+///      heuristics below (Codex r2 #1);
 ///   1. frame match (unchanged, 2 pt tolerance);
 ///   2. tie → window title (`kCGWindowName` vs `AXTitle`);
-///   3. still tied → CG z-order ↔ AX order, and ONLY when the tied
-///      window-server entries and the tied AX windows correspond 1:1 and
-///      every tied entry carries a z-order;
-///   4. still ambiguous → refuse (`.ambiguous`), so the tool layer can
+///   3. still ambiguous → refuse (`.ambiguous`), so the tool layer can
 ///      return `error_code: ambiguous_window` with the candidates instead
 ///      of silently acting on the wrong window.
+///
+/// There is deliberately NO order-based tie-break. v0.9.0-rc1 broke a
+/// frame+title tie by "Nth of the tied CG entries (z-order) == Nth of the
+/// tied AX windows", but AX order only approximates the window server's
+/// stacking (Codex r2 #1): same-frame windows A/B listed B,A by AX and A,B
+/// by CG were cross-mapped, the action mutated the wrong window, and
+/// `verifyIdentity` — same title, same frame — could not notice. A guess
+/// that verification cannot catch is worse than a refusal.
 ///
 /// It also owns the POST-action check (`verifyIdentity`): after acting on
 /// a concrete AX element, does that element still describe the window the
@@ -42,12 +52,18 @@ enum WindowTargeting {
         let index: Int
         let frame: CGRect?
         let title: String?
+        /// The window-server id this AX element maps to EXACTLY
+        /// (`AXWindowID.of`, Codex r2 #1). nil when the private symbol is
+        /// unavailable or the element is not a window — then, and only
+        /// then, frame/title matching is used for it.
+        let windowID: CGWindowID?
 
-        init(handle: Handle, index: Int, frame: CGRect?, title: String?) {
+        init(handle: Handle, index: Int, frame: CGRect?, title: String?, windowID: CGWindowID? = nil) {
             self.handle = handle
             self.index = index
             self.frame = frame
             self.title = title
+            self.windowID = windowID
         }
     }
 
@@ -94,17 +110,31 @@ enum WindowTargeting {
     ///   - entry: the window-server entry the `window_id` resolved to.
     ///   - siblings: every window-server entry of the SAME pid, in
     ///     snapshot order (the window server returns front-to-back).
-    ///     Must include `entry` itself.
+    ///     Must include `entry` itself. Kept in the signature for the
+    ///     tool layer's diagnostics; no longer consulted for a tie-break
+    ///     (Codex r2 #1 — order is not identity).
     ///   - axWindows: the app's AX windows, in `kAXWindowsAttribute`
-    ///     order.
+    ///     order, each carrying its exact `windowID` when known.
     static func resolve<Handle: Sendable>(
         entry: WindowIdentity.Entry,
         siblings: [WindowIdentity.Entry],
         axWindows: [AXWindow<Handle>],
         tolerance: Double = WindowIdentity.frameTolerance
     ) -> Outcome<Handle> {
+        // 0. Exact id (Codex r2 #1). An AX window that KNOWS it is this
+        //    window-server entry wins outright — no frame, no title, no
+        //    order involved. Conversely an AX window that knows it is a
+        //    DIFFERENT entry can never be the answer, so it is dropped
+        //    before the heuristics run; only id-less windows (private
+        //    symbol missing, element not a window) stay eligible.
+        if let exact = axWindows.first(where: { $0.windowID == entry.windowID }) {
+            return .matched(handle: exact.handle, index: exact.index)
+        }
+        let unidentified = axWindows.filter { $0.windowID == nil }
+        guard !unidentified.isEmpty else { return .noAXWindow }
+
         // 1. Frame.
-        let frameMatches = axWindows.filter { candidate in
+        let frameMatches = unidentified.filter { candidate in
             guard let frame = candidate.frame else { return false }
             return WindowIdentity.framesMatch(entry.bounds, frame, tolerance: tolerance)
         }
@@ -117,35 +147,14 @@ enum WindowTargeting {
         //    carries the window-server title: an app that publishes no AX
         //    titles must not narrow the pool to nothing.
         let titleMatches = frameMatches.filter { normalized($0.title) == normalized(entry.title) }
-        let usedTitle = !titleMatches.isEmpty
-        let pool = usedTitle ? titleMatches : frameMatches
+        let pool = titleMatches.isEmpty ? frameMatches : titleMatches
         if pool.count == 1 {
             return .matched(handle: pool[0].handle, index: pool[0].index)
         }
 
-        // 3. z-order ↔ AX order. The window server returns windows
-        //    front-to-back and AX window order approximates the same
-        //    stacking for one app, so the Nth-frontmost of the tied CG
-        //    entries is the Nth of the tied AX windows — but only when the
-        //    two sets correspond 1:1 and every tied entry is actually in
-        //    the visible stack (a minimized/off-Space window has no
-        //    z-order, so its rank is unknowable).
-        var tied = siblings.filter {
-            WindowIdentity.framesMatch(entry.bounds, $0.bounds, tolerance: tolerance)
-        }
-        if usedTitle {
-            tied = tied.filter { normalized($0.title) == normalized(entry.title) }
-        }
-        let ranked = tied
-            .filter { $0.zOrder != nil }
-            .sorted { ($0.zOrder ?? Int.max) < ($1.zOrder ?? Int.max) }
-        if ranked.count == tied.count,
-           ranked.count == pool.count,
-           let rank = ranked.firstIndex(where: { $0.windowID == entry.windowID }) {
-            return .matched(handle: pool[rank].handle, index: pool[rank].index)
-        }
-
-        // 4. Refuse.
+        // 3. Refuse. Same frame, same title, no exact id: nothing that
+        //    remains can tell these windows apart, and an order-based
+        //    guess is exactly the cross-mapping Codex r2 #1 caught.
         return .ambiguous(pool.map {
             Candidate(index: $0.index, title: $0.title ?? "", frame: $0.frame)
         })
