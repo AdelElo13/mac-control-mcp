@@ -358,6 +358,46 @@ actor ScreenController {
         outputPath: String? = nil,
         options: ImageOutputOptions = .default
     ) async throws -> CaptureResult {
+        let (image, selected) = try await windowImage(ownerPID: ownerPID, titleContains: titleContains)
+        return try finish(image, outputPath: outputPath, options: options,
+                          pointWidth: Double(selected.bounds.width), pointBounds: selected.bounds)
+    }
+
+    /// Capture the app's best window and OCR it **in memory**, without
+    /// writing a file.
+    ///
+    /// This is what makes `ground(strategy:"ocr")` and `ax_tree_augmented`
+    /// window-scoped (A-1/A-3): OCR'ing the main display meant an occluded
+    /// window could never be grounded, and — worse — text belonging to the
+    /// window ON TOP was joined onto the covered app's AX nodes as a
+    /// high-confidence `inferredLabel`. The returned `CaptureResult`
+    /// carries `pointBounds` (the window's global-point frame), which is
+    /// what lets the caller map OCR pixel coordinates back to global
+    /// points. Failures throw — there is deliberately no display-wide
+    /// fallback, because that is exactly the path that produced foreign
+    /// labels.
+    func ocrWindow(
+        ownerPID: pid_t,
+        titleContains: String? = nil,
+        options: OCRRequestOptions = OCRRequestOptions()
+    ) async throws -> (CaptureResult, OCRResult) {
+        let (image, selected) = try await windowImage(ownerPID: ownerPID, titleContains: titleContains)
+        let capture = CaptureResult(
+            path: "", width: image.width, height: image.height,
+            sourceWidth: image.width, sourceHeight: image.height,
+            format: "png",
+            pointWidth: Double(selected.bounds.width),
+            pointBounds: selected.bounds
+        )
+        return (capture, try ocr(image: image, options: options))
+    }
+
+    /// Shared window-selection + three-strategy capture chain used by both
+    /// `captureWindow` (writes a file) and `ocrWindow` (stays in memory).
+    private func windowImage(
+        ownerPID: pid_t,
+        titleContains: String?
+    ) async throws -> (CGImage, SelectedWindowInfo) {
         let listOptions: CGWindowListOption = [.optionAll, .excludeDesktopElements]
         guard let info = CGWindowListCopyWindowInfo(listOptions, kCGNullWindowID) as? [[String: Any]] else {
             throw ScreenError.captureFailed
@@ -377,14 +417,13 @@ actor ScreenController {
             throw ScreenError.windowCaptureFailed(window: selected, underlying: "Matched window dictionary had no kCGWindowNumber.")
         }
         let windowID = CGWindowID(wnum.uint32Value)
-        let pointWidth = Double(selected.bounds.width)
 
         // Strategy 1: ScreenCaptureKit. The window's CURRENT CG bounds
         // are passed for sizing so a briefly cached SCShareableContent
         // entry can't produce a wrongly-sized capture.
         do {
             let image = try await ScreenCaptureKitBridge.captureWindow(windowID: windowID, frame: selected.bounds)
-            return try finish(image, outputPath: outputPath, options: options, pointWidth: pointWidth, pointBounds: selected.bounds)
+            return (image, selected)
         } catch {
             if let bridgeError = error as? ScreenCaptureKitBridge.BridgeError,
                case .permissionDenied = bridgeError {
@@ -409,7 +448,7 @@ actor ScreenController {
             windowID,
             [.bestResolution, .boundsIgnoreFraming]
         ) {
-            return try finish(image, outputPath: outputPath, options: options, pointWidth: pointWidth, pointBounds: selected.bounds)
+            return (image, selected)
         }
 
         // Strategy 3 (last resort): crop the window's bounds from the
@@ -433,7 +472,7 @@ actor ScreenController {
             throw ScreenError.windowCaptureFailed(window: selected, underlying: "CGWindowListCreateImage region crop returned nil.")
         }
 
-        return try finish(image, outputPath: outputPath, options: options, pointWidth: pointWidth, pointBounds: selected.bounds)
+        return (image, selected)
     }
 
     // MARK: - OCR
