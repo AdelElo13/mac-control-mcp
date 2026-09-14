@@ -15,7 +15,24 @@ actor WindowController {
         let minimized: Bool
         let main: Bool
         let index: Int
+        /// true when the app did not answer its AX window query within
+        /// `WindowController.axDeadline` and this entry comes from the
+        /// Window Server list instead. Absent (nil) otherwise.
+        var axTimeout: Bool? = nil
+
+        enum CodingKeys: String, CodingKey {
+            case app, pid, title, x, y, width, height, minimized, main, index
+            case axTimeout = "ax_timeout"
+        }
     }
+
+    /// Per-app budget for the AX window query in `listWindows`. Applied
+    /// both as the AX messaging timeout (so the blocking IPC itself
+    /// returns) and as the BlockingWorkPool deadline (so the call never
+    /// waits longer even if the timeout isn't honoured).
+    static let axDeadline: TimeInterval = 1.5
+    /// Max apps queried at once — keeps IPC fan-out and GCD threads bounded.
+    static let maxConcurrentAXApps = 6
 
     /// PIDs for which we've already flipped the private Chromium/iWork AX
     /// unlock attributes. Duplicated from AccessibilityController (each
@@ -32,18 +49,25 @@ actor WindowController {
     /// is a no-op at the AX layer.
     private func enableManualAccessibility(pid: pid_t) {
         guard !manualAccessibilityEnabled.contains(pid) else { return }
-        Self.setManualAccessibility(pid: pid)
+        Self.setManualAccessibility(pid: pid, messagingTimeout: nil)
         manualAccessibilityEnabled.insert(pid)
     }
 
-    private static func setManualAccessibility(pid: pid_t) {
+    private static func setManualAccessibility(pid: pid_t, messagingTimeout: TimeInterval?) {
         let app = AXUIElementCreateApplication(pid)
+        applyTimeout(app, messagingTimeout)
         _ = AXUIElementSetAttributeValue(
             app, "AXManualAccessibility" as CFString, kCFBooleanTrue
         )
         _ = AXUIElementSetAttributeValue(
             app, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue
         )
+    }
+
+    /// Client-side per-element AX timeout; nil keeps the system default.
+    private static func applyTimeout(_ element: AXUIElement, _ timeout: TimeInterval?) {
+        guard let timeout else { return }
+        _ = AXUIElementSetMessagingTimeout(element, Float(timeout))
     }
 
     /// Resolve an app's window list through a three-step AX fallback
@@ -53,13 +77,14 @@ actor WindowController {
     /// only just finished AX wiring.
     private func axWindows(pid: pid_t) -> [AXUIElement] {
         enableManualAccessibility(pid: pid)
-        return Self.axWindowElements(pid: pid)
+        return Self.axWindowElements(pid: pid, messagingTimeout: nil)
     }
 
-    /// Actor-independent half of `axWindows` — AX is thread-safe, so
-    /// `listWindows` runs this for every app concurrently.
-    private static func axWindowElements(pid: pid_t) -> [AXUIElement] {
+    /// Actor-independent half of `axWindows`, runnable on the
+    /// BlockingWorkPool queue.
+    private static func axWindowElements(pid: pid_t, messagingTimeout: TimeInterval?) -> [AXUIElement] {
         let app = AXUIElementCreateApplication(pid)
+        applyTimeout(app, messagingTimeout)
 
         var ref: CFTypeRef?
         if AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &ref) == .success,
@@ -83,10 +108,15 @@ actor WindowController {
     /// AX-described windows of one app with real (> 1×1) bounds, or `[]`
     /// when the app exposes none — the caller then falls back to the
     /// Window Server list.
-    private static func realAXWindowInfos(pid: pid_t, appName: String) -> [WindowInfo] {
-        let axList = axWindowElements(pid: pid)
+    private static func realAXWindowInfos(
+        pid: pid_t,
+        appName: String,
+        messagingTimeout: TimeInterval?
+    ) -> [WindowInfo] {
+        let axList = axWindowElements(pid: pid, messagingTimeout: messagingTimeout)
         guard !axList.isEmpty else { return [] }
         let appElement = AXUIElementCreateApplication(pid)
+        applyTimeout(appElement, messagingTimeout)
         var mainWindowRef: CFTypeRef?
         AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute as CFString, &mainWindowRef)
         let mainWindow = mainWindowRef.flatMap { raw -> AXUIElement? in
@@ -97,7 +127,8 @@ actor WindowController {
         // those so the CG fallback supplies real numbers instead.
         return axList.enumerated()
             .map { index, window in
-                describe(window: window, index: index, appName: appName, pid: pid, mainWindow: mainWindow)
+                applyTimeout(window, messagingTimeout)
+                return describe(window: window, index: index, appName: appName, pid: pid, mainWindow: mainWindow)
             }
             .filter { $0.width > 1 && $0.height > 1 }
     }
@@ -122,7 +153,12 @@ actor WindowController {
     /// ~470 entries) once PER app that needed the fallback — 10 of 22
     /// apps on the benchmark machine, ~45 ms of a ~110 ms call. It now
     /// fetches the snapshot once per call and filters it per pid here.
-    static func cgWindows(from info: [[String: Any]], pid: pid_t, appName: String) -> [WindowInfo] {
+    static func cgWindows(
+        from info: [[String: Any]],
+        pid: pid_t,
+        appName: String,
+        axTimeout: Bool? = nil
+    ) -> [WindowInfo] {
         var out: [WindowInfo] = []
         for dict in info {
             guard
@@ -150,21 +186,58 @@ actor WindowController {
                 x: x, y: y, width: w, height: h,
                 minimized: !onscreen,
                 main: out.isEmpty,  // treat first surfaced window as main
-                index: out.count
+                index: out.count,
+                axTimeout: axTimeout
             ))
         }
         return out
+    }
+
+    /// Pure merge of per-app AX outcomes (index-aligned with `apps`) into
+    /// the final list, in `apps` order:
+    ///   - AX answered with real windows → those.
+    ///   - AX answered with none → Window Server entries.
+    ///   - AX timed out → Window Server entries flagged `ax_timeout: true`.
+    /// The Window Server list is fetched lazily, at most once.
+    static func assemble(
+        apps: [(pid: pid_t, name: String)],
+        outcomes: [BlockingWorkPool.Outcome<[WindowInfo]>],
+        windowServerList: () -> [[String: Any]]
+    ) -> [WindowInfo] {
+        var list: [[String: Any]]?
+        func cgList() -> [[String: Any]] {
+            if let list { return list }
+            let fetched = windowServerList()
+            list = fetched
+            return fetched
+        }
+        var result: [WindowInfo] = []
+        for (i, app) in apps.enumerated() {
+            let outcome = i < outcomes.count ? outcomes[i] : .timedOut
+            switch outcome {
+            case .value(let infos) where !infos.isEmpty:
+                result.append(contentsOf: infos)
+            case .value:
+                result.append(contentsOf: cgWindows(from: cgList(), pid: app.pid, appName: app.name))
+            case .timedOut:
+                result.append(contentsOf: cgWindows(from: cgList(), pid: app.pid, appName: app.name, axTimeout: true))
+            }
+        }
+        return result
     }
 
     /// Enumerate all windows of all regular running apps. Windows are ordered
     /// per-app in the AX child order, which approximately matches z-order for
     /// the active app and is stable across calls for inactive apps.
     ///
-    /// PERF (v0.8.3): per-app AX queries run concurrently (AX is
-    /// thread-safe and each app answers its own IPC independently — one
-    /// slow/beach-balling app no longer delays every app after it), and
-    /// the Window Server list is fetched at most once. Output order and
-    /// content are unchanged: apps stay in `runningApplications` order.
+    /// PERF (v0.8.3): per-app AX queries run concurrently on
+    /// `BlockingWorkPool` — a dedicated GCD queue, NOT Swift's cooperative
+    /// pool (blocking AX IPC there could starve every other tool call) —
+    /// at most `maxConcurrentAXApps` at a time, each bounded by
+    /// `axDeadline`. An app that doesn't answer in time is reported from
+    /// the Window Server list with `ax_timeout: true` instead of blocking
+    /// the call. The Window Server list is fetched at most once. Apps stay
+    /// in `runningApplications` order.
     func listWindows() async -> [WindowInfo] {
         // NSWorkspace.runningApplications is main-actor-affine under strict
         // concurrency — snapshot the (pid, name) pairs on MainActor, then
@@ -177,35 +250,29 @@ actor WindowController {
         }
 
         let needsEnable = Set(apps.map(\.pid)).subtracting(manualAccessibilityEnabled)
-        let axResults: [[WindowInfo]] = await withTaskGroup(of: (Int, [WindowInfo]).self) { group in
-            for (i, app) in apps.enumerated() {
-                let enable = needsEnable.contains(app.pid)
-                group.addTask {
-                    if enable { Self.setManualAccessibility(pid: app.pid) }
-                    return (i, Self.realAXWindowInfos(pid: app.pid, appName: app.name))
-                }
+        let deadline = Self.axDeadline
+        let outcomes = await BlockingWorkPool.map(
+            count: apps.count,
+            maxConcurrent: Self.maxConcurrentAXApps,
+            perItemTimeout: deadline
+        ) { i in
+            let app = apps[i]
+            if needsEnable.contains(app.pid) {
+                Self.setManualAccessibility(pid: app.pid, messagingTimeout: deadline)
             }
-            var ordered = Array(repeating: [WindowInfo](), count: apps.count)
-            for await (i, infos) in group { ordered[i] = infos }
-            return ordered
+            return Self.realAXWindowInfos(pid: app.pid, appName: app.name, messagingTimeout: deadline)
         }
-        manualAccessibilityEnabled.formUnion(needsEnable)
-
-        var windowServerList: [[String: Any]]?
-        var result: [WindowInfo] = []
-        for (i, app) in apps.enumerated() {
-            if !axResults[i].isEmpty {
-                result.append(contentsOf: axResults[i])
-                continue
-            }
-            // … otherwise (or if AX gave only zero-sized frames) fall
-            // back to the Window Server list, fetched once per call.
-            let list = windowServerList ?? Self.copyWindowServerList()
-            windowServerList = list
-            result.append(contentsOf: Self.cgWindows(from: list, pid: app.pid, appName: app.name))
+        // Only remember the unlock for apps that actually answered; a
+        // timed-out app gets another attempt next call.
+        for (i, outcome) in outcomes.enumerated() where needsEnable.contains(apps[i].pid) {
+            if outcome.value != nil { manualAccessibilityEnabled.insert(apps[i].pid) }
         }
 
-        return result
+        return Self.assemble(
+            apps: apps.map { (pid: $0.pid, name: $0.name) },
+            outcomes: outcomes,
+            windowServerList: Self.copyWindowServerList
+        )
     }
 
     /// List windows for a single app by PID. Faster than `listWindows()`
@@ -216,7 +283,7 @@ actor WindowController {
         }
 
         enableManualAccessibility(pid: pid)
-        let real = Self.realAXWindowInfos(pid: pid, appName: name)
+        let real = Self.realAXWindowInfos(pid: pid, appName: name, messagingTimeout: nil)
         if !real.isEmpty { return real }
         // Chrome / apps with no AX-exposed windows.
         return Self.cgWindows(from: Self.copyWindowServerList(), pid: pid, appName: name)
