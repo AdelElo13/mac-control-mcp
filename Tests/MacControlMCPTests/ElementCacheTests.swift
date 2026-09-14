@@ -53,4 +53,53 @@ struct ElementCacheTests {
         #expect(await cache.count <= 3)
         #expect(await cache.resolve(id1) == nil)
     }
+
+    @Test("storeMany returns one distinct, resolvable ID per element in order")
+    func storeManyRoundtrip() async {
+        let cache = ElementCache(ttl: 60, maxEntries: 100)
+        let elements = (0..<10).map { AXUIElementCreateApplication(pid_t(1000 + $0)) }
+        let ids = await cache.storeMany(elements, pid: 7)
+        #expect(ids.count == 10)
+        #expect(Set(ids).count == 10)
+        for (id, element) in zip(ids, elements) {
+            let resolved = await cache.resolve(id)
+            #expect(resolved.map { CFEqual($0, element) } == true)
+            #expect(await cache.pid(for: id) == 7)
+        }
+        #expect(await cache.storeMany([], pid: 7).isEmpty)
+    }
+
+    @Test("storeMany evicts oldest entries first and keeps the whole batch")
+    func storeManyEviction() async {
+        let cache = ElementCache(ttl: 60, maxEntries: 5)
+        let old = await cache.storeMany((0..<4).map { _ in AXUIElementCreateSystemWide() }, pid: 1)
+        let fresh = await cache.storeMany((0..<3).map { _ in AXUIElementCreateSystemWide() }, pid: 2)
+        // 4 + 3 = 7 > 5 → the 2 oldest must go, the new batch must all resolve.
+        #expect(await cache.count == 5)
+        for id in fresh { #expect(await cache.resolve(id) != nil) }
+        var survivingOld = 0
+        for id in old where await cache.resolve(id) != nil { survivingOld += 1 }
+        #expect(survivingOld == 2)
+    }
+
+    @Test("storeMany larger than capacity keeps every ID of the batch resolvable")
+    func storeManyOversizedBatch() async {
+        let cache = ElementCache(ttl: 60, maxEntries: 3)
+        _ = await cache.store(AXUIElementCreateSystemWide(), pid: 1)
+        let ids = await cache.storeMany((0..<6).map { _ in AXUIElementCreateSystemWide() }, pid: 2)
+        #expect(await cache.count == 6)
+        for id in ids { #expect(await cache.resolve(id) != nil) }
+        // A later single store brings the cache back under its cap.
+        _ = await cache.store(AXUIElementCreateSystemWide(), pid: 3)
+        #expect(await cache.count <= 3)
+    }
+
+    @Test("storeMany drops expired entries before inserting")
+    func storeManyExpiry() async throws {
+        let cache = ElementCache(ttl: 0.05, maxEntries: 100)
+        _ = await cache.storeMany([AXUIElementCreateSystemWide()], pid: 1)
+        try await Task.sleep(nanoseconds: 120_000_000)
+        _ = await cache.storeMany([AXUIElementCreateSystemWide()], pid: 2)
+        #expect(await cache.count == 1)
+    }
 }

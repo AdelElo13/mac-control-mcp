@@ -33,18 +33,47 @@ actor ElementCache {
     func store(_ element: AXUIElement, pid: pid_t) -> String {
         evictExpired()
         evictIfOverCapacity()
+        return insert(element, pid: pid, now: Date())
+    }
 
+    /// Store a batch of elements (e.g. every node of a `get_ui_tree` walk)
+    /// in ONE actor hop, running expiry/capacity eviction once for the
+    /// whole batch instead of once per element.
+    ///
+    /// PERF (v0.8.3): `get_ui_tree` used to call `store` per node — one
+    /// actor hop plus an O(entries) `evictExpired` filter per node, and
+    /// once the cache was full an O(n log n) LRU sort per node. For a
+    /// 422-node Chrome tree against a warm (full) cache that was the
+    /// dominant cost of the tool, far above the AX walk itself.
+    ///
+    /// Semantics match calling `store` per element: IDs are returned in
+    /// input order, every returned ID resolves immediately afterwards
+    /// (batch entries are never evicted by their own batch), and the
+    /// cache ends at <= `maxEntries` unless the batch itself is larger,
+    /// in which case the batch wins and older entries go first.
+    func storeMany(_ elements: [AXUIElement], pid: pid_t) -> [String] {
+        guard !elements.isEmpty else { return [] }
+        evictExpired()
+        let overflow = entries.count + elements.count - maxEntries
+        if overflow > 0 {
+            evictOldest(count: min(overflow, entries.count))
+        }
+        let now = Date()
+        return elements.map { insert($0, pid: pid, now: now) }
+    }
+
+    private func insert(_ element: AXUIElement, pid: pid_t, now: Date) -> String {
         for _ in 0..<8 {
             let id = Self.makeID()
             if entries[id] == nil {
-                entries[id] = Entry(element: element, pid: pid, lastAccess: Date())
+                entries[id] = Entry(element: element, pid: pid, lastAccess: now)
                 return id
             }
         }
         // Extremely unlikely path. Fall back to a UUID-based ID so we
         // never silently overwrite an existing entry.
         let fallback = "el_\(UUID().uuidString.prefix(16).lowercased().replacingOccurrences(of: "-", with: ""))"
-        entries[fallback] = Entry(element: element, pid: pid, lastAccess: Date())
+        entries[fallback] = Entry(element: element, pid: pid, lastAccess: now)
         return fallback
     }
 
@@ -87,10 +116,14 @@ actor ElementCache {
 
     private func evictIfOverCapacity() {
         guard entries.count >= maxEntries else { return }
-        // LRU: evict the least-recently-touched entries first.
+        evictOldest(count: entries.count - (maxEntries - 1))
+    }
+
+    /// LRU: evict the `count` least-recently-touched entries.
+    private func evictOldest(count: Int) {
+        guard count > 0 else { return }
         let sorted = entries.sorted { $0.value.lastAccess < $1.value.lastAccess }
-        let excess = entries.count - (maxEntries - 1)
-        for (key, _) in sorted.prefix(excess) {
+        for (key, _) in sorted.prefix(count) {
             entries.removeValue(forKey: key)
         }
     }
