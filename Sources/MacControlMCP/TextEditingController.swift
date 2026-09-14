@@ -192,26 +192,30 @@ actor TextEditingController {
         var warning: String? {
             if applied == false {
                 return observedText == nil
-                    ? "AXNumberOfCharacters moved, but not by the requested amount — the element applied something other than the requested edit. Its text is not readable over AX (neither AXValue nor AXStringForRange), so check the result \(Self.alternativeRoutes) before continuing."
+                    ? "AXNumberOfCharacters moved, but not by the requested amount — the element applied something other than the requested edit. Its text is not readable over AX (neither AXValue nor AXStringForRange), so check the result \(alternativeRoutes) before continuing."
                     : nil
             }
             guard applied == nil else { return nil }
             switch verification {
             case "count_only":
-                return "The element exposes no readable text (neither AXValue nor AXStringForRange), only AXNumberOfCharacters. The count moved by exactly the amount requested, but WHAT was written could not be read back — confirm \(Self.alternativeRoutes) before relying on it."
+                return "The element exposes no readable text (neither AXValue nor AXStringForRange), only AXNumberOfCharacters. The count moved by exactly the amount requested, but WHAT was written could not be read back — confirm \(alternativeRoutes) before relying on it."
             case "count_unusable":
-                return "The element exposes no readable text, and the AXNumberOfCharacters it reports cannot be combined with this edit (out of Int range), so even the count could not be checked. AX reported success — confirm \(Self.alternativeRoutes) before relying on it."
+                return "The element exposes no readable text, and the AXNumberOfCharacters it reports cannot be combined with this edit (out of Int range), so even the count could not be checked. AX reported success — confirm \(alternativeRoutes) before relying on it."
             case "unverified":
-                return "The element exposes neither its value, nor AXStringForRange, nor AXNumberOfCharacters. AX reported success, but nothing could be read back to confirm the write landed — confirm \(Self.alternativeRoutes) before relying on it."
+                return "The element exposes neither its value, nor AXStringForRange, nor AXNumberOfCharacters. AX reported success, but nothing could be read back to confirm the write landed — confirm \(alternativeRoutes) before relying on it."
             default:
                 return "The write could not be verified by reading the element back."
             }
         }
 
         /// Verification routes that do not depend on the AX text
-        /// attributes that just failed.
-        static let alternativeRoutes =
-            "visually (capture_annotated / ocr_screen on the window) or via the clipboard (text_set_selection over the range, press_key cmd+c, clipboard_read)"
+        /// attributes that just failed. The clipboard route names the
+        /// EXACT range the written text now occupies — `range` is what was
+        /// replaced (empty for an insert), so "over the range" would copy
+        /// nothing (Codex r5).
+        var alternativeRoutes: String {
+            "visually (capture_annotated / ocr_screen on the window) or via the clipboard (text_set_selection location: \(range.location), length: \(insertedCharacters); press_key cmd+c; clipboard_read)"
+        }
     }
 
     struct Value: Sendable {

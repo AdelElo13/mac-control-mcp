@@ -178,12 +178,16 @@ struct CodexR2RegressionTests {
         "count_only", "count_unusable", "unverified"
     ])
     func warningsNameWorkingRoutes(verification: String) {
+        // An insert at 7: the replaced range is empty, the written text
+        // occupies 7..<10. The clipboard instruction must name THAT range
+        // (Codex r5) — "over the range" would copy nothing.
         let outcome = TextEditingController.WriteOutcome(
-            range: .init(location: 0, length: 0), insertedCharacters: 3, selectionAfter: nil,
+            range: .init(location: 7, length: 0), insertedCharacters: 3, selectionAfter: nil,
             collapsedSelection: false, applied: nil, observedText: nil, verification: verification
         )
         #expect(outcome.warning?.contains("text_get_value") == false)
         #expect(outcome.warning?.contains("capture_annotated") == true)
+        #expect(outcome.warning?.contains("location: 7, length: 3") == true)
     }
 
     @Test("a count that moved by the wrong amount reports applied:false WITH a warning")
