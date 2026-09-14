@@ -79,6 +79,49 @@ enum ScreenAnnotator {
         let globalRect: CGRect
     }
 
+    /// Smallest visible area (in SQUARE POINTS) an element must still have
+    /// inside the captured window to be worth numbering.
+    ///
+    /// v0.9.0 blocker fix (Codex r1 #2): a 1 pt sliver poking out from
+    /// behind a window edge is not a click target — and reporting a
+    /// "click-ready" centre for it is actively wrong.
+    static let minVisibleArea: Double = 4.0
+
+    /// The part of `frame` that is actually visible: `frame` intersected
+    /// with every rect in `clips` (the captured window's frame, and the
+    /// display union when the caller knows it).
+    ///
+    /// Returns nil when nothing survives, when the visible area is under
+    /// `minVisibleArea`, or when any input is non-finite.
+    static func visibleRect(of frame: CGRect, clippedTo clips: [CGRect]) -> CGRect? {
+        guard isFinite(frame), frame.width > 0, frame.height > 0 else { return nil }
+        var visible = frame
+        for clip in clips {
+            guard isFinite(clip) else { continue }
+            visible = visible.intersection(clip)
+            if visible.isNull || visible.isEmpty { return nil }
+        }
+        guard isFinite(visible) else { return nil }
+        guard Double(visible.width) * Double(visible.height) >= minVisibleArea else { return nil }
+        return visible
+    }
+
+    /// A click point GUARANTEED to lie inside the visible part of the
+    /// element (and therefore inside the captured image).
+    ///
+    /// Before v0.9.0 `capture_annotated` reported the raw `frame.midX/midY`
+    /// of a partially clipped element, which can sit outside the window
+    /// that was photographed — clicking it hits whatever is underneath.
+    static func clippedCenter(of frame: CGRect, clippedTo clips: [CGRect]) -> CGPoint? {
+        guard let visible = visibleRect(of: frame, clippedTo: clips) else { return nil }
+        return CGPoint(x: visible.midX, y: visible.midY)
+    }
+
+    private static func isFinite(_ rect: CGRect) -> Bool {
+        rect.origin.x.isFinite && rect.origin.y.isFinite
+            && rect.size.width.isFinite && rect.size.height.isFinite
+    }
+
     /// Indices (into `items`, in document order) of the elements worth
     /// drawing, capped at `limit`.
     ///
@@ -87,23 +130,26 @@ enum ScreenAnnotator {
     ///   * non-finite frames — a stale/foreign AX element can report NaN;
     ///   * zero-area frames — A-10 found untitled `0×0` AXButtons in System
     ///     Settings; a box around nothing is worse than no box;
-    ///   * elements that do not intersect the captured region at all, so a
-    ///     window capture never numbers a control that isn't in the picture.
+    ///   * elements with less than `minVisibleArea` inside the captured
+    ///     region (v0.9.0, Codex r1 #2) — previously a bare `intersects`
+    ///     test, which kept sub-pixel slivers and then reported their
+    ///     off-image centre as click-ready.
+    ///
+    /// `displayBounds`, when given, clips further: an element hanging off
+    /// the edge of every attached display is not clickable either.
     static func filterInteractive(
         _ items: [ElementGeometry],
         captureRect: CGRect,
+        displayBounds: CGRect? = nil,
         limit: Int
     ) -> [Int] {
         guard limit > 0 else { return [] }
+        let clips = [captureRect] + (displayBounds.map { [$0] } ?? [])
         var picked: [Int] = []
         for (index, item) in items.enumerated() {
             guard picked.count < limit else { break }
             guard let role = item.role, interactiveRoles.contains(role) else { continue }
-            let frame = item.frame
-            guard frame.origin.x.isFinite, frame.origin.y.isFinite,
-                  frame.size.width.isFinite, frame.size.height.isFinite else { continue }
-            guard frame.width > 0, frame.height > 0 else { continue }
-            guard frame.intersects(captureRect) else { continue }
+            guard visibleRect(of: item.frame, clippedTo: clips) != nil else { continue }
             picked.append(index)
         }
         return picked

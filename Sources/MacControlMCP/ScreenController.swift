@@ -76,7 +76,7 @@ actor ScreenController {
     /// (see `ScreenError`) so the caller can see WHICH window was picked
     /// and why the pick might be wrong — e.g. a 1x22 helper window instead
     /// of the intended content window.
-    struct SelectedWindowInfo: Sendable {
+    struct SelectedWindowInfo: Sendable, Equatable {
         let windowID: CGWindowID
         let title: String
         let bounds: CGRect
@@ -328,6 +328,12 @@ actor ScreenController {
         /// The app's best window, chosen by `selectWindow` (same rules as
         /// capture_window).
         case window(pid: pid_t, titleContains: String?)
+        /// One already-selected window (v0.9.0, Codex r1 #2) — either a
+        /// `window_id` the caller passed, or the window `selectWindow`
+        /// picked BEFORE the AX walk, so the walk can be rooted at that
+        /// window's AX element and the capture is guaranteed to be the
+        /// same window the elements came from.
+        case selectedWindow(SelectedWindowInfo)
         case mainDisplay
     }
 
@@ -343,6 +349,11 @@ actor ScreenController {
         /// False when the overlay could not be rendered (bitmap context
         /// creation failed) and the plain capture was encoded instead.
         let annotated: Bool
+        /// The rects every reported element was clipped against (the
+        /// captured region, plus the display union when known), so the
+        /// tool layer computes each element's `center` with exactly the
+        /// same geometry the filter used (v0.9.0, Codex r1 #2).
+        let clipRects: [CGRect]
     }
 
     /// Capture → filter → draw numbered boxes → encode, all in one actor
@@ -372,6 +383,9 @@ actor ScreenController {
             let (captured, selected) = try await windowImage(ownerPID: pid, titleContains: titleContains)
             image = captured
             bounds = selected.bounds
+        case .selectedWindow(let selected):
+            image = try await captureSelected(selected)
+            bounds = selected.bounds
         case .mainDisplay:
             let id = CGMainDisplayID()
             image = try displayImage(id)
@@ -384,8 +398,14 @@ actor ScreenController {
             pixelWidth: image.width,
             pixelHeight: image.height
         )
+        // v0.9.0 (Codex r1 #2): clip against the captured region AND the
+        // display union, and drop anything with less than
+        // `minVisibleArea` left — a sliver's reported centre would
+        // otherwise land outside the image it is supposed to index.
+        let displayUnion = WindowIdentity.unionBounds(of: WindowIdentity.displayBounds())
+        let clips = [geometry.captureRect] + (displayUnion.map { [$0] } ?? [])
         let picked = ScreenAnnotator.filterInteractive(
-            elements, captureRect: geometry.captureRect, limit: limit
+            elements, captureRect: geometry.captureRect, displayBounds: displayUnion, limit: limit
         )
         let boxes = picked.enumerated().map { offset, elementIndex in
             ScreenAnnotator.AnnotationBox(index: offset + 1, globalRect: elements[elementIndex].frame)
@@ -398,8 +418,30 @@ actor ScreenController {
             encoded: encoded,
             pointBounds: bounds,
             drawnIndices: picked,
-            annotated: overlay != nil
+            annotated: overlay != nil,
+            clipRects: clips
         )
+    }
+
+    /// Pick the window `capture_window` would capture, WITHOUT capturing
+    /// it (v0.9.0, Codex r1 #2).
+    ///
+    /// `capture_annotated` needs the selection before it walks the AX tree,
+    /// so the walk can be rooted at that window's AX element instead of the
+    /// application element — otherwise an overlapping window of the same
+    /// app contributes elements to the picture it is not in.
+    func selectWindowInfo(ownerPID: pid_t, titleContains: String?) throws -> SelectedWindowInfo {
+        let listOptions: CGWindowListOption = [.optionAll, .excludeDesktopElements]
+        guard let info = CGWindowListCopyWindowInfo(listOptions, kCGNullWindowID) as? [[String: Any]] else {
+            throw ScreenError.captureFailed
+        }
+        let candidates = info.filter {
+            ($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == ownerPID
+        }
+        guard let match = Self.selectWindow(from: candidates, titleContains: titleContains) else {
+            throw ScreenError.noMatchingWindow(titleContains: titleContains)
+        }
+        return Self.selectedWindowInfo(from: match)
     }
 
     /// Capture a specific on-screen window.
