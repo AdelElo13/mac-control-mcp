@@ -12,6 +12,10 @@ const {
   parseSha256File,
   digestsMatch,
   isTransientError,
+  assertSafeArchivePaths,
+  assertSafeArchiveLinks,
+  parseTeamIdentifier,
+  EXPECTED_TEAM_ID,
 } = require('../lib/release');
 
 test('releaseUrls builds the published asset URLs for a version', () => {
@@ -91,6 +95,84 @@ test('digestsMatch refuses to compare values that are not SHA-256 digests', () =
   assert.throws(() => digestsMatch(ok, 'deadbeef'), /Expected digest/);
   // A truncated digest must never silently "match" a prefix.
   assert.throws(() => digestsMatch(ok.slice(0, 32), ok), /Computed digest/);
+});
+
+// The real `tar -tzf` listing of MacControlMCP-v0.8.3-macos-universal.tar.gz.
+const REAL_LISTING = [
+  'MacControlMCP.app/',
+  'MacControlMCP.app/Contents/',
+  'MacControlMCP.app/Contents/CodeResources',
+  'MacControlMCP.app/Contents/_CodeSignature/',
+  'MacControlMCP.app/Contents/MacOS/',
+  'MacControlMCP.app/Contents/Resources/',
+  'MacControlMCP.app/Contents/Info.plist',
+  'MacControlMCP.app/Contents/Resources/AppIcon.icns',
+  'MacControlMCP.app/Contents/MacOS/MacControlMCP',
+  'MacControlMCP.app/Contents/_CodeSignature/CodeResources',
+  '',
+];
+
+test('assertSafeArchivePaths accepts the real v0.8.3 release listing', () => {
+  assert.equal(assertSafeArchivePaths(REAL_LISTING).length, 10);
+});
+
+test('assertSafeArchivePaths rejects tar-slip entries', () => {
+  assert.throws(
+    () => assertSafeArchivePaths(['/etc/passwd']),
+    /absolute path entry/,
+  );
+  assert.throws(
+    () => assertSafeArchivePaths(['MacControlMCP.app/../../../etc/passwd']),
+    /parent-directory entry/,
+  );
+  assert.throws(
+    () => assertSafeArchivePaths(['../evil']),
+    /parent-directory entry/,
+  );
+  assert.throws(
+    () => assertSafeArchivePaths(['SomethingElse.app/Contents/MacOS/x']),
+    /outside MacControlMCP\.app/,
+  );
+  assert.throws(() => assertSafeArchivePaths(['', '   ']), /listing is empty/);
+});
+
+test('assertSafeArchivePaths rejects a poisoned entry hidden among good ones', () => {
+  const listing = [...REAL_LISTING, '../../.zshrc'];
+  assert.throws(() => assertSafeArchivePaths(listing), /parent-directory entry/);
+});
+
+test('assertSafeArchiveLinks ignores a listing with no links', () => {
+  assert.doesNotThrow(() =>
+    assertSafeArchiveLinks([
+      '-rwxr-xr-x  0 a staff  123 Jan  1 00:00 MacControlMCP.app/Contents/MacOS/MacControlMCP',
+      'drwxr-xr-x  0 a staff    0 Jan  1 00:00 MacControlMCP.app/Contents/',
+    ]),
+  );
+});
+
+test('assertSafeArchiveLinks rejects escaping and absolute link targets', () => {
+  assert.throws(
+    () => assertSafeArchiveLinks(['lrwxr-xr-x 0 a staff 0 Jan 1 00:00 a/b -> /etc/passwd']),
+    /unsafe link target/,
+  );
+  assert.throws(
+    () => assertSafeArchiveLinks(['lrwxr-xr-x 0 a staff 0 Jan 1 00:00 a/b -> ../../../root']),
+    /unsafe link target/,
+  );
+});
+
+test('parseTeamIdentifier pins the signing identity', () => {
+  const codesignOutput = [
+    'Executable=/x/MacControlMCP.app/Contents/MacOS/MacControlMCP',
+    'Identifier=com.canopylabs.MacControlMCP',
+    'Authority=Developer ID Application: Adil El-Ouariachi (A3W973JZ49)',
+    'TeamIdentifier=A3W973JZ49',
+    'Sealed Resources version=2 rules=13 files=2',
+  ].join('\n');
+  assert.equal(parseTeamIdentifier(codesignOutput), EXPECTED_TEAM_ID);
+  assert.equal(parseTeamIdentifier('TeamIdentifier=not set'), null);
+  assert.equal(parseTeamIdentifier('Identifier=com.evil.app'), null);
+  assert.notEqual(parseTeamIdentifier('TeamIdentifier=XXXXXXXXXX'), EXPECTED_TEAM_ID);
 });
 
 test('isTransientError only retries network blips and server-side failures', () => {

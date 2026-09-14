@@ -10,9 +10,16 @@
  *  - The .app is extracted verbatim and never rewritten. Touching any file
  *    inside a signed bundle invalidates the Developer ID signature, which
  *    would break notarization and force TCC to re-prompt on every launch.
- *  - Integrity is checked against the published `.sha256` asset before a
- *    single byte is extracted, and the extracted bundle is then re-verified
- *    against the system's own signature and Gatekeeper policy.
+ *  - The tarball is checked against the published `.sha256` asset before a
+ *    single byte is extracted. Note what that does and does not buy: both
+ *    assets come from the same GitHub release, so the checksum only proves
+ *    the bytes arrived uncorrupted, not that they are what the maintainer
+ *    built. The actual trust anchor is the signature check below — an
+ *    attacker who could replace release assets still cannot produce a bundle
+ *    signed by our Developer ID team.
+ *  - The archive's table of contents is validated before extraction, and the
+ *    extracted bundle is re-verified against codesign, Gatekeeper policy and
+ *    the expected Team ID.
  */
 
 const fs = require('node:fs');
@@ -23,7 +30,16 @@ const { Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const { spawnSync } = require('node:child_process');
 
-const { releaseUrls, parseSha256File, digestsMatch, isTransientError } = require('../lib/release');
+const {
+  releaseUrls,
+  parseSha256File,
+  digestsMatch,
+  isTransientError,
+  assertSafeArchivePaths,
+  assertSafeArchiveLinks,
+  parseTeamIdentifier,
+  EXPECTED_TEAM_ID,
+} = require('../lib/release');
 const { openStream, fetchText } = require('../lib/download');
 const { VENDOR_DIR, APP_PATH, BINARY_PATH, installedVersion } = require('../lib/paths');
 
@@ -86,7 +102,26 @@ async function downloadAndHash(url, destPath) {
  * @param {string[]} args
  */
 function run(file, args) {
-  return spawnSync(file, args, { encoding: 'utf8' });
+  const res = spawnSync(file, args, { encoding: 'utf8' });
+  if (res.error && res.error.code === 'ENOENT') {
+    throw new Error(
+      `${file} is missing from this system — it is required to install MacControlMCP.app.`,
+    );
+  }
+  return res;
+}
+
+/**
+ * Same as run(), but turns a non-zero exit into a labelled error.
+ */
+function runOrThrow(file, args, what) {
+  const res = run(file, args);
+  if (res.status !== 0) {
+    throw new Error(
+      `${what} failed (exit ${res.status})\n${((res.stderr || '') + (res.stdout || '')).trim()}`,
+    );
+  }
+  return res;
 }
 
 /**
@@ -102,9 +137,30 @@ function run(file, args) {
 function clearQuarantine(archivePath) {
   const res = run('/usr/bin/xattr', ['-d', 'com.apple.quarantine', archivePath]);
   // Exit code 1 simply means the attribute was not set — not an error.
-  if (res.status !== 0 && res.status !== 1 && res.error) {
-    warn(`could not clear quarantine xattr (${res.error.message}); continuing.`);
+  if (res.status !== 0 && res.status !== 1) {
+    warn(
+      `could not clear quarantine xattr (exit ${res.status}): ${(res.stderr || '').trim()} — continuing.`,
+    );
   }
+}
+
+/**
+ * Inspect the archive's table of contents before writing anything to disk.
+ *
+ * The checksum proves we got the advertised bytes; it does not prove those
+ * bytes are harmless. This is the one step where a hostile archive could
+ * touch paths outside the package, so it is checked explicitly rather than
+ * left to whatever containment the system tar happens to implement.
+ */
+function assertArchiveIsContained(archivePath) {
+  const plain = runOrThrow('/usr/bin/tar', ['-tzf', archivePath], 'tar -tzf (listing archive)');
+  const verbose = runOrThrow(
+    '/usr/bin/tar',
+    ['-tvzf', archivePath],
+    'tar -tvzf (listing archive)',
+  );
+  assertSafeArchivePaths((plain.stdout || '').split('\n'));
+  assertSafeArchiveLinks((verbose.stdout || '').split('\n'));
 }
 
 /**
@@ -113,16 +169,31 @@ function clearQuarantine(archivePath) {
  * are Apple-notarized and were not tampered with in the extraction step.
  */
 function verifySignature() {
-  const codesign = run('/usr/bin/codesign', ['--verify', '--deep', '--strict', APP_PATH]);
-  if (codesign.status !== 0) {
+  runOrThrow(
+    '/usr/bin/codesign',
+    ['--verify', '--deep', '--strict', APP_PATH],
+    'codesign --verify --deep --strict',
+  );
+  runOrThrow(
+    '/usr/sbin/spctl',
+    ['--assess', '--type', 'execute', APP_PATH],
+    'spctl --assess --type execute',
+  );
+
+  // Both checks above are satisfied by any valid, notarized Developer ID —
+  // an attacker's own account included. Pinning the Team ID is what makes
+  // them assert authorship rather than mere validity.
+  const info = run('/usr/bin/codesign', ['-dv', '--verbose=4', APP_PATH]);
+  const teamId = parseTeamIdentifier(`${info.stdout || ''}\n${info.stderr || ''}`);
+  if (teamId !== EXPECTED_TEAM_ID) {
     throw new Error(
-      `codesign --verify --deep --strict failed for ${APP_PATH}\n${(codesign.stderr || '').trim()}`,
-    );
-  }
-  const spctl = run('/usr/sbin/spctl', ['--assess', '--type', 'execute', APP_PATH]);
-  if (spctl.status !== 0) {
-    throw new Error(
-      `spctl --assess --type execute failed for ${APP_PATH}\n${(spctl.stderr || '').trim()}`,
+      [
+        `Signing team mismatch — refusing to install ${APP_PATH}`,
+        `  expected TeamIdentifier: ${EXPECTED_TEAM_ID}`,
+        `  actual TeamIdentifier:   ${teamId ?? '<none>'}`,
+        '',
+        'The bundle is signed by someone other than the project owner. Do not use it.',
+      ].join('\n'),
     );
   }
 }
@@ -152,22 +223,24 @@ async function attemptInstall(version, urls, tmpDir) {
 
   clearQuarantine(archivePath);
 
+  assertArchiveIsContained(archivePath);
+  log('archive contents verified (no absolute, parent-directory or escaping link entries)');
+
   fs.rmSync(APP_PATH, { recursive: true, force: true });
   fs.mkdirSync(VENDOR_DIR, { recursive: true });
 
   // System tar preserves extended attributes and the _CodeSignature
   // directory byte for byte; no file inside the bundle is rewritten.
-  const untar = run('/usr/bin/tar', ['-xzf', archivePath, '-C', VENDOR_DIR]);
-  if (untar.status !== 0) {
-    throw new Error(`tar -xzf failed (exit ${untar.status})\n${(untar.stderr || '').trim()}`);
-  }
+  runOrThrow('/usr/bin/tar', ['-xzf', archivePath, '-C', VENDOR_DIR], 'tar -xzf');
 
   if (!fs.existsSync(BINARY_PATH)) {
     throw new Error(`archive did not contain ${path.relative(VENDOR_DIR, BINARY_PATH)}`);
   }
 
   verifySignature();
-  log('signature verified (codesign --verify --deep --strict, spctl --assess)');
+  log(
+    `signature verified (codesign --verify --deep --strict, spctl --assess, team ${EXPECTED_TEAM_ID})`,
+  );
 }
 
 async function main() {

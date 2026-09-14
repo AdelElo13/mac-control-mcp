@@ -131,6 +131,87 @@ function digestsMatch(actual, expected) {
 }
 
 /**
+ * Apple Team ID of the only identity allowed to sign what we install.
+ *
+ * `codesign --verify` proves the bundle is intact and `spctl --assess` proves
+ * Gatekeeper is satisfied, but both are happy with *any* valid Developer ID —
+ * including an attacker's own notarized account. Pinning the team makes those
+ * checks assert authorship, not just validity.
+ */
+const EXPECTED_TEAM_ID = 'A3W973JZ49';
+
+/** Top-level directory every archive entry must live under. */
+const ARCHIVE_ROOT = 'MacControlMCP.app';
+
+/**
+ * Reject a "tar slip" archive before extracting it.
+ *
+ * The checksum only proves we received the bytes the release advertises; it
+ * says nothing about what those bytes contain. An archive carrying absolute
+ * paths or `../` segments would write outside the package directory, so the
+ * listing is validated first and extraction only happens if every entry stays
+ * inside the expected bundle.
+ *
+ * @param {string[]} paths output lines of `tar -tzf`
+ * @param {string} [root]
+ * @returns {string[]} the validated paths
+ */
+function assertSafeArchivePaths(paths, root = ARCHIVE_ROOT) {
+  const entries = paths.map((p) => p.trim()).filter((p) => p !== '');
+  if (entries.length === 0) throw new Error('Archive listing is empty.');
+
+  for (const entry of entries) {
+    if (entry.startsWith('/') || /^[A-Za-z]:[\\/]/.test(entry)) {
+      throw new Error(`Refusing archive: absolute path entry ${JSON.stringify(entry)}`);
+    }
+    const segments = entry.split('/');
+    if (segments.includes('..')) {
+      throw new Error(`Refusing archive: parent-directory entry ${JSON.stringify(entry)}`);
+    }
+    if (segments[0] !== root) {
+      throw new Error(
+        `Refusing archive: entry ${JSON.stringify(entry)} is outside ${root}/`,
+      );
+    }
+  }
+  return entries;
+}
+
+/**
+ * Reject link members whose target could escape the extraction directory.
+ *
+ * A symlink is the other half of the tar-slip trick: the path stays innocent
+ * while the target points at `/` or climbs out with `..`. Today's bundle has
+ * no links at all, so anything but a strictly-contained relative target is
+ * refused.
+ *
+ * @param {string[]} verboseLines output lines of `tar -tvzf`
+ */
+function assertSafeArchiveLinks(verboseLines) {
+  for (const line of verboseLines) {
+    const idx = line.indexOf(' -> ');
+    if (idx === -1) continue;
+    const target = line.slice(idx + 4).trim();
+    if (target === '' || target.startsWith('/') || target.split('/').includes('..')) {
+      throw new Error(`Refusing archive: unsafe link target ${JSON.stringify(target)}`);
+    }
+  }
+}
+
+/**
+ * Pull the TeamIdentifier out of `codesign -dv --verbose=4` output.
+ *
+ * @param {string} output combined stdout+stderr of codesign
+ * @returns {string|null}
+ */
+function parseTeamIdentifier(output) {
+  const m = /^TeamIdentifier=(.+)$/m.exec(String(output));
+  if (!m) return null;
+  const value = m[1].trim();
+  return value === '' || value === 'not set' ? null : value;
+}
+
+/**
  * Decide whether an error hit while downloading is worth one retry.
  *
  * @param {unknown} err
@@ -166,6 +247,11 @@ module.exports = {
   RELEASE_BASE,
   SHA256_RE,
   VERSION_RE,
+  EXPECTED_TEAM_ID,
+  ARCHIVE_ROOT,
+  assertSafeArchivePaths,
+  assertSafeArchiveLinks,
+  parseTeamIdentifier,
   releaseTag,
   tarballName,
   sha256Name,

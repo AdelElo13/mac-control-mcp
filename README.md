@@ -42,7 +42,7 @@ It's also listed on the [official MCP Registry](https://registry.modelcontextpro
 
 ### 2. Install via npm / npx
 
-For clients that are configured with a command line rather than a file path. The npm package [`mac-control-mcp`](https://www.npmjs.com/package/mac-control-mcp) is a thin launcher: it has no runtime dependencies, and on install it downloads the notarized `MacControlMCP.app` for that exact version from this repo's GitHub release, verifies it against the published `.sha256`, and re-checks it with `codesign --verify --deep --strict` and `spctl --assess --type execute`. The first run therefore pulls ~3 MB; later runs are local.
+For clients that are configured with a command line rather than a file path. The npm package [`mac-control-mcp`](https://www.npmjs.com/package/mac-control-mcp) is a thin launcher: it has no runtime dependencies, and on install it downloads the notarized `MacControlMCP.app` for that exact version from this repo's GitHub release, verifies it against the published `.sha256`, refuses any archive entry that escapes the install directory, and re-checks the bundle with `codesign --verify --deep --strict`, `spctl --assess --type execute` and a pinned Team ID (`A3W973JZ49`). The first run therefore pulls ~3 MB; later runs are local.
 
 Claude Desktop — `~/Library/Application Support/Claude/claude_desktop_config.json`:
 

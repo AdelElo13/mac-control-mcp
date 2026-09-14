@@ -70,8 +70,9 @@ macOS grants Accessibility, Screen Recording and Apple Events to the **applicati
 ## Install behaviour
 
 - First install downloads ~3 MB from the GitHub release for this exact version.
-- The tarball is checked against the release's `.sha256` asset before extraction; a mismatch aborts the install.
-- The extracted bundle is re-verified with `codesign --verify --deep --strict` and `spctl --assess --type execute`.
+- The tarball is checked against the release's `.sha256` asset before extraction; a mismatch aborts the install. Both assets come from the same release, so this proves the bytes arrived intact — not who built them.
+- The archive's table of contents is validated before extraction: absolute paths, `..` entries and escaping symlinks are refused.
+- The extracted bundle is re-verified with `codesign --verify --deep --strict`, `spctl --assess --type execute`, and a pinned Apple Team ID (`A3W973JZ49`). That last check is the real trust anchor: it is what a replaced release asset cannot forge.
 - `MAC_CONTROL_MCP_SKIP_DOWNLOAD=1` skips the download (for CI and sandboxed builds).
 - `HTTPS_PROXY` / `NO_PROXY` are honoured.
 
