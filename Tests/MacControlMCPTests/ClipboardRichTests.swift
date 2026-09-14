@@ -8,14 +8,36 @@ import AppKit
 
 /// v0.9 workstream G — rich clipboard (C-10).
 ///
-/// DESKTOP SAFETY: every test here writes to the REAL general pasteboard,
-/// so each one runs inside `PasteboardSnapshot.withSnapshot`, which
-/// captures every item/type up front and restores it before the test
-/// returns (success or throw). The suite is `.serialized` because the
-/// pasteboard is a single global resource — parallel tests would clobber
-/// each other's snapshots.
+/// DESKTOP SAFETY: these tests never touch the user's real clipboard. Each
+/// one drives a PRIVATE NSPasteboard (`ClipboardController(pasteboardName:)`,
+/// and a `ToolRegistry` built around one), so `swift test` cannot disturb
+/// whatever the developer has copied — and, just as important, cannot be
+/// disturbed BY another suite: `ToolRegistryV2Tests` and the AX paste
+/// fallback both write to `NSPasteboard.general` concurrently, which made
+/// the first version of this suite flake in a full `swift test` run (it
+/// passed under `--filter` and failed in the full run — the classic shape
+/// of a shared-global-resource race).
+///
+/// The general-pasteboard path is covered by the live stdio probe, which
+/// snapshots and restores the real clipboard around itself.
 @Suite("Rich clipboard round-trips", .serialized)
 struct ClipboardRichTests {
+
+    /// A fresh private pasteboard name per call, so no two tests share state.
+    static func privateBoard() -> NSPasteboard.Name {
+        NSPasteboard.Name("com.mac-control-mcp.tests.\(UUID().uuidString)")
+    }
+
+    static func controller() -> ClipboardController {
+        ClipboardController(pasteboardName: privateBoard())
+    }
+
+    static func registry() -> ToolRegistry {
+        ToolRegistry(
+            accessibility: AccessibilityController(),
+            clipboard: ClipboardController(pasteboardName: privateBoard())
+        )
+    }
 
     // MARK: - Fixtures
 
@@ -60,12 +82,10 @@ struct ClipboardRichTests {
         let source = try Self.makePNG(width: 64, height: 40)
         defer { try? FileManager.default.removeItem(atPath: source) }
 
-        let result: ClipboardController.RichReadResult = try await PasteboardSnapshot.withSnapshot {
-            let clipboard = ClipboardController()
-            let written = try await clipboard.writeRich(.init(imagePath: source))
-            #expect(written.wrote.contains("image"))
-            return try await clipboard.readRich(kind: .image, inline: false, outputPath: nil)
-        }
+        let clipboard = Self.controller()
+        let written = try await clipboard.writeRich(.init(imagePath: source))
+        #expect(written.wrote.contains("image"))
+        let result = try await clipboard.readRich(kind: .image, inline: false, outputPath: nil)
 
         let image = try #require(result.image)
         #expect(image.width == 64)
@@ -82,11 +102,10 @@ struct ClipboardRichTests {
         let source = try Self.makePNG(width: 32, height: 16)
         defer { try? FileManager.default.removeItem(atPath: source) }
 
-        let result: ClipboardController.RichReadResult = try await PasteboardSnapshot.withSnapshot {
-            let clipboard = ClipboardController()
-            _ = try await clipboard.writeRich(.init(imagePath: source))
-            return try await clipboard.readRich(kind: .image, inline: true, outputPath: nil)
-        }
+        let clipboard = Self.controller()
+        _ = try await clipboard.writeRich(.init(imagePath: source))
+        let result = try await clipboard.readRich(kind: .image, inline: true, outputPath: nil)
+
         let image = try #require(result.image)
         let b64 = try #require(image.base64)
         let data = try #require(Data(base64Encoded: b64))
@@ -95,6 +114,41 @@ struct ClipboardRichTests {
         let decoded = try #require(CGImageSourceCreateImageAtIndex(src, 0, nil))
         #expect(decoded.width == 32)
         #expect(decoded.height == 16)
+        if let path = image.path { try? FileManager.default.removeItem(atPath: path) }
+    }
+
+    @Test("a JPEG source is transcoded to PNG on the pasteboard")
+    func jpegSourceBecomesPNG() async throws {
+        // Build a JPEG by re-encoding the PNG fixture.
+        let pngPath = try Self.makePNG(width: 20, height: 10)
+        defer { try? FileManager.default.removeItem(atPath: pngPath) }
+        let src = try #require(CGImageSourceCreateWithURL(URL(fileURLWithPath: pngPath) as CFURL, nil))
+        let image = try #require(CGImageSourceCreateImageAtIndex(src, 0, nil))
+        let jpegPath = NSTemporaryDirectory() + "mcp-clip-test-\(UUID().uuidString).jpg"
+        defer { try? FileManager.default.removeItem(atPath: jpegPath) }
+        let dest = try #require(CGImageDestinationCreateWithURL(
+            URL(fileURLWithPath: jpegPath) as CFURL, UTType.jpeg.identifier as CFString, 1, nil
+        ))
+        CGImageDestinationAddImage(dest, image, nil)
+        #expect(CGImageDestinationFinalize(dest))
+
+        let clipboard = Self.controller()
+        _ = try await clipboard.writeRich(.init(imagePath: jpegPath))
+        let result = try await clipboard.readRich(kind: .image, inline: false, outputPath: nil)
+        let payload = try #require(result.image)
+        #expect(payload.width == 20)
+        #expect(payload.height == 10)
+        if let path = payload.path { try? FileManager.default.removeItem(atPath: path) }
+    }
+
+    @Test("an unreadable image file is rejected")
+    func unreadableImageRejected() async throws {
+        let notAnImage = try Self.makeTextFile("definitely not a PNG")
+        defer { try? FileManager.default.removeItem(atPath: notAnImage) }
+        let clipboard = Self.controller()
+        await #expect(throws: ClipboardController.ClipboardError.self) {
+            _ = try await clipboard.writeRich(.init(imagePath: notAnImage))
+        }
     }
 
     // MARK: - Files
@@ -108,12 +162,11 @@ struct ClipboardRichTests {
             try? FileManager.default.removeItem(atPath: b)
         }
 
-        let result: ClipboardController.RichReadResult = try await PasteboardSnapshot.withSnapshot {
-            let clipboard = ClipboardController()
-            let written = try await clipboard.writeRich(.init(files: [a, b]))
-            #expect(written.wrote.contains("files"))
-            return try await clipboard.readRich(kind: .files, inline: false, outputPath: nil)
-        }
+        let clipboard = Self.controller()
+        let written = try await clipboard.writeRich(.init(files: [a, b]))
+        #expect(written.wrote.contains("files"))
+        let result = try await clipboard.readRich(kind: .files, inline: false, outputPath: nil)
+
         let files = try #require(result.files)
         #expect(files.count == 2)
         #expect(files.contains { $0.hasSuffix((a as NSString).lastPathComponent) })
@@ -123,10 +176,18 @@ struct ClipboardRichTests {
     @Test("a missing input file is rejected instead of silently writing nothing")
     func missingFileRejected() async throws {
         let ghost = NSTemporaryDirectory() + "mcp-clip-test-does-not-exist-\(UUID().uuidString).txt"
+        let clipboard = Self.controller()
         await #expect(throws: ClipboardController.ClipboardError.self) {
-            try await PasteboardSnapshot.withSnapshot {
-                _ = try await ClipboardController().writeRich(.init(files: [ghost]))
-            }
+            _ = try await clipboard.writeRich(.init(files: [ghost]))
+        }
+    }
+
+    @Test("reading files from a clipboard that has none fails honestly")
+    func filesReadWithoutFilesFails() async throws {
+        let clipboard = Self.controller()
+        _ = try await clipboard.writeRich(.init(text: "no files here"))
+        await #expect(throws: ClipboardController.ClipboardError.self) {
+            _ = try await clipboard.readRich(kind: .files, inline: false, outputPath: nil)
         }
     }
 
@@ -137,20 +198,15 @@ struct ClipboardRichTests {
         let html = "<p>hello <b>world</b></p>"
         let rtf = #"{\rtf1\ansi Hello RTF}"#
 
-        let (readHTML, readRTF, readText): (String?, String?, String?) =
-            try await PasteboardSnapshot.withSnapshot {
-                let clipboard = ClipboardController()
-                let written = try await clipboard.writeRich(
-                    .init(text: "hello world", html: html, rtf: rtf)
-                )
-                #expect(written.wrote.contains("text"))
-                #expect(written.wrote.contains("html"))
-                #expect(written.wrote.contains("rtf"))
-                let h = try await clipboard.readRich(kind: .html, inline: false, outputPath: nil)
-                let r = try await clipboard.readRich(kind: .rtf, inline: false, outputPath: nil)
-                let t = try await clipboard.readRich(kind: .text, inline: false, outputPath: nil)
-                return (h.html, r.rtf, t.text)
-            }
+        let clipboard = Self.controller()
+        let written = try await clipboard.writeRich(.init(text: "hello world", html: html, rtf: rtf))
+        #expect(written.wrote.contains("text"))
+        #expect(written.wrote.contains("html"))
+        #expect(written.wrote.contains("rtf"))
+
+        let readHTML = try await clipboard.readRich(kind: .html, inline: false, outputPath: nil).html
+        let readRTF = try await clipboard.readRich(kind: .rtf, inline: false, outputPath: nil).rtf
+        let readText = try await clipboard.readRich(kind: .text, inline: false, outputPath: nil).text
 
         #expect(readHTML == html)
         #expect(readRTF == rtf)
@@ -159,11 +215,10 @@ struct ClipboardRichTests {
 
     @Test("type=all enumerates every available UTI with its byte size")
     func allEnumeratesTypes() async throws {
-        let result: ClipboardController.RichReadResult = try await PasteboardSnapshot.withSnapshot {
-            let clipboard = ClipboardController()
-            _ = try await clipboard.writeRich(.init(text: "abc", html: "<i>abc</i>"))
-            return try await clipboard.readRich(kind: .all, inline: false, outputPath: nil)
-        }
+        let clipboard = Self.controller()
+        _ = try await clipboard.writeRich(.init(text: "abc", html: "<i>abc</i>"))
+        let result = try await clipboard.readRich(kind: .all, inline: false, outputPath: nil)
+
         let available = try #require(result.available)
         #expect(!available.isEmpty)
         #expect(available.allSatisfy { $0.bytes >= 0 })
@@ -174,21 +229,31 @@ struct ClipboardRichTests {
 
     @Test("reading an image from a text-only clipboard fails honestly")
     func imageReadOnTextOnlyClipboardFails() async throws {
+        let clipboard = Self.controller()
+        _ = try await clipboard.writeRich(.init(text: "just text"))
         await #expect(throws: ClipboardController.ClipboardError.self) {
-            try await PasteboardSnapshot.withSnapshot {
-                let clipboard = ClipboardController()
-                _ = try await clipboard.writeRich(.init(text: "just text"))
-                _ = try await clipboard.readRich(kind: .image, inline: false, outputPath: nil)
-            }
+            _ = try await clipboard.readRich(kind: .image, inline: false, outputPath: nil)
         }
     }
 
     @Test("an empty write request is rejected")
     func emptyWriteRejected() async throws {
+        let clipboard = Self.controller()
         await #expect(throws: ClipboardController.ClipboardError.self) {
-            try await PasteboardSnapshot.withSnapshot {
-                _ = try await ClipboardController().writeRich(.init())
-            }
+            _ = try await clipboard.writeRich(.init())
+        }
+    }
+
+    @Test("an output_path outside the allowed roots is refused")
+    func imageOutputPathIsValidated() async throws {
+        let source = try Self.makePNG(width: 8, height: 8)
+        defer { try? FileManager.default.removeItem(atPath: source) }
+        let clipboard = Self.controller()
+        _ = try await clipboard.writeRich(.init(imagePath: source))
+        await #expect(throws: ClipboardController.ClipboardError.self) {
+            _ = try await clipboard.readRich(
+                kind: .image, inline: false, outputPath: "/etc/mcp-clipboard-should-not-exist.png"
+            )
         }
     }
 
@@ -196,12 +261,11 @@ struct ClipboardRichTests {
 
     @Test("clipboard_read with no type stays backward compatible (text + types)")
     func toolReadDefaultsToText() async throws {
-        let payload: [String: JSONValue] = try await PasteboardSnapshot.withSnapshot {
-            let registry = ToolRegistry(accessibility: AccessibilityController())
-            _ = await registry.callTool(name: "clipboard_write", arguments: ["text": .string("compat")])
-            let result = await registry.callTool(name: "clipboard_read", arguments: [:])
-            return result.structuredContent.objectValue ?? [:]
-        }
+        let registry = Self.registry()
+        _ = await registry.callTool(name: "clipboard_write", arguments: ["text": .string("compat")])
+        let result = await registry.callTool(name: "clipboard_read", arguments: [:])
+        let payload = result.structuredContent.objectValue ?? [:]
+
         #expect(payload["ok"] == .bool(true))
         #expect(payload["text"] == .string("compat"))
         #expect(payload["types"]?.arrayValue?.isEmpty == false)
@@ -212,17 +276,16 @@ struct ClipboardRichTests {
         let source = try Self.makePNG(width: 48, height: 24)
         defer { try? FileManager.default.removeItem(atPath: source) }
 
-        let payload: [String: JSONValue] = try await PasteboardSnapshot.withSnapshot {
-            let registry = ToolRegistry(accessibility: AccessibilityController())
-            let write = await registry.callTool(
-                name: "clipboard_write", arguments: ["image_path": .string(source)]
-            )
-            #expect(write.isError == false)
-            let read = await registry.callTool(
-                name: "clipboard_read", arguments: ["type": .string("image")]
-            )
-            return read.structuredContent.objectValue ?? [:]
-        }
+        let registry = Self.registry()
+        let write = await registry.callTool(
+            name: "clipboard_write", arguments: ["image_path": .string(source)]
+        )
+        #expect(write.isError == false)
+        let read = await registry.callTool(
+            name: "clipboard_read", arguments: ["type": .string("image")]
+        )
+        let payload = read.structuredContent.objectValue ?? [:]
+
         #expect(payload["ok"] == .bool(true))
         let image = try #require(payload["image"]?.objectValue)
         #expect(image["width"] == .number(48))
@@ -232,13 +295,50 @@ struct ClipboardRichTests {
         }
     }
 
+    @Test("clipboard_write files → clipboard_read type=files via the tool layer")
+    func toolFilesRoundTrip() async throws {
+        let file = try Self.makeTextFile("tool layer")
+        defer { try? FileManager.default.removeItem(atPath: file) }
+
+        let registry = Self.registry()
+        let write = await registry.callTool(
+            name: "clipboard_write", arguments: ["files": .array([.string(file)])]
+        )
+        #expect(write.isError == false)
+        let read = await registry.callTool(
+            name: "clipboard_read", arguments: ["type": .string("files")]
+        )
+        let payload = read.structuredContent.objectValue ?? [:]
+        #expect(payload["file_count"] == .number(1))
+        #expect(payload["files"]?.arrayValue?.first?.stringValue?.hasSuffix(
+            (file as NSString).lastPathComponent
+        ) == true)
+    }
+
     @Test("clipboard_read with an unknown type is an invalid_argument, not a crash")
     func toolRejectsUnknownType() async throws {
-        let registry = ToolRegistry(accessibility: AccessibilityController())
-        let result = await registry.callTool(
+        let result = await Self.registry().callTool(
             name: "clipboard_read", arguments: ["type": .string("hologram")]
         )
         #expect(result.isError)
         #expect(result.text.lowercased().contains("type"))
+    }
+
+    @Test("clipboard_write with no representation is an invalid_argument")
+    func toolRejectsEmptyWrite() async throws {
+        let result = await Self.registry().callTool(name: "clipboard_write", arguments: [:])
+        #expect(result.isError)
+        #expect(result.text.contains("image_path"))
+    }
+
+    @Test("clipboard_write reports a missing file with a machine-readable code")
+    func toolReportsMissingFile() async throws {
+        let ghost = NSTemporaryDirectory() + "mcp-clip-test-ghost-\(UUID().uuidString).txt"
+        let result = await Self.registry().callTool(
+            name: "clipboard_write", arguments: ["files": .array([.string(ghost)])]
+        )
+        #expect(result.isError)
+        let payload = result.structuredContent.objectValue ?? [:]
+        #expect(payload["error_code"] == .string("file_not_found"))
     }
 }

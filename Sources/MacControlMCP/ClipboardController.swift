@@ -26,6 +26,29 @@ actor ClipboardController {
         let types: [String]
     }
 
+    /// Which pasteboard this controller talks to. `nil` (the default, and
+    /// the only value production uses) means `NSPasteboard.general` — the
+    /// user's real clipboard.
+    ///
+    /// Tests pass a private name instead. Two reasons: the general
+    /// pasteboard is a single global resource, so clipboard tests running
+    /// concurrently with ANY other suite that copies text (ToolRegistryV2's
+    /// round-trip, the AX paste fallback, the file-dialog path) clobber
+    /// each other — that flake was real and caught here — and a private
+    /// board means `swift test` cannot disturb whatever the developer has
+    /// on their clipboard at all.
+    private let pasteboardName: NSPasteboard.Name?
+
+    init(pasteboardName: NSPasteboard.Name? = nil) {
+        self.pasteboardName = pasteboardName
+    }
+
+    @MainActor
+    private static func board(_ name: NSPasteboard.Name?) -> NSPasteboard {
+        guard let name else { return .general }
+        return NSPasteboard(name: name)
+    }
+
     // MARK: - Rich types
 
     /// What `clipboard_read(type:)` should return.
@@ -149,8 +172,9 @@ actor ClipboardController {
     /// Read the plain-text clipboard contents and the list of all available
     /// pasteboard types for the frontmost item.
     func read() async -> ReadResult {
-        await MainActor.run {
-            let pasteboard = NSPasteboard.general
+        let name = pasteboardName
+        return await MainActor.run {
+            let pasteboard = Self.board(name)
             let types = pasteboard.types?.map { $0.rawValue } ?? []
             let text = pasteboard.string(forType: .string)
             return ReadResult(text: text, types: types)
@@ -160,8 +184,9 @@ actor ClipboardController {
     /// Replace the clipboard with the given text. Returns true on success.
     @discardableResult
     func write(text: String) async -> Bool {
-        await MainActor.run {
-            let pasteboard = NSPasteboard.general
+        let name = pasteboardName
+        return await MainActor.run {
+            let pasteboard = Self.board(name)
             pasteboard.clearContents()
             return pasteboard.setString(text, forType: .string)
         }
@@ -169,7 +194,8 @@ actor ClipboardController {
 
     /// Clear the clipboard.
     func clear() async {
-        await MainActor.run { NSPasteboard.general.clearContents() }
+        let name = pasteboardName
+        await MainActor.run { Self.board(name).clearContents() }
     }
 
     // MARK: - Rich read
@@ -189,7 +215,8 @@ actor ClipboardController {
     }
 
     func readRich(kind: ReadKind, inline: Bool, outputPath: String?) async throws -> RichReadResult {
-        let raw = await MainActor.run { Self.snapshot(for: kind) }
+        let name = pasteboardName
+        let raw = await MainActor.run { Self.snapshot(for: kind, on: name) }
 
         switch kind {
         case .text:
@@ -231,8 +258,8 @@ actor ClipboardController {
     }
 
     @MainActor
-    private static func snapshot(for kind: ReadKind) -> RawSnapshot {
-        let pasteboard = NSPasteboard.general
+    private static func snapshot(for kind: ReadKind, on name: NSPasteboard.Name?) -> RawSnapshot {
+        let pasteboard = board(name)
         var raw = RawSnapshot()
         let types = pasteboard.types ?? []
         raw.types = types.map(\.rawValue)
@@ -393,8 +420,9 @@ actor ClipboardController {
         let images = imageRepresentations
         let urls = fileURLs
 
+        let name = pasteboardName
         let outcome: WriteResult = await MainActor.run {
-            let pasteboard = NSPasteboard.general
+            let pasteboard = Self.board(name)
             pasteboard.clearContents()
 
             var wrote: [String] = []
