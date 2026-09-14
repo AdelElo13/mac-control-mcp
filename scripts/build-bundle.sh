@@ -128,9 +128,37 @@ if [ -n "${NOTARIZE_PROFILE:-}" ] && [ "$SIGN_WITH" != "-" ]; then
     NOTARY_ZIP="${PROJECT_ROOT}/.build/${APP_NAME}-notary.zip"
     rm -f "$NOTARY_ZIP"
     (cd "$(dirname "$APP_PATH")" && /usr/bin/ditto -c -k --keepParent "$(basename "$APP_PATH")" "$NOTARY_ZIP")
-    xcrun notarytool submit "$NOTARY_ZIP" \
-        --keychain-profile "$NOTARIZE_PROFILE" \
-        --wait
+    # Submit WITHOUT --wait, then poll with `notarytool wait` in a retry
+    # loop. `submit --wait` holds one HTTP long-poll open and, on a slow
+    # notary day, dies with `HTTPClientError.deadlineExceeded` while Apple
+    # still reports the submission "In Progress" (v0.9.0 release: twice in
+    # a row, 2026-09-15). The submission id is the durable handle — keep
+    # asking about it until Apple answers, whatever the transport does.
+    SUBMIT_OUT=$(xcrun notarytool submit "$NOTARY_ZIP" --keychain-profile "$NOTARIZE_PROFILE" 2>&1) || {
+        echo "$SUBMIT_OUT"; echo "[build-bundle] ERROR: notarytool submit failed" >&2; exit 1; }
+    echo "$SUBMIT_OUT"
+    SUBMISSION_ID=$(echo "$SUBMIT_OUT" | awk '/^ *id: /{print $2; exit}')
+    if [ -z "$SUBMISSION_ID" ]; then
+        echo "[build-bundle] ERROR: no submission id in notarytool output" >&2; exit 1
+    fi
+    NOTARY_STATUS=""
+    for attempt in 1 2 3 4 5 6 7 8; do
+        WAIT_OUT=$(xcrun notarytool wait "$SUBMISSION_ID" --keychain-profile "$NOTARIZE_PROFILE" --timeout 20m 2>&1) || true
+        echo "$WAIT_OUT" | tail -3
+        NOTARY_STATUS=$(echo "$WAIT_OUT" | awk '/^ *status: /{print $2; exit}')
+        case "$NOTARY_STATUS" in
+            Accepted) break ;;
+            Invalid|Rejected)
+                echo "[build-bundle] ERROR: notarization ${NOTARY_STATUS} (submission ${SUBMISSION_ID})" >&2
+                xcrun notarytool log "$SUBMISSION_ID" --keychain-profile "$NOTARIZE_PROFILE" || true
+                exit 1 ;;
+            *) echo "[build-bundle] notary wait attempt ${attempt} ended without a verdict (${NOTARY_STATUS:-transport error}); retrying..."; sleep 15 ;;
+        esac
+    done
+    if [ "$NOTARY_STATUS" != "Accepted" ]; then
+        echo "[build-bundle] ERROR: notarization did not complete (submission ${SUBMISSION_ID}, last status '${NOTARY_STATUS}')" >&2
+        exit 1
+    fi
     echo "[build-bundle] stapling ticket..."
     xcrun stapler staple "${APP_PATH}"
     spctl --assess --type execute --verbose "${APP_PATH}" || true
