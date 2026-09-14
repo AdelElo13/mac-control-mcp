@@ -1,6 +1,7 @@
 import Foundation
 import ApplicationServices
 import AppKit
+import CryptoKit
 
 /// What an element looked like when its path was recorded. Used to
 /// verify — not merely guess — that a re-resolved element is the same
@@ -149,37 +150,65 @@ struct ProcessIdentity: Sendable, Equatable {
 /// two different elements yield different ids. The `el_` prefix is
 /// unchanged, so existing clients keep working.
 enum AXPath {
-    /// Canonical, human-readable identity string that gets hashed. Kept
-    /// separate from the hash so it is unit-testable and so a future
-    /// debug field can surface it verbatim.
+    /// Canonical identity string that gets hashed. Kept separate from the
+    /// hash so it is unit-testable and so a future debug field can surface
+    /// it verbatim.
     ///
     /// Only role / ordinal / identifier take part: fingerprint fields
     /// (title, subrole) must NOT change the id, or a relabelled button
     /// would look like a new element.
+    ///
+    /// ENCODING (v2 — Codex review 3, BLOCKER). The v1 form was a plain
+    /// concatenation, `pid:742/AXWindow[0]/AXButton[3]#save-btn`. An app
+    /// controls its own `AXIdentifier` strings, so one component with the
+    /// identifier `x/AXButton[1]#y` produced byte-for-byte the same string
+    /// as two components `#x` then `#y` — a structural collision an app
+    /// could mint on purpose, handing one element id to two controls.
+    ///
+    /// v2 is netstring-style: the component count is pinned up front and
+    /// every variable-length field is prefixed with its UTF-8 byte count,
+    /// so the string parses back to exactly one path and no crafted
+    /// identifier can forge another. Fixed-width fields (pid, ordinals) are
+    /// `:`-delimited; an absent identifier is the sentinel `-`, which no
+    /// length-prefixed field can ever spell (a literal "-" identifier
+    /// encodes as `1:-`).
+    ///
+    ///     axpath2:742:2:8:AXWindow:0:-:8:AXButton:3:8:save-btn
     static func identity(pid: pid_t, path: [AXPathComponent]) -> String {
-        var out = "pid:\(pid)"
+        var out = "axpath2:\(pid):\(path.count)"
         for component in path {
-            out += "/\(component.role)[\(component.index)]"
-            if let identifier = component.identifier { out += "#\(identifier)" }
+            out += ":" + lengthPrefixed(component.role)
+            out += ":\(component.index)"
+            out += ":" + (component.identifier.map(lengthPrefixed) ?? "-")
         }
         return out
     }
 
-    /// Element id for a (pid, path) pair: `el_` + 16 hex chars.
-    static func identifier(pid: pid_t, path: [AXPathComponent]) -> String {
-        "el_" + String(format: "%016lx", fnv1a64(identity(pid: pid, path: path)))
+    /// `<utf8 byte count>:<field>` — the netstring framing that makes the
+    /// canonical form unforgeable.
+    static func lengthPrefixed(_ field: String) -> String {
+        "\(field.utf8.count):\(field)"
     }
 
-    /// FNV-1a, 64-bit. Deterministic across processes and OS releases
-    /// (unlike Swift's `Hasher`, which is seeded per process — using it
-    /// here would silently break cross-session stability).
-    static func fnv1a64(_ string: String) -> UInt64 {
-        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
-        for byte in string.utf8 {
-            hash ^= UInt64(byte)
-            hash = hash &* 0x0000_0100_0000_01b3
-        }
-        return hash
+    /// Element id for a (pid, path) pair: `el_` + 32 lowercase hex chars.
+    ///
+    /// SHA-256 truncated to 128 bits (Codex review 3). The previous
+    /// FNV-1a-64 is a non-cryptographic hash: even with a collision-proof
+    /// canonical string, an app could brute-force a second path colliding
+    /// into the same 64-bit id in seconds. 128 bits of a cryptographic
+    /// digest makes that infeasible, and is still short enough to read.
+    static func identifier(pid: pid_t, path: [AXPathComponent]) -> String {
+        "el_" + digest128(identity(pid: pid, path: path))
+    }
+
+    /// SHA-256 of `string`'s UTF-8, truncated to its first 128 bits and
+    /// rendered as 32 lowercase hex chars. Deterministic across processes,
+    /// machines and OS releases (unlike Swift's `Hasher`, which is seeded
+    /// per process — using it here would silently break cross-session
+    /// stability).
+    static func digest128(_ string: String) -> String {
+        let digest = SHA256.hash(data: Data(string.utf8))
+        return digest.prefix(16).map { String(format: "%02x", $0) }.joined()
     }
 
     /// Extend `parentPath` with the component describing the child at

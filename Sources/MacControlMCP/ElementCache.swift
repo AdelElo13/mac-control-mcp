@@ -46,10 +46,24 @@ actor ElementCache {
     private let ttl: TimeInterval
     /// Hard cap on live entries (also get_ui_tree's node cap).
     nonisolated let maxEntries: Int
+    /// How an element id is derived from (pid, path). Injectable so the
+    /// collision guard below can be tested with a degenerate hash —
+    /// SHA-256 collisions are not reachable from a test.
+    private let identify: @Sendable (pid_t, [AXPathComponent]) -> String
+    /// Number of id collisions seen since construction (Codex review 3).
+    /// Should always be 0 in production; a non-zero value means two
+    /// different paths hashed to the same id and both handles were
+    /// quarantined. Exposed for tests and diagnostics.
+    private(set) var collisions = 0
 
-    init(ttl: TimeInterval = 300, maxEntries: Int = 2_000) {
+    init(
+        ttl: TimeInterval = 300,
+        maxEntries: Int = 2_000,
+        identify: @escaping @Sendable (pid_t, [AXPathComponent]) -> String = AXPath.identifier
+    ) {
         self.ttl = ttl
         self.maxEntries = maxEntries
+        self.identify = identify
     }
 
     /// Store `element` and return a new opaque ID. If the random ID happens
@@ -137,21 +151,55 @@ actor ElementCache {
         if let path {
             // Content-addressed: deterministic, so re-storing the same
             // element refreshes its entry instead of minting a twin.
-            let id = AXPath.identifier(pid: pid, path: path)
+            let id = identify(pid, path)
+            if let existing = entries[id], existing.pid != pid || existing.path != path {
+                // Codex review 3: an id whose (pid, path) does not match the
+                // one already filed under it is a hash collision. Silently
+                // overwriting would retarget every handle the caller is
+                // holding onto a different control — the exact failure this
+                // review flagged. Quarantine BOTH: drop the existing entry
+                // (its holder now gets unknown_element_id and re-searches)
+                // and file the newcomer under a fresh random id rather than
+                // letting it inherit a poisoned one. Determinism is worth
+                // less than never acting on the wrong element.
+                entries.removeValue(forKey: id)
+                collisions += 1
+                FileHandle.standardError.write(Data(
+                    """
+                    [mac-control-mcp] element id collision on \(id): \
+                    pid \(existing.pid) path \(existing.path.map { AXPath.identity(pid: existing.pid, path: $0) } ?? "<none>") \
+                    vs pid \(pid) path \(AXPath.identity(pid: pid, path: path)). \
+                    Both handles quarantined; no element was retargeted.\n
+                    """.utf8
+                ))
+                return insertRandom(element, pid: pid, path: path, identity: identity, now: now)
+            }
             entries[id] = Entry(element: element, pid: pid, path: path, identity: identity, lastAccess: now)
             return id
         }
+        return insertRandom(element, pid: pid, path: nil, identity: identity, now: now)
+    }
+
+    /// Random-id insert: for producers with no path (the system-wide
+    /// focused element) and for the collision quarantine above.
+    private func insertRandom(
+        _ element: AXUIElement,
+        pid: pid_t,
+        path: [AXPathComponent]?,
+        identity: ProcessIdentity,
+        now: Date
+    ) -> String {
         for _ in 0..<8 {
             let id = Self.makeID()
             if entries[id] == nil {
-                entries[id] = Entry(element: element, pid: pid, path: nil, identity: identity, lastAccess: now)
+                entries[id] = Entry(element: element, pid: pid, path: path, identity: identity, lastAccess: now)
                 return id
             }
         }
         // Extremely unlikely path. Fall back to a UUID-based ID so we
         // never silently overwrite an existing entry.
         let fallback = "el_\(UUID().uuidString.prefix(16).lowercased().replacingOccurrences(of: "-", with: ""))"
-        entries[fallback] = Entry(element: element, pid: pid, path: nil, identity: identity, lastAccess: now)
+        entries[fallback] = Entry(element: element, pid: pid, path: path, identity: identity, lastAccess: now)
         return fallback
     }
 
@@ -259,8 +307,10 @@ actor ElementCache {
         }
     }
 
-    /// 8 random bytes (64 bits) → 16 hex chars. Collision probability at
-    /// 2000 entries is ~10^-14, and we retry on top of that.
+    /// 8 random bytes (64 bits) → 16 hex chars. Only used for pathless
+    /// producers and the collision quarantine; path-derived ids are 32 hex
+    /// chars (SHA-256/128 via `AXPath.identifier`). Collision probability
+    /// at 2000 entries is ~10^-14, and we retry on top of that.
     private static func makeID() -> String {
         var bytes = [UInt8](repeating: 0, count: 8)
         for i in 0..<bytes.count {
