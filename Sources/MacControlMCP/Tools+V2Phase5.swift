@@ -306,16 +306,61 @@ extension ToolRegistry {
                 ]
             )
         } catch {
-            return errorResult(
-                "Window capture failed: \(error)",
-                [
-                    "ok": .bool(false),
-                    "pid": .number(Double(pid)),
-                    "error": .string(String(describing: error)),
-                    "hint": .string("If this is a permission issue, add mac-control-mcp to System Settings → Privacy & Security → Screen Recording and restart. If the window is on another Space, focus it first via focus_window.")
-                ]
-            )
+            var payload: [String: JSONValue] = [
+                "ok": .bool(false),
+                "pid": .number(Double(pid))
+            ]
+            var errorCode = "failed"
+            var hint = "If this is a permission issue, add mac-control-mcp to System Settings → Privacy & Security → Screen Recording and restart. If the window is on another Space, focus it first via focus_window."
+
+            if let screenError = error as? ScreenController.ScreenError {
+                switch screenError {
+                case .noMatchingWindow:
+                    errorCode = "not_found"
+                    hint = "No window belonging to this pid matched title_contains. Call list_windows to see available titles for this pid."
+                case .permissionDenied(_, let window):
+                    errorCode = "permission_missing"
+                    payload["pane"] = .string("screen_recording")
+                    if let window {
+                        payload["window"] = Self.windowPayload(window)
+                    }
+                case .windowNotOnCurrentSpace(let window):
+                    errorCode = "failed"
+                    payload["window"] = Self.windowPayload(window)
+                    hint = "The chosen window is on a different macOS Space. Bring it to the foreground (or switch Spaces) before capturing."
+                case .windowCaptureFailed(let window, _):
+                    errorCode = "failed"
+                    payload["window"] = Self.windowPayload(window)
+                default:
+                    errorCode = "failed"
+                }
+            }
+
+            payload["error_code"] = .string(errorCode)
+            payload["error"] = .string(String(describing: error))
+            payload["hint"] = .string(hint)
+
+            return errorResult("Window capture failed: \(error)", payload)
         }
+    }
+
+    /// Serializes `ScreenController.SelectedWindowInfo` into the JSON
+    /// shape surfaced on capture_window failures, so the caller can see
+    /// exactly which window was chosen (id, title, bounds, onscreen) and
+    /// diagnose a wrong pick (e.g. a tiny helper window) instead of just
+    /// getting "Screen capture failed."
+    private static func windowPayload(_ window: ScreenController.SelectedWindowInfo) -> JSONValue {
+        .object([
+            "id": .number(Double(window.windowID)),
+            "title": .string(window.title),
+            "bounds": .object([
+                "x": .number(window.bounds.origin.x),
+                "y": .number(window.bounds.origin.y),
+                "width": .number(window.bounds.width),
+                "height": .number(window.bounds.height)
+            ]),
+            "onscreen": .bool(window.isOnscreen)
+        ])
     }
 
     func callCaptureDisplay(_ arguments: [String: JSONValue]) async -> ToolCallResult {

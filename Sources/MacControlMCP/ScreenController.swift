@@ -35,6 +35,22 @@ actor ScreenController {
         let joinedText: String
     }
 
+    /// Metadata about the CGWindowListCopyWindowInfo entry that was chosen
+    /// as the capture target. Surfaced on every capture_window failure
+    /// (see `ScreenError`) so the caller can see WHICH window was picked
+    /// and why the pick might be wrong — e.g. a 1x22 helper window instead
+    /// of the intended content window.
+    struct SelectedWindowInfo: Sendable {
+        let windowID: CGWindowID
+        let title: String
+        let bounds: CGRect
+        let isOnscreen: Bool
+
+        var debugDescription: String {
+            "id=\(windowID) title=\"\(title)\" bounds=(x:\(bounds.origin.x), y:\(bounds.origin.y), w:\(bounds.width), h:\(bounds.height)) onscreen=\(isOnscreen)"
+        }
+    }
+
     enum ScreenError: Error, CustomStringConvertible {
         case noDisplay
         case captureFailed
@@ -42,11 +58,19 @@ actor ScreenController {
         case writeFailed
         /// SCK returned -3801; user has not granted Screen Recording
         /// permission to the mac-control-mcp binary.
-        case permissionDenied(String)
+        case permissionDenied(String, window: SelectedWindowInfo? = nil)
         /// The window exists in AX but is not rendered on the current
         /// Space. Capturing the region would return the desktop wallpaper
         /// rather than the window's content.
-        case windowNotOnCurrentSpace
+        case windowNotOnCurrentSpace(window: SelectedWindowInfo)
+        /// No CGWindowListCopyWindowInfo entry matched the given pid +
+        /// title_contains filter at all — distinct from "matched a window
+        /// but every capture strategy failed on it" below.
+        case noMatchingWindow
+        /// A window WAS selected (see `SelectedWindowInfo`) but every
+        /// capture strategy (ScreenCaptureKit, legacy CG, region crop)
+        /// failed on it.
+        case windowCaptureFailed(window: SelectedWindowInfo, underlying: String)
 
         var description: String {
             switch self {
@@ -54,12 +78,129 @@ actor ScreenController {
             case .captureFailed: return "Screen capture failed."
             case .encodingFailed: return "PNG encoding failed."
             case .writeFailed: return "PNG write failed."
-            case .permissionDenied(let detail):
-                return "Screen Recording permission not granted to mac-control-mcp. Open System Settings → Privacy & Security → Screen Recording and enable the MCP binary, then restart it. (Underlying error: \(detail))"
-            case .windowNotOnCurrentSpace:
-                return "Window exists but is on a different macOS Space. Bring it to the foreground (or switch Spaces) before capturing."
+            case .permissionDenied(let detail, let window):
+                let base = "Screen Recording permission not granted to mac-control-mcp. Open System Settings → Privacy & Security → Screen Recording and enable the MCP binary, then restart it. (Underlying error: \(detail))"
+                guard let window else { return base }
+                return base + " Selected window: \(window.debugDescription)."
+            case .windowNotOnCurrentSpace(let window):
+                return "Window exists but is on a different macOS Space. Bring it to the foreground (or switch Spaces) before capturing. Selected window: \(window.debugDescription)."
+            case .noMatchingWindow:
+                return "No window belonging to this pid matched the given title_contains filter."
+            case .windowCaptureFailed(let window, let underlying):
+                return "Screen capture failed. Selected window: \(window.debugDescription). Underlying error: \(underlying)"
             }
         }
+    }
+
+    /// Pure, unit-testable window-selection logic shared by every capture
+    /// path that has to pick ONE window out of a pid's
+    /// `CGWindowListCopyWindowInfo` entries.
+    ///
+    /// Extracted after a production bug (v0.8.2, macOS 26):
+    /// `capture_window pid=<Chrome pid> title_contains="mac-control-mcp"`
+    /// picked a tiny (400x22) helper/offscreen window belonging to the
+    /// same pid, because the old logic was
+    /// `candidates.first { name contains title }` — no size, onscreen, or
+    /// layer filtering, and no notion of "biggest is probably the real
+    /// window".
+    ///
+    /// Rules:
+    ///   1. When `titleContains` is given, filter to entries whose
+    ///      `kCGWindowName` contains it (case-insensitive). No match →
+    ///      `nil`.
+    ///   2. Among the remaining candidates, prefer entries that are
+    ///      `kCGWindowIsOnscreen == true`, `kCGWindowLayer == 0`,
+    ///      `kCGWindowAlpha > 0`, AND have both width/height >= `minSize`.
+    ///      Pick the LARGEST by area (width * height) within that
+    ///      preferred set.
+    ///   3. If nothing satisfies all of #2, fall back progressively:
+    ///      first drop the onscreen requirement, then also drop the
+    ///      min-size requirement — so a real but small/offscreen window
+    ///      is still returned rather than `nil`.
+    ///   4. Without a title filter, the same ranking applies over ALL of
+    ///      the pid's windows (so "no title" behaves like "give me the
+    ///      biggest real window").
+    static func selectWindow(
+        from candidates: [[String: Any]],
+        titleContains: String?,
+        minSize: CGFloat = 50
+    ) -> [String: Any]? {
+        let pool: [[String: Any]]
+        if let title = titleContains, !title.isEmpty {
+            pool = candidates.filter { dict in
+                let name = (dict[kCGWindowName as String] as? String) ?? ""
+                return name.localizedCaseInsensitiveContains(title)
+            }
+        } else {
+            pool = candidates
+        }
+
+        guard !pool.isEmpty else { return nil }
+
+        func isOnscreen(_ d: [String: Any]) -> Bool {
+            (d[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue == true
+        }
+        func layer(_ d: [String: Any]) -> Int {
+            (d[kCGWindowLayer as String] as? NSNumber)?.intValue ?? Int.max
+        }
+        func alpha(_ d: [String: Any]) -> Double {
+            (d[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1.0
+        }
+        func size(_ d: [String: Any]) -> (w: CGFloat, h: CGFloat) {
+            guard let boundsDict = d[kCGWindowBounds as String] as? [String: Any] else {
+                return (0, 0)
+            }
+            let w = (boundsDict["Width"] as? NSNumber)?.doubleValue ?? 0
+            let h = (boundsDict["Height"] as? NSNumber)?.doubleValue ?? 0
+            return (CGFloat(w), CGFloat(h))
+        }
+        func area(_ d: [String: Any]) -> CGFloat {
+            let s = size(d)
+            return s.w * s.h
+        }
+        func meetsMinSize(_ d: [String: Any]) -> Bool {
+            let s = size(d)
+            return s.w >= minSize && s.h >= minSize
+        }
+        func largest(in list: [[String: Any]]) -> [String: Any]? {
+            list.max { area($0) < area($1) }
+        }
+
+        // Tier 1 (preferred): onscreen, layer 0, visible, real-sized.
+        let preferred = pool.filter { isOnscreen($0) && layer($0) == 0 && alpha($0) > 0 && meetsMinSize($0) }
+        if let pick = largest(in: preferred) { return pick }
+
+        // Tier 2: drop the onscreen requirement (window may be on another
+        // Space but still the intended real window).
+        let dropOnscreen = pool.filter { layer($0) == 0 && alpha($0) > 0 && meetsMinSize($0) }
+        if let pick = largest(in: dropOnscreen) { return pick }
+
+        // Tier 3: drop the min-size requirement too — only small windows
+        // matched, but a match is still better than nil.
+        let dropMinSize = pool.filter { layer($0) == 0 && alpha($0) > 0 }
+        if let pick = largest(in: dropMinSize) { return pick }
+
+        // Last resort: any layer, any alpha — whatever matched pid/title.
+        return largest(in: pool)
+    }
+
+    /// Normalizes a selected `CGWindowListCopyWindowInfo` dictionary into
+    /// the metadata surfaced in capture-failure error payloads.
+    static func selectedWindowInfo(from dict: [String: Any]) -> SelectedWindowInfo {
+        let windowID = (dict[kCGWindowNumber as String] as? NSNumber)?.uint32Value ?? 0
+        let title = (dict[kCGWindowName as String] as? String) ?? ""
+        let boundsDict = dict[kCGWindowBounds as String] as? [String: Any]
+        let x = (boundsDict?["X"] as? NSNumber)?.doubleValue ?? 0
+        let y = (boundsDict?["Y"] as? NSNumber)?.doubleValue ?? 0
+        let w = (boundsDict?["Width"] as? NSNumber)?.doubleValue ?? 0
+        let h = (boundsDict?["Height"] as? NSNumber)?.doubleValue ?? 0
+        let isOnscreen = (dict[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue ?? false
+        return SelectedWindowInfo(
+            windowID: CGWindowID(windowID),
+            title: title,
+            bounds: CGRect(x: x, y: y, width: w, height: h),
+            isOnscreen: isOnscreen
+        )
     }
 
     /// Capture the main display (or a specific `displayID`) and write a PNG
@@ -155,30 +296,13 @@ actor ScreenController {
             return pidNum?.int32Value == ownerPID
         }
 
-        // Match selection:
-        //   - If title filter provided, require substring match.
-        //   - Otherwise prefer onscreen + layer 0 + non-empty name.
-        let match: [String: Any]?
-        if let title = titleContains, !title.isEmpty {
-            match = candidates.first { dict in
-                let candidate = (dict[kCGWindowName as String] as? String) ?? ""
-                return candidate.localizedCaseInsensitiveContains(title)
-            }
-        } else {
-            func isOnScreen(_ d: [String: Any]) -> Bool {
-                (d[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue == true
-            }
-            func isLayer0(_ d: [String: Any]) -> Bool {
-                (d[kCGWindowLayer as String] as? NSNumber)?.intValue == 0
-            }
-            match = candidates.first(where: { isOnScreen($0) && isLayer0($0) })
-                ?? candidates.first(where: { isLayer0($0) })
-                ?? candidates.first
+        guard let match = Self.selectWindow(from: candidates, titleContains: titleContains) else {
+            throw ScreenError.noMatchingWindow
         }
+        let selected = Self.selectedWindowInfo(from: match)
 
-        guard let match,
-              let wnum = match[kCGWindowNumber as String] as? NSNumber else {
-            throw ScreenError.captureFailed
+        guard let wnum = match[kCGWindowNumber as String] as? NSNumber else {
+            throw ScreenError.windowCaptureFailed(window: selected, underlying: "Matched window dictionary had no kCGWindowNumber.")
         }
         let windowID = CGWindowID(wnum.uint32Value)
 
@@ -191,13 +315,13 @@ actor ScreenController {
         } catch {
             if let bridgeError = error as? ScreenCaptureKitBridge.BridgeError,
                case .permissionDenied = bridgeError {
-                throw ScreenError.permissionDenied("CGRequestScreenCaptureAccess returned denied.")
+                throw ScreenError.permissionDenied("CGRequestScreenCaptureAccess returned denied.", window: selected)
             }
             let detail = String(describing: error)
             if detail.contains("-3801") || detail.contains("TCC") || detail.contains("declined") {
                 // Surface the permission issue clearly instead of falling
                 // back to a misleading desktop-wallpaper screenshot.
-                throw ScreenError.permissionDenied(detail)
+                throw ScreenError.permissionDenied(detail, window: selected)
             }
             FileHandle.standardError.write("[captureWindow] SCK non-permission failure, trying legacy: \(detail)\n".data(using: .utf8)!)
         }
@@ -220,21 +344,13 @@ actor ScreenController {
         // current-Space screen. Only useful when the window IS on the
         // current Space; otherwise we'd return the desktop wallpaper.
         // Abort if we detect we'd be capturing desktop only.
-        guard let boundsDict = match[kCGWindowBounds as String] as? [String: Any] else {
-            throw ScreenError.captureFailed
-        }
-        let x = (boundsDict["X"] as? NSNumber)?.doubleValue ?? 0
-        let y = (boundsDict["Y"] as? NSNumber)?.doubleValue ?? 0
-        let w = (boundsDict["Width"] as? NSNumber)?.doubleValue ?? 0
-        let h = (boundsDict["Height"] as? NSNumber)?.doubleValue ?? 0
-        let bounds = CGRect(x: x, y: y, width: w, height: h)
+        let bounds = selected.bounds
 
         // If the window is marked as off-screen by the window server,
         // region capture will return desktop only — refuse instead of
         // returning a misleading screenshot.
-        let onScreen = (match[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue ?? false
-        guard onScreen else {
-            throw ScreenError.windowNotOnCurrentSpace
+        guard selected.isOnscreen else {
+            throw ScreenError.windowNotOnCurrentSpace(window: selected)
         }
 
         guard let image = CGWindowListCreateImage(
@@ -243,7 +359,7 @@ actor ScreenController {
             kCGNullWindowID,
             [.bestResolution]
         ) else {
-            throw ScreenError.captureFailed
+            throw ScreenError.windowCaptureFailed(window: selected, underlying: "CGWindowListCreateImage region crop returned nil.")
         }
 
         let path = outputPath ?? Self.defaultTempPath()
