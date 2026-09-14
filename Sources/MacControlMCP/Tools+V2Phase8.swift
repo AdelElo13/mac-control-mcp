@@ -195,7 +195,7 @@ extension ToolRegistry {
 
         MCPToolDefinition(
             name: "wifi_scan",
-            description: "Scan for visible Wi-Fi networks. Uses Apple's private airport utility; returns a structured hint if it's been removed in this macOS version.",
+            description: "Scan for visible Wi-Fi networks via CoreWLAN. macOS withholds SSIDs unless Location Services is granted to the responsible process — this requests it if undecided, then reports 'ssids_redacted' + 'location_status' and nulls out SSIDs (distinct from a genuinely hidden network, flagged per-network via 'hidden') when it isn't granted.",
             inputSchema: schema(properties: [:])
         ),
         MCPToolDefinition(
@@ -496,9 +496,14 @@ extension ToolRegistry {
         // the ok:true path. That hid Location-Services diagnostics from the
         // caller even when HardwareController.wifiScan set it. Always
         // include hint when present, regardless of ok/error path.
+        // v0.8.4: also surface ssids_redacted + location_status so callers
+        // can tell "SSIDs withheld, Location not granted" apart from
+        // genuinely hidden networks (each Network already carries `hidden`).
         var payload: [String: JSONValue] = [
             "ok": .bool(r.ok),
-            "networks": encodeAsJSONValue(r.networks)
+            "networks": encodeAsJSONValue(r.networks),
+            "ssids_redacted": .bool(r.ssidsRedacted),
+            "location_status": .string(r.locationStatus)
         ]
         if let h = r.hint { payload["hint"] = .string(h) }
         return r.ok

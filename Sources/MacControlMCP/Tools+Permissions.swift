@@ -14,6 +14,9 @@ import AVFoundation
 #if canImport(CoreGraphics)
 import CoreGraphics
 #endif
+#if canImport(CoreLocation)
+import CoreLocation
+#endif
 
 // v0.8.3 — permissions_status + request_permissions.
 //
@@ -36,7 +39,7 @@ extension ToolRegistry {
 
     /// Categories request_permissions can prompt for.
     static let requestablePermissionCategories = [
-        "accessibility", "screen_recording", "calendar", "contacts", "microphone", "folders"
+        "accessibility", "screen_recording", "calendar", "contacts", "microphone", "location", "folders"
     ]
 
     /// Hardened-runtime entitlement each TCC category needs when this app is
@@ -68,7 +71,7 @@ extension ToolRegistry {
         let granted: Set<String> = ["granted", "granted_when_in_use", "granted_always", "granted_legacy",
                                     "authorized_legacy", "limited"]
         // `location` can only report the system-wide services state.
-        return granted.contains(status) || status.hasPrefix("granted") || status.hasPrefix("system_enabled")
+        return granted.contains(status) || status.hasPrefix("granted")
     }
 
     /// Categories that will be refused WITHOUT a prompt: this app is the
@@ -229,6 +232,22 @@ extension ToolRegistry {
             guard status == "not_determined" else { return .skipped(status) }
             #if canImport(AVFoundation)
             AVCaptureDevice.requestAccess(for: .audio) { _ in }
+            return .triggered
+            #else
+            return .skipped("unsupported")
+            #endif
+
+        case "location":
+            // locationPermissionStatusString() already returns
+            // "info_plist_missing" without ever touching CLLocationManager
+            // when the Info.plist key is absent (the XCTest bundle case),
+            // so this guard alone keeps that path crash-free.
+            let status = Self.locationPermissionStatusString()
+            guard status == "not_determined" else { return .skipped(status) }
+            #if canImport(CoreLocation)
+            Task { @MainActor in
+                _ = await LocationAuthorizer().requestAndAwaitChange(timeout: HardwareController.locationPromptTimeout)
+            }
             return .triggered
             #else
             return .skipped("unsupported")
