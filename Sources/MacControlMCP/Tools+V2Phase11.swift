@@ -140,7 +140,7 @@ extension ToolRegistry {
         ]
         if !others.isEmpty {
             payload["hint"] = .string(
-                "Claude Desktop left \(others.count) other mac-control-mcp process(es) running. These are harmless (new requests go to the current process, pid=\(pid)) but you can kill them manually with: `kill \(others.map { String($0.pid) }.joined(separator: " "))`"
+                "\(others.count) other mac-control-mcp process(es) are running. Each MCP client gets its own instance; since v0.8.3 an instance exits when its client closes stdin or its parent process dies, so long-lived leftovers are older versions or instances of still-connected clients. They don't affect this process (pid=\(pid)); stale ones can be stopped with: `kill \(others.map { String($0.pid) }.joined(separator: " "))`"
             )
         }
         return successResult("mac-control-mcp v\(version) running as pid \(pid)", payload)
