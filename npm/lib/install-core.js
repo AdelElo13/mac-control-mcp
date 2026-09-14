@@ -15,6 +15,10 @@
  * verify there, and only then swap. Every failure path leaves the previously
  * installed, previously verified bundle exactly where it was.
  *
+ * The same rule applies on the way *back in*: a bundle already sitting at the
+ * final path is re-verified with exactly the checks a fresh download gets
+ * (see verifyBundle) and is moved aside the moment any of them fails.
+ *
  * Kept separate from scripts/install.js so the promotion and re-check logic can
  * be tested without a network, a notarized bundle, or codesign — every
  * verifier is injectable.
@@ -139,7 +143,7 @@ function assertTeamIdentifier(appPath) {
   if (teamId !== EXPECTED_TEAM_ID) {
     throw new Error(
       [
-        `Signing team mismatch — refusing to install ${appPath}`,
+        `Signing team mismatch (expected TeamIdentifier ${EXPECTED_TEAM_ID}, got ${teamId ?? '<none>'}) — refusing to install ${appPath}`,
         `  expected TeamIdentifier: ${EXPECTED_TEAM_ID}`,
         `  actual TeamIdentifier:   ${teamId ?? '<none>'}`,
         '',
@@ -150,69 +154,118 @@ function assertTeamIdentifier(appPath) {
 }
 
 /**
- * Full verification, run against the *staged* bundle before it is promoted.
+ * The one set of trust checks a bundle must pass, wherever it sits.
  *
- * @param {string} appPath staged bundle
+ * Order is cheapest-first so a bad bundle fails fast, and every check names
+ * itself in the first line of its error so the caller can say which one
+ * rejected the bundle:
+ *
+ *   1. the stdio binary exists at its pinned relative path
+ *   2. `codesign --verify --deep --strict` — the seal is intact
+ *   3. TeamIdentifier == {@link EXPECTED_TEAM_ID} — *we* signed it; this is
+ *      the trust anchor, since 2 and 5 accept any valid Developer ID
+ *   4. CFBundleIdentifier / CFBundleShortVersionString — our app, this version
+ *   5. `spctl --assess --type execute` — Gatekeeper (notarization) still
+ *      accepts it; runs last because it is by far the slowest (~1-2 s) and
+ *      the only one that consults system policy that can change over time
+ *      (a revoked notarization ticket)
+ *
+ * The fresh-download path and the "already installed" fast path both call
+ * this. They used to differ — the fast path ran only a shallow `codesign
+ * --verify` plus the plist pins, no Team ID and no spctl — which meant a
+ * leftover bundle with the right bundle id and version but an ad-hoc or
+ * third-party signature was accepted on `npm rebuild`. There is no cheaper
+ * check that is also sufficient, so the fast path pays the full price.
+ *
+ * @param {string} appPath
  * @param {string} expectedVersion
+ * @param {string} what "staged" | "installed" — only used in messages
  */
-function verifyStagedBundle(appPath, expectedVersion) {
+function verifyBundle(appPath, expectedVersion, what) {
   if (!fs.existsSync(path.join(appPath, BINARY_REL_PATH))) {
-    throw new Error(`staged bundle has no ${BINARY_REL_PATH}`);
+    throw new Error(`${what} bundle has no ${BINARY_REL_PATH}`);
   }
   runOrThrow(
     '/usr/bin/codesign',
     ['--verify', '--deep', '--strict', appPath],
     'codesign --verify --deep --strict',
   );
+  assertTeamIdentifier(appPath);
+  assertBundleIdentity(appPath, expectedVersion);
   runOrThrow(
     '/usr/sbin/spctl',
     ['--assess', '--type', 'execute', appPath],
     'spctl --assess --type execute',
   );
-  assertTeamIdentifier(appPath);
-  assertBundleIdentity(appPath, expectedVersion);
 }
 
 /**
- * Cheap re-check of an already-installed bundle.
+ * Full verification, run against the *staged* bundle before it is promoted.
  *
- * This is the half of the fix that closes the "leftover becomes trusted" hole:
- * the fast path no longer trusts the mere existence of a binary and a version
- * string. It re-runs a (non-`--deep`, so fast) signature check plus the
- * identity pins, and any failure means reinstall.
+ * @param {string} appPath staged bundle
+ * @param {string} expectedVersion
+ */
+function verifyStagedBundle(appPath, expectedVersion) {
+  verifyBundle(appPath, expectedVersion, 'staged');
+}
+
+/**
+ * Re-check of an already-installed bundle. Identical to the staged check —
+ * see {@link verifyBundle} for why nothing weaker is acceptable here.
  *
  * @param {string} appPath
  * @param {string} expectedVersion
  */
 function verifyInstalledBundle(appPath, expectedVersion) {
-  if (!fs.existsSync(path.join(appPath, BINARY_REL_PATH))) {
-    throw new Error(`installed bundle has no ${BINARY_REL_PATH}`);
-  }
-  runOrThrow('/usr/bin/codesign', ['--verify', appPath], 'codesign --verify');
-  assertBundleIdentity(appPath, expectedVersion);
+  verifyBundle(appPath, expectedVersion, 'installed');
+}
+
+/**
+ * Move a bundle that failed re-verification out of the launcher's exec path.
+ *
+ * It is renamed, not deleted, so whoever planted or corrupted it can be
+ * investigated: `<name>.rejected-<timestamp>` in the same directory. The
+ * rename is atomic, so at no point is a half-removed bundle at the path.
+ *
+ * @param {string} appPath
+ * @returns {string} where the bundle went
+ */
+function quarantineBundle(appPath) {
+  const dest = `${appPath}.rejected-${Date.now()}`;
+  fs.renameSync(appPath, dest);
+  return dest;
 }
 
 /**
  * Decide whether the postinstall has any work to do.
+ *
+ * A bundle that exists but fails any check is *not* left in place: it is
+ * quarantined (see {@link quarantineBundle}) before the fresh download runs,
+ * so a failed download cannot leave an untrusted bundle for the launcher.
  *
  * @param {object} o
  * @param {string} o.appPath
  * @param {string} o.expectedVersion
  * @param {(appPath: string, expectedVersion: string) => void} [o.verify]
  *        injectable re-check; defaults to {@link verifyInstalledBundle}
- * @returns {{install: boolean, reason: string}}
+ * @param {boolean} [o.quarantine] move a rejected bundle aside (default true)
+ * @returns {{install: boolean, reason: string, failedCheck?: string, quarantinedTo?: string}}
  */
-function needsInstall({ appPath, expectedVersion, verify = verifyInstalledBundle }) {
+function needsInstall({ appPath, expectedVersion, verify = verifyInstalledBundle, quarantine = true }) {
   if (!fs.existsSync(appPath)) {
     return { install: true, reason: 'no bundle installed' };
   }
   try {
     verify(appPath, expectedVersion);
   } catch (err) {
-    return {
+    const failedCheck = err && err.message ? err.message.split('\n')[0] : String(err);
+    const result = {
       install: true,
-      reason: `existing bundle failed re-verification (${err && err.message ? err.message.split('\n')[0] : err})`,
+      reason: `existing bundle failed re-verification (${failedCheck})`,
+      failedCheck,
     };
+    if (quarantine) result.quarantinedTo = quarantineBundle(appPath);
+    return result;
   }
   return { install: false, reason: `verified ${expectedVersion} already installed` };
 }
@@ -326,8 +379,10 @@ module.exports = {
   readBundleIdentity,
   assertBundleIdentity,
   assertTeamIdentifier,
+  verifyBundle,
   verifyStagedBundle,
   verifyInstalledBundle,
+  quarantineBundle,
   needsInstall,
   atomicSwap,
   promoteStagedBundle,
