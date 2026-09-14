@@ -17,6 +17,16 @@
       "transport": {
         "type": "stdio"
       }
+    },
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "mac-control-mcp",
+      "version": "0.8.3",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      }
     }
   ]
 }

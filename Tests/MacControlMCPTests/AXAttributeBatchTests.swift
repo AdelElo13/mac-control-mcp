@@ -31,7 +31,7 @@ struct AXAttributeBatchTests {
     @Test("attribute name order matches decode indices")
     func nameOrder() {
         #expect(AXAttributeBatch.infoAttributes == [
-            "AXRole", "AXTitle", "AXDescription", "AXIdentifier", "AXValue", "AXPosition", "AXSize"
+            "AXRole", "AXTitle", "AXDescription", "AXIdentifier", "AXValue", "AXPosition", "AXSize", "AXSubrole"
         ])
         #expect(AXAttributeBatch.nodeAttributes == AXAttributeBatch.infoAttributes + ["AXChildren", "AXSheets"])
     }
@@ -49,12 +49,15 @@ struct AXAttributeBatchTests {
             "hello" as NSString,
             axPoint(10, 20),
             axSize(30, 40),
+            "AXCloseButton" as NSString,
             [child1, child2] as NSArray,
             [sheet] as NSArray
         ]
         let v = AXAttributeBatch.decode(slots, includeChildren: true)
         #expect(v.role == "AXButton")
         #expect(v.title == "Save")
+        #expect(v.identifier == "save-id")
+        #expect(v.subrole == "AXCloseButton")
         #expect(v.value == "hello")
         #expect(v.position == CGPoint(x: 10, y: 20))
         #expect(v.size == CGSize(width: 30, height: 40))
@@ -115,11 +118,11 @@ struct AXAttributeBatchTests {
     @Test("children are ignored unless requested, and non-elements are filtered")
     func childrenHandling() {
         var slots: [AnyObject] = Array(repeating: kCFNull, count: AXAttributeBatch.nodeAttributes.count)
-        slots[7] = [AXUIElementCreateSystemWide(), "not an element" as NSString] as NSArray
+        slots[8] = [AXUIElementCreateSystemWide(), "not an element" as NSString] as NSArray
         #expect(AXAttributeBatch.decode(slots, includeChildren: true).children.count == 1)
         #expect(AXAttributeBatch.decode(slots, includeChildren: false).children.isEmpty)
         // Short slot arrays (info-only fetch) never index out of bounds.
-        #expect(AXAttributeBatch.decode(Array(slots.prefix(7)), includeChildren: true).children.isEmpty)
+        #expect(AXAttributeBatch.decode(Array(slots.prefix(8)), includeChildren: true).children.isEmpty)
     }
 
     @Test("live fetch on a non-existent pid degrades to all-absent, not a crash")

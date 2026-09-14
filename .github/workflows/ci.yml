@@ -77,3 +77,34 @@ jobs:
             exit 1
           fi
           echo "All Swift Testing suites passed."
+
+  npm-package:
+    name: npm launcher (npm/)
+    # macos-15 so `npm pack` and the launcher tests run on the same platform
+    # the package targets (`"os": ["darwin"]`).
+    runs-on: macos-15
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: npm ci
+        # --ignore-scripts keeps the postinstall from downloading the release
+        # tarball: CI only exercises the launcher and the pure helpers.
+        working-directory: npm
+        run: npm ci --ignore-scripts
+
+      - name: node --test
+        working-directory: npm
+        run: node --test
+
+      - name: npm pack --dry-run
+        # Runs the prepack gate, which fails the job if npm/package.json and
+        # server.json ever drift apart, and prints the published file list so
+        # a stray vendor/ or test/ file is visible in the log.
+        working-directory: npm
+        run: npm pack --dry-run

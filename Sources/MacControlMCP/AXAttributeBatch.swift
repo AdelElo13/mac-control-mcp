@@ -27,7 +27,12 @@ enum AXAttributeBatch {
         "AXIdentifier",                     // 3
         kAXValueAttribute as String,        // 4
         kAXPositionAttribute as String,     // 5
-        kAXSizeAttribute as String          // 6
+        kAXSizeAttribute as String,         // 6
+        // v0.9 (C-5 review): AXSubrole is part of an element's path
+        // fingerprint — it separates an AXButton that is a close box
+        // from one that is a toolbar button when neither has a title.
+        // Free: same batched round trip.
+        kAXSubroleAttribute as String       // 7
     ]
 
     /// `infoAttributes` plus the two child lists a walk descends into.
@@ -35,8 +40,8 @@ enum AXAttributeBatch {
     /// `AccessibilityController.childElements`: a presented sheet is not
     /// always reflected in AXChildren.
     static let nodeAttributes: [String] = infoAttributes + [
-        kAXChildrenAttribute as String,     // 7
-        "AXSheets"                          // 8
+        kAXChildrenAttribute as String,     // 8
+        "AXSheets"                          // 9
     ]
 
     struct Values: @unchecked Sendable {
@@ -44,6 +49,13 @@ enum AXAttributeBatch {
         /// AXTitle → AXDescription → AXIdentifier, skipping empty /
         /// whitespace-only strings (BUG-FIX v0.2.6 #4 semantics).
         let title: String?
+        /// `AXIdentifier` verbatim (not folded into `title`). v0.9 (C-5)
+        /// uses it as the strongest component of a stable element path;
+        /// it costs nothing extra since the batch already fetches it.
+        let identifier: String?
+        /// `AXSubrole` — the second half of an element's identity when it
+        /// has no title (v0.9 C-5 fingerprint).
+        let subrole: String?
         let value: String?
         let position: CGPoint?
         let size: CGSize?
@@ -83,11 +95,13 @@ enum AXAttributeBatch {
             return s
         }
         let children: [AXUIElement] = includeChildren
-            ? elements(slot(7)) + elements(slot(8))
+            ? elements(slot(8)) + elements(slot(9))
             : []
         return Values(
             role: string(slot(0)),
             title: nonEmpty(1) ?? nonEmpty(2) ?? nonEmpty(3),
+            identifier: nonEmpty(3),
+            subrole: nonEmpty(7),
             value: string(slot(4)),
             position: point(slot(5)),
             size: size(slot(6)),

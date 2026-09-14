@@ -871,9 +871,9 @@ extension ToolRegistry {
         let maxScrolls = max(1, min(arguments["max_scrolls"]?.intValue ?? 30, 200))
 
         for attempt in 0..<maxScrolls {
-            if let element = await accessibility.findElement(pid: pid, role: role, title: title) {
-                let info = await accessibility.getElementInfo(element: element)
-                let id = await elementCache.store(element, pid: pid)
+            if let hit = await accessibility.findElementWithPath(pid: pid, role: role, title: title) {
+                let info = await accessibility.getElementInfo(element: hit.element)
+                let id = await elementCache.store(hit.element, pid: pid, path: hit.path)
                 return successResult(
                     "Element visible after \(attempt) scroll(s).",
                     [
