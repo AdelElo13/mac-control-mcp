@@ -54,20 +54,24 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "capture_screen",
-            description: "Capture the main display (or a rectangular region) to a PNG file and return its path, width, and height.",
+            description: "Capture the MAIN display, or a region of it (x, y, width, height in global screen points — all four or none), to an image file on disk and return path, width, height (pixels of the written image) plus format, scale, source_width/source_height and pixels_per_point. "
+                + "The quickest general-purpose screenshot. Use capture_window for one app window (ScreenCaptureKit; works when the window is occluded or on another Space), "
+                + "capture_display for a non-main display by list_displays index, and capture_screen_v2 when you need a content-addressed artifact (sha256, max_bytes cap, optional inline base64). "
+                + "Pass max_width and/or format=jpeg to cut latency and image tokens.",
             inputSchema: schema(
-                properties: [
+                properties: withImageOutputProperties([
                     "x": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Region origin x. Omit for full screen.")]),
                     "y": .object(["type": .array([.string("integer"), .string("string")])]),
                     "width": .object(["type": .array([.string("integer"), .string("string")])]),
                     "height": .object(["type": .array([.string("integer"), .string("string")])]),
-                    "output_path": .object(["type": .string("string"), "description": .string("Optional PNG output path. Default: temp file.")])
-                ]
+                    "output_path": .object(["type": .string("string"), "description": .string("Optional output path (encoded per `format`). Default: temp file.")])
+                ])
             )
         ),
         MCPToolDefinition(
             name: "ocr_screen",
-            description: "Capture the screen (or a region) and run OCR. Returns joined text plus per-block coordinates and confidence. Coordinates are in IMAGE PIXELS matching image_width/image_height (i.e. backing resolution — 2x point size on Retina), for annotating/cropping the returned image. For click-ready screen points, use the `ground` tool with strategy 'ocr' instead.",
+            description: "Capture the screen (or a region) and run OCR. Returns joined text plus per-block coordinates and confidence. Coordinates are in IMAGE PIXELS matching image_width/image_height (i.e. backing resolution — 2x point size on Retina), for annotating/cropping the returned image. For click-ready screen points, use the `ground` tool with strategy 'ocr' instead. "
+                + "Speed/size knobs (defaults = most accurate): level=fast (~10x faster than accurate, weaker on small or low-contrast text); language_correction=false (~2x faster at accurate level; raw glyphs, no dictionary fix-ups — good for code, IDs, URLs); include_blocks=false returns only `text` (much smaller response); max_blocks caps the blocks array.",
             inputSchema: schema(
                 properties: [
                     "x": .object(["type": .array([.string("integer"), .string("string")])]),
@@ -79,7 +83,24 @@ extension ToolRegistry {
                         "items": .object(["type": .string("string")]),
                         "description": .string("ISO codes e.g. ['en-US', 'nl-NL']. Empty = auto.")
                     ]),
-                    "keep_image": .object(["type": .string("boolean")])
+                    "keep_image": .object(["type": .string("boolean")]),
+                    "level": .object([
+                        "type": .string("string"),
+                        "enum": .array([.string("accurate"), .string("fast")]),
+                        "description": .string("Vision recognition level. accurate (default) or fast.")
+                    ]),
+                    "language_correction": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Apply Vision language correction (default true).")
+                    ]),
+                    "include_blocks": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Include per-block coordinates (default true). false → only text/block_count.")
+                    ]),
+                    "max_blocks": .object([
+                        "type": .array([.string("integer"), .string("string")]),
+                        "description": .string("Return at most this many blocks (in Vision's reading order). block_count and text still cover all blocks; blocks_truncated=true when capped.")
+                    ])
                 ]
             )
         )
@@ -247,28 +268,33 @@ extension ToolRegistry {
             return invalidArgument("capture_screen region requires all of x, y, width, height together (or omit all for the full display). Got: \(present.joined(separator: ", ")).")
         }
 
+        let options: ImageOutputOptions
+        switch parseImageOutputOptions(arguments, tool: "capture_screen") {
+        case .success(let parsed): options = parsed
+        case .failure(let box): return box.result
+        }
+
         do {
             let capture: ScreenController.CaptureResult
             if let x = arguments["x"]?.intValue,
                let y = arguments["y"]?.intValue,
                let w = arguments["width"]?.intValue,
                let h = arguments["height"]?.intValue {
-                capture = try await screen.captureRegion(x: x, y: y, width: w, height: h, outputPath: outputPath)
+                capture = try await screen.captureRegion(x: x, y: y, width: w, height: h, outputPath: outputPath, options: options)
             } else if present.isEmpty {
-                capture = try await screen.captureDisplay(outputPath: outputPath)
+                capture = try await screen.captureDisplay(outputPath: outputPath, options: options)
             } else {
                 return invalidArgument("capture_screen region values (x, y, width, height) must be integers.")
             }
 
-            return successResult(
-                "Captured \(capture.width)x\(capture.height) to \(capture.path).",
-                [
-                    "ok": .bool(true),
-                    "path": .string(capture.path),
-                    "width": .number(Double(capture.width)),
-                    "height": .number(Double(capture.height))
-                ]
-            )
+            var payload: [String: JSONValue] = [
+                "ok": .bool(true),
+                "path": .string(capture.path),
+                "width": .number(Double(capture.width)),
+                "height": .number(Double(capture.height))
+            ]
+            payload.merge(Self.captureMetadata(capture)) { existing, _ in existing }
+            return successResult("Captured \(capture.width)x\(capture.height) to \(capture.path).", payload)
         } catch {
             return errorResult(
                 "Screen capture failed: \(error).",
@@ -284,44 +310,69 @@ extension ToolRegistry {
             return false
         }()
 
+        var ocrOptions = ScreenController.OCRRequestOptions(languages: languages)
+        if let raw = arguments["level"], raw != .null {
+            switch raw.stringValue?.lowercased() {
+            case "accurate": ocrOptions.fast = false
+            case "fast": ocrOptions.fast = true
+            default: return invalidArgument("ocr_screen: level must be \"accurate\" or \"fast\".")
+            }
+        }
+        if let raw = arguments["language_correction"], raw != .null {
+            guard let b = raw.boolValue else {
+                return invalidArgument("ocr_screen: language_correction must be a boolean.")
+            }
+            ocrOptions.languageCorrection = b
+        }
+        var includeBlocks = true
+        if let raw = arguments["include_blocks"], raw != .null {
+            guard let b = raw.boolValue else {
+                return invalidArgument("ocr_screen: include_blocks must be a boolean.")
+            }
+            includeBlocks = b
+        }
+        var maxBlocks: Int?
+        if let raw = arguments["max_blocks"], raw != .null {
+            guard let n = raw.intValue, n >= 0 else {
+                return invalidArgument("ocr_screen: max_blocks must be a non-negative integer.")
+            }
+            maxBlocks = n
+        }
+
         do {
-            // Optional region
-            let capture: ScreenController.CaptureResult
+            // Optional region. Captured and OCR'd in memory; a PNG is only
+            // written when keep_image is set (ScreenController.ocrScreen).
+            var region: ScreenController.CaptureRegion?
             if let x = arguments["x"]?.intValue,
                let y = arguments["y"]?.intValue,
                let w = arguments["width"]?.intValue,
                let h = arguments["height"]?.intValue {
-                capture = try await screen.captureRegion(x: x, y: y, width: w, height: h)
-            } else {
-                capture = try await screen.captureDisplay()
+                region = ScreenController.CaptureRegion(x: x, y: y, width: w, height: h)
             }
 
-            let ocrResult: ScreenController.OCRResult
-            do {
-                ocrResult = try await screen.ocr(imagePath: capture.path, languages: languages)
-            } catch {
-                if !keepImage {
-                    try? FileManager.default.removeItem(atPath: capture.path)
-                }
-                throw error
-            }
-
-            if !keepImage {
-                try? FileManager.default.removeItem(atPath: capture.path)
-            }
-
-            return successResult(
-                "OCR extracted \(ocrResult.blocks.count) block(s).",
-                [
-                    "ok": .bool(true),
-                    "text": .string(ocrResult.joinedText),
-                    "block_count": .number(Double(ocrResult.blocks.count)),
-                    "blocks": encodeAsJSONValue(ocrResult.blocks),
-                    "image_path": keepImage ? .string(capture.path) : .null,
-                    "image_width": .number(Double(capture.width)),
-                    "image_height": .number(Double(capture.height))
-                ]
+            let (capture, ocrResult) = try await screen.ocrScreen(
+                region: region, keepImage: keepImage, options: ocrOptions
             )
+
+            var payload: [String: JSONValue] = [
+                "ok": .bool(true),
+                "text": .string(ocrResult.joinedText),
+                "block_count": .number(Double(ocrResult.blocks.count)),
+                "image_path": keepImage ? .string(capture.path) : .null,
+                "image_width": .number(Double(capture.width)),
+                "image_height": .number(Double(capture.height)),
+                "level": .string(ocrOptions.fast ? "fast" : "accurate"),
+                "language_correction": .bool(ocrOptions.languageCorrection)
+            ]
+            if includeBlocks {
+                let shown = maxBlocks.map { Array(ocrResult.blocks.prefix($0)) } ?? ocrResult.blocks
+                payload["blocks"] = Self.encodeOCRBlocks(shown)
+                if shown.count < ocrResult.blocks.count {
+                    payload["blocks_truncated"] = .bool(true)
+                }
+            }
+
+            return successResult("OCR extracted \(ocrResult.blocks.count) block(s).", payload)
         } catch {
             return errorResult(
                 "OCR failed: \(error).",

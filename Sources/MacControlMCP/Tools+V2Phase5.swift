@@ -30,24 +30,26 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "capture_window",
-            description: "Screenshot a specific window of an app by PID (and optional title filter).",
+            description: "Screenshot ONE window of an app by pid (optional title_contains). Picks the largest onscreen, layer-0 window matching the filter and captures just that window via ScreenCaptureKit — it works when the window is occluded or on another Space (legacy CG fallbacks otherwise). "
+                + "Use this instead of capture_screen + cropping when you want a specific app window; use capture_screen for the whole main display or an arbitrary region. "
+                + "Returns path/width/height plus format, scale, source size and pixels_per_point (image pixels per window point, from the window's top-left). Supports max_width / format / quality.",
             inputSchema: schema(
-                properties: [
+                properties: withImageOutputProperties([
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "title_contains": .object(["type": .string("string")]),
                     "output_path": .object(["type": .string("string")])
-                ],
+                ]),
                 required: ["pid"]
             )
         ),
         MCPToolDefinition(
             name: "capture_display",
-            description: "Screenshot a specific display by its index from list_displays.",
+            description: "Screenshot a whole display by its index from list_displays — the way to capture a secondary display (capture_screen and capture_screen_v2 only cover the main display). Supports max_width / format / quality; returns scale and pixels_per_point.",
             inputSchema: schema(
-                properties: [
+                properties: withImageOutputProperties([
                     "display_index": .object(["type": .array([.string("integer"), .string("string")])]),
                     "output_path": .object(["type": .string("string")])
-                ],
+                ]),
                 required: ["display_index"]
             )
         ),
@@ -351,17 +353,23 @@ extension ToolRegistry {
         } catch {
             return invalidArgument(String(describing: error))
         }
+        let options: ImageOutputOptions
+        switch parseImageOutputOptions(arguments, tool: "capture_window") {
+        case .success(let parsed): options = parsed
+        case .failure(let box): return box.result
+        }
         do {
-            let capture = try await screen.captureWindow(ownerPID: pid, titleContains: title, outputPath: outputPath)
-            return successResult(
-                "Captured window to \(capture.path).",
-                [
-                    "ok": .bool(true),
-                    "path": .string(capture.path),
-                    "width": .number(Double(capture.width)),
-                    "height": .number(Double(capture.height))
-                ]
+            let capture = try await screen.captureWindow(
+                ownerPID: pid, titleContains: title, outputPath: outputPath, options: options
             )
+            var payload: [String: JSONValue] = [
+                "ok": .bool(true),
+                "path": .string(capture.path),
+                "width": .number(Double(capture.width)),
+                "height": .number(Double(capture.height))
+            ]
+            payload.merge(Self.captureMetadata(capture)) { existing, _ in existing }
+            return successResult("Captured window to \(capture.path).", payload)
         } catch {
             var payload: [String: JSONValue] = [
                 "ok": .bool(false),
@@ -439,18 +447,24 @@ extension ToolRegistry {
         } catch {
             return invalidArgument(String(describing: error))
         }
+        let options: ImageOutputOptions
+        switch parseImageOutputOptions(arguments, tool: "capture_display") {
+        case .success(let parsed): options = parsed
+        case .failure(let box): return box.result
+        }
         do {
-            let capture = try await screen.captureDisplayByID(CGDirectDisplayID(list[idx].id), outputPath: outputPath)
-            return successResult(
-                "Captured display \(idx) to \(capture.path).",
-                [
-                    "ok": .bool(true),
-                    "path": .string(capture.path),
-                    "width": .number(Double(capture.width)),
-                    "height": .number(Double(capture.height)),
-                    "display_index": .number(Double(idx))
-                ]
+            let capture = try await screen.captureDisplayByID(
+                CGDirectDisplayID(list[idx].id), outputPath: outputPath, options: options
             )
+            var payload: [String: JSONValue] = [
+                "ok": .bool(true),
+                "path": .string(capture.path),
+                "width": .number(Double(capture.width)),
+                "height": .number(Double(capture.height)),
+                "display_index": .number(Double(idx))
+            ]
+            payload.merge(Self.captureMetadata(capture)) { existing, _ in existing }
+            return successResult("Captured display \(idx) to \(capture.path).", payload)
         } catch {
             return errorResult(
                 "Display capture failed: \(error).",

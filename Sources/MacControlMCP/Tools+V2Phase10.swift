@@ -22,18 +22,25 @@ extension ToolRegistry {
             name: "capture_screen_v2",
             description: """
                 Capture the main display, store as a content-addressed \
-                artifact at ~/.mac-control-mcp/artifacts/<sha256>.png, and \
-                return {content_ref, bytes, sha256}. Default inline=false \
-                prevents context-size blowups (claude-code #13383, #45785). \
-                Optional max_dimension (default 4000px) and max_bytes \
-                (default 4MB) downscale before return.
+                artifact at ~/.mac-control-mcp/artifacts/<sha256>.<png|jpg> \
+                (1 h TTL), and return {content_ref, bytes, sha256, \
+                mime_type, width, height, format, scale}. Default \
+                inline=false prevents context-size blowups (claude-code \
+                #13383, #45785); inline=true adds base64 bytes. \
+                max_dimension (default 4000 px, longest side) downscales; \
+                max_bytes (default 4 MB) rejects anything still larger. \
+                Use this when you need dedup/hash/inline bytes; use \
+                capture_screen for a region or a plain temp file, \
+                capture_window for one window, capture_display for a \
+                secondary display. format=jpeg / max_width shrink bytes \
+                and latency further.
                 """,
             inputSchema: schema(
-                properties: [
+                properties: withImageOutputProperties([
                     "inline": .object(["type": .string("boolean")]),
                     "max_dimension": .object(["type": .array([.string("integer"), .string("string")])]),
                     "max_bytes": .object(["type": .array([.string("integer"), .string("string")])])
-                ]
+                ])
             )
         ),
         MCPToolDefinition(
@@ -228,19 +235,23 @@ extension ToolRegistry {
         let inline = arguments["inline"]?.boolValue ?? false
         let maxDim = arguments["max_dimension"]?.intValue ?? 4000
         let maxBytes = arguments["max_bytes"]?.intValue ?? (4 * 1024 * 1024)
-        // First capture to a temp file via existing ScreenController path.
+        let options: ImageOutputOptions
+        switch parseImageOutputOptions(arguments, tool: "capture_screen_v2") {
+        case .success(let parsed): options = parsed
+        case .failure(let box): return box.result
+        }
+        // PERF (v0.8.3): capture → (downscale) → encode ONCE in memory →
+        // content-address. The old path PNG-encoded to a temp file, read
+        // it back, decoded it, re-rendered a thumbnail and PNG-encoded a
+        // second time. No temp file is written any more.
         do {
-            let tmpDir = NSTemporaryDirectory()
-            let tmpPath = tmpDir + "mc-\(Int(Date().timeIntervalSince1970)).png"
-            // Clean up the temp capture on every exit — the old code removed it
-            // only on the success path, so a storeImage failure leaked a
-            // full-resolution screenshot into the temp dir.
-            defer { try? FileManager.default.removeItem(atPath: tmpPath) }
-            let capture = try await screen.captureDisplay(outputPath: tmpPath)
-            guard let artifact = await artifactStore.storeImage(
-                sourcePath: capture.path,
-                maxBytes: maxBytes,
-                maxDimension: maxDim
+            let (data, encoded) = try await screen.captureMainDisplayEncoded(
+                maxDimension: maxDim, options: options
+            )
+            guard let artifact = await artifactStore.storeEncoded(
+                data: data,
+                format: encoded.format,
+                maxBytes: maxBytes
             ) else {
                 return errorResult(
                     "artifact store rejected the image (likely exceeds max_bytes=\(maxBytes) even after downscale — try a smaller max_dimension)",
@@ -253,9 +264,16 @@ extension ToolRegistry {
                 "bytes": .number(Double(artifact.bytes)),
                 "sha256": .string(artifact.sha256),
                 "mime_type": .string(artifact.mimeType),
-                "_schema": .string(artifact.schema)
+                "_schema": .string(artifact.schema),
+                "width": .number(Double(encoded.width)),
+                "height": .number(Double(encoded.height)),
+                "format": .string(encoded.format.rawValue),
+                "source_width": .number(Double(encoded.sourceWidth)),
+                "source_height": .number(Double(encoded.sourceHeight)),
+                "scale": .number(ImageEncoder.scale(outputWidth: encoded.width, sourceWidth: encoded.sourceWidth))
             ]
-            if inline, let data = try? Data(contentsOf: URL(fileURLWithPath: artifact.contentRef)) {
+            // The artifact bytes ARE `data` (content-addressed) — no re-read.
+            if inline {
                 payload["inline_base64"] = .string(data.base64EncodedString())
             }
             return successResult(

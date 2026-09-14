@@ -101,6 +101,34 @@ actor ArtifactStore {
         )
     }
 
+    /// Store already-encoded image bytes (v0.8.3 fast path for
+    /// capture_screen_v2). Same content addressing, TTL sweep and
+    /// `maxBytes` rule as `storeImage`, but skips that path's
+    /// temp-file PNG → read → decode → thumbnail → re-encode round trip.
+    func storeEncoded(
+        data: Data,
+        format: ImageOutputOptions.Format,
+        maxBytes: Int? = 4 * 1024 * 1024
+    ) -> StoredArtifact? {
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        gcExpired()
+        guard !data.isEmpty else { return nil }
+        if let maxBytes, data.count > maxBytes { return nil }
+
+        let hash = Self.sha256Hex(data)
+        let outURL = dir.appendingPathComponent("\(hash).\(format.fileExtension)")
+        if !FileManager.default.fileExists(atPath: outURL.path) {
+            try? data.write(to: outURL, options: .atomic)
+        }
+        return StoredArtifact(
+            contentRef: outURL.path,
+            bytes: data.count,
+            sha256: hash,
+            mimeType: format.mimeType,
+            schema: "mac-control-mcp.image.v1"
+        )
+    }
+
     /// Delete expired artifacts.  Called on every write; also exposed as
     /// a tool so agents can force a sweep.
     func gcExpired() {
