@@ -8,7 +8,8 @@ extension ToolRegistry {
     static let definitionsV2: [MCPToolDefinition] = [
         MCPToolDefinition(
             name: "get_ui_tree",
-            description: "Walk the full accessibility tree of a process and return every node (including containers) with stable element IDs for follow-up calls.",
+            description: "Walk the full accessibility tree of a process and return every node (including containers and static text) with child indices and stable element IDs for follow-up calls. Bounded by a 5 s / 5000-node budget. "
+                + "The heaviest AX tool (tens of KB for a browser window) — when you know what you are looking for, find_elements / query_elements are far smaller and also return ids.",
             inputSchema: schema(
                 properties: [
                     "pid": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Target process ID.")]),
@@ -19,7 +20,9 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "find_elements",
-            description: "Find all matching accessibility elements (not just the first) by role/title/value.",
+            description: "Find ALL matching elements (up to limit) by case-insensitive substring on role / title / value (title = AXTitle → AXDescription → AXIdentifier; unlike find_element it does not fall back to AXValue — use the value filter). "
+                + "Each match carries an element id for perform_element_action / get_element_attributes / set_element_attribute. "
+                + "Use find_element for a cheap first-match check without ids, query_elements when you need regex (anchors, alternation).",
             inputSchema: schema(
                 properties: [
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
@@ -34,7 +37,8 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "query_elements",
-            description: "Regex search over role/title/value. Invalid regex falls back to case-insensitive substring.",
+            description: "Like find_elements, but role_regex / title_regex / value_regex are case-insensitive regular expressions (e.g. title_regex \"^Save$\" for an exact label, \"Save|Opslaan\" for alternatives). Invalid regex falls back to case-insensitive substring. Returns element ids. "
+                + "Prefer find_elements for plain substring matches.",
             inputSchema: schema(
                 properties: [
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
@@ -172,10 +176,12 @@ extension ToolRegistry {
         let maxDepth = max(1, min(arguments["max_depth"]?.intValue ?? 12, 64))
         let nodes = await accessibility.treeWalk(pid: pid, maxDepth: maxDepth)
 
+        // One actor hop + one eviction pass for the whole tree (see
+        // ElementCache.storeMany) instead of one per node.
+        let ids = await elementCache.storeMany(nodes.map(\.element), pid: pid)
         var encoded: [JSONValue] = []
         encoded.reserveCapacity(nodes.count)
-        for node in nodes {
-            let id = await elementCache.store(node.element, pid: pid)
+        for (node, id) in zip(nodes, ids) {
             encoded.append(encodeTreeNode(node: node, id: id))
         }
 
