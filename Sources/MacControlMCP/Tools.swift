@@ -564,11 +564,13 @@ final class ToolRegistry: @unchecked Sendable {
     private func callClick(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         let pid = parsePID(arguments["pid"])
 
-        if let mismatch = checkFocusGuard(arguments) {
-            return mismatch
-        }
-
         if let x = arguments["x"]?.doubleValue, let y = arguments["y"]?.doubleValue {
+            // Coordinate clicks are ALWAYS a synthetic CGEvent delivered to
+            // whatever app is frontmost — guard right before injecting.
+            if let mismatch = await checkFocusGuard(arguments) {
+                return mismatch
+            }
+
             let success = await accessibility.click(at: CGPoint(x: CGFloat(x), y: CGFloat(y)))
             var payload: [String: JSONValue] = [
                 "x": .number(x),
@@ -617,7 +619,25 @@ final class ToolRegistry: @unchecked Sendable {
             )
         }
 
-        let success = await accessibility.clickElement(element: element)
+        // AXPress acts on the element handle directly — it does not depend
+        // on which app is frontmost, so it needs no focus guard. Only the
+        // coordinate-click fallback (bug #5, when AXPress is unsupported)
+        // is a synthetic CGEvent that depends on focus; the guard is
+        // applied right before that fallback fires, not before AXPress.
+        let axOutcome = await accessibility.pressElementViaAX(element: element)
+        let success: Bool
+        switch axOutcome {
+        case .succeeded:
+            success = true
+        case .disabled:
+            success = false
+        case .unsupported:
+            if let mismatch = await checkFocusGuard(arguments) {
+                return mismatch
+            }
+            success = await accessibility.clickElementCoordinateFallback(element: element)
+        }
+
         if success {
             return successResult(
                 "Element clicked.",
@@ -657,7 +677,14 @@ final class ToolRegistry: @unchecked Sendable {
             )
         }
 
-        if let mismatch = checkFocusGuard(arguments) {
+        // `.ax` (explicit AX set_value) acts on the currently-focused
+        // element's attribute directly and posts no CGEvent, so it does
+        // not depend on which app is frontmost — skip the guard for it,
+        // same reasoning as AXPress in `callClick`. `.auto` / `.clipboard`
+        // / `.keys` all attempt a synthetic event first (clipboard paste
+        // or CGEvent unicode) even though `.auto` may itself fall back to
+        // `.ax` internally, so they're guarded conservatively.
+        if strategy != .ax, let mismatch = await checkFocusGuard(arguments) {
             return mismatch
         }
 
@@ -748,7 +775,7 @@ final class ToolRegistry: @unchecked Sendable {
         case .failure(let error):
             return invalidArgument(error.description)
         case .success(let modifiers):
-            if let mismatch = checkFocusGuard(arguments) {
+            if let mismatch = await checkFocusGuard(arguments) {
                 return mismatch
             }
 
@@ -871,11 +898,11 @@ final class ToolRegistry: @unchecked Sendable {
     /// `expected_window` (the guard is opt-in and existing behaviour is
     /// unchanged), or when the actual focus matches. Returns a
     /// `focus_mismatch` error result — inject nothing — on mismatch.
-    func checkFocusGuard(_ arguments: [String: JSONValue]) -> ToolCallResult? {
+    func checkFocusGuard(_ arguments: [String: JSONValue]) async -> ToolCallResult? {
         let expectedApp = arguments["expected_app"]?.stringValue
         let expectedWindow = arguments["expected_window"]?.stringValue
 
-        let actual = FocusGuard.currentFocus()
+        let actual = await FocusGuard.currentFocus()
         let outcome = FocusGuard.evaluate(
             expectedApp: expectedApp,
             expectedWindow: expectedWindow,
@@ -978,8 +1005,11 @@ final class ToolRegistry: @unchecked Sendable {
             description: "Click an element by role/title or click absolute coordinates. "
                 + "Coordinate clicks post a synthetic CGEvent that always lands on the "
                 + "frontmost app — pass expected_app/expected_window to abort instead of "
-                + "clicking the wrong window if focus changed. Prefer perform_element_action "
-                + "(AXPress) when you already have an element handle — it does not depend on focus.",
+                + "clicking the wrong window if focus changed. Role/title clicks try AXPress "
+                + "first (focus-independent) and only fall back to a coordinate CGEvent click "
+                + "when AXPress is unsupported on that element — expected_app/expected_window "
+                + "is checked only if/when that fallback fires. Prefer perform_element_action "
+                + "(AXPress) directly when you already have an element handle.",
             inputSchema: schema(
                 properties: [
                     "pid": .object([
@@ -1014,9 +1044,10 @@ final class ToolRegistry: @unchecked Sendable {
             description: "Type text into the currently focused field. "
                 + "Strategies: auto (clipboard → keys → ax, default; best for React/Angular SPAs), "
                 + "clipboard (paste events), keys (CGEvent unicode), ax (AX set_value last-resort). "
-                + "Pass expected_app/expected_window to abort instead of typing into the wrong "
-                + "window if focus changed since your last check. Prefer set_element_attribute "
-                + "(AXValue) when you already have an element handle — it does not depend on focus.",
+                + "auto/clipboard/keys post synthetic events and are checked against "
+                + "expected_app/expected_window before typing; strategy=ax sets the value "
+                + "directly and is not checked, since it does not depend on focus. Prefer "
+                + "set_element_attribute (AXValue) directly when you already have an element handle.",
             inputSchema: schema(
                 properties: [
                     "text": .object([

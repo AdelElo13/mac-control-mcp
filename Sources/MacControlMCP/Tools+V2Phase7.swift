@@ -602,7 +602,7 @@ extension ToolRegistry {
         guard let x = arguments["x"]?.doubleValue, let y = arguments["y"]?.doubleValue else {
             return invalidArgument("right_click requires numeric x and y.")
         }
-        if let mismatch = checkFocusGuard(arguments) {
+        if let mismatch = await checkFocusGuard(arguments) {
             return mismatch
         }
         let ok = await mouse.click(at: CGPoint(x: x, y: y), button: .right)
@@ -623,7 +623,7 @@ extension ToolRegistry {
         case "center": button = .center
         default:       button = .left
         }
-        if let mismatch = checkFocusGuard(arguments) {
+        if let mismatch = await checkFocusGuard(arguments) {
             return mismatch
         }
         let ok = await mouse.doubleClick(at: CGPoint(x: x, y: y), button: button)

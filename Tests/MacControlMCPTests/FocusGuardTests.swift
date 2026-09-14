@@ -167,4 +167,44 @@ struct FocusGuardTests {
         #expect(payload?["actual_app"] != nil)
         #expect(payload?["hint"] != nil)
     }
+
+    @Test("click with coordinates and a non-frontmost expected_app returns focus_mismatch and clicks nothing")
+    func clickCoordinatesHonorsFocusGuard() async {
+        let registry = ToolRegistry(accessibility: AccessibilityController())
+        let result = await registry.callTool(
+            name: "click",
+            arguments: [
+                "x": .number(5),
+                "y": .number(5),
+                "expected_app": .string("com.nonexistent.app")
+            ]
+        )
+
+        #expect(result.isError == true)
+        let payload = result.structuredContent.objectValue
+        #expect(payload?["ok"]?.boolValue == false)
+        #expect(payload?["error_code"]?.stringValue == "focus_mismatch")
+        #expect(payload?["expected_app"]?.stringValue == "com.nonexistent.app")
+        #expect(payload?["actual_app"] != nil)
+    }
+
+    @Test("checkFocusGuard matches when expected_app is the live frontmost app — no input injected")
+    func checkFocusGuardMatchesLiveFrontmostApp() async {
+        let registry = ToolRegistry(accessibility: AccessibilityController())
+
+        // Read the real frontmost app via the no-op `focused_app` tool
+        // rather than injecting any real input, per the review request.
+        let focused = await registry.callTool(name: "focused_app", arguments: [:])
+        guard let bundleID = focused.structuredContent.objectValue?["app"]?.objectValue?["bundleIdentifier"]?.stringValue else {
+            Issue.record("focused_app did not report a bundleIdentifier — cannot verify a positive match live.")
+            return
+        }
+
+        // Exercise `ToolRegistry.checkFocusGuard` directly (not a tool
+        // that injects input) with the live frontmost bundle id: a
+        // matching expected_app must return nil (no mismatch, nothing
+        // to inject or abort).
+        let outcome = await registry.checkFocusGuard(["expected_app": .string(bundleID)])
+        #expect(outcome == nil)
+    }
 }

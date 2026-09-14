@@ -89,16 +89,34 @@ enum FocusGuard {
     /// focused/main window title (AX). Kept separate from `evaluate` so
     /// the matching logic itself needs no AX/NSWorkspace access in tests.
     ///
-    /// `nonisolated` / free function: AXUIElement is safe to call from any
-    /// thread (see the `Sendable` note on `AXUIElement` in
-    /// AccessibilityController.swift) and `NSWorkspace.shared` reads are
-    /// like wise thread-safe for this read-only query.
-    static func currentFocus() -> ActualFocus {
-        guard let app = NSWorkspace.shared.frontmostApplication else {
+    /// `NSWorkspace.shared.frontmostApplication` is main-actor-affine under
+    /// strict concurrency (see `WindowController.listWindows()` and
+    /// `callWaitForApp` in `Tools+V2Phase5.swift` for the same pattern) —
+    /// snapshot the (name, bundle id, pid) triple on `MainActor` first,
+    /// then do the AX window-title lookup off-main (AXUIElement is safe to
+    /// call from any thread; see the `Sendable` note on `AXUIElement` in
+    /// AccessibilityController.swift).
+    static func currentFocus() async -> ActualFocus {
+        struct AppSnapshot: Sendable {
+            let name: String?
+            let bundleIdentifier: String?
+            let pid: pid_t
+        }
+
+        let snapshot: AppSnapshot? = await MainActor.run {
+            guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
+            return AppSnapshot(
+                name: app.localizedName,
+                bundleIdentifier: app.bundleIdentifier,
+                pid: app.processIdentifier
+            )
+        }
+
+        guard let snapshot else {
             return ActualFocus(appName: nil, bundleIdentifier: nil, pid: nil, windowTitle: nil)
         }
 
-        let pid = app.processIdentifier
+        let pid = snapshot.pid
         let axApp = AXUIElementCreateApplication(pid)
 
         var windowTitle: String?
@@ -117,8 +135,8 @@ enum FocusGuard {
         }
 
         return ActualFocus(
-            appName: app.localizedName,
-            bundleIdentifier: app.bundleIdentifier,
+            appName: snapshot.name,
+            bundleIdentifier: snapshot.bundleIdentifier,
             pid: pid,
             windowTitle: windowTitle
         )

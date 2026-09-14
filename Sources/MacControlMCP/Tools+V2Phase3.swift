@@ -168,7 +168,7 @@ extension ToolRegistry {
         let point = CGPoint(x: x, y: y)
         let button = parseButton(arguments["button"]?.stringValue)
 
-        if let mismatch = checkFocusGuard(arguments) {
+        if let mismatch = await checkFocusGuard(arguments) {
             return mismatch
         }
 
@@ -210,7 +210,7 @@ extension ToolRegistry {
         let button = parseButton(arguments["button"]?.stringValue)
         let steps = max(1, min(arguments["steps"]?.intValue ?? 20, 200))
 
-        if let mismatch = checkFocusGuard(arguments) {
+        if let mismatch = await checkFocusGuard(arguments) {
             return mismatch
         }
 
@@ -243,7 +243,7 @@ extension ToolRegistry {
             return CGPoint(x: x, y: y)
         }()
 
-        if let mismatch = checkFocusGuard(arguments) {
+        if let mismatch = await checkFocusGuard(arguments) {
             return mismatch
         }
 

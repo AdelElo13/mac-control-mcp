@@ -521,7 +521,7 @@ extension ToolRegistry {
             modifiers.append(flag)
         }
 
-        if let mismatch = checkFocusGuard(arguments) {
+        if let mismatch = await checkFocusGuard(arguments) {
             return mismatch
         }
 
@@ -566,7 +566,7 @@ extension ToolRegistry {
         // single check right before the first key covers the realistic
         // race (another app stealing focus between the caller's check
         // and this call).
-        if let mismatch = checkFocusGuard(arguments) {
+        if let mismatch = await checkFocusGuard(arguments) {
             return mismatch
         }
 
