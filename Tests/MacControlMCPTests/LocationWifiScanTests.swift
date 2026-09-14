@@ -83,6 +83,70 @@ struct LocationWifiScanTests {
         #expect(ToolRegistry.isGrantedPermissionStatus("granted"))
     }
 
+    @Test("the main-actor status variant agrees with the synchronous one")
+    func mainActorStatusMatchesSync() async {
+        let sync = ToolRegistry.locationPermissionStatusString()
+        let mainActor = await ToolRegistry.locationPermissionStatusStringMainActor()
+        #expect(sync == mainActor)
+        #expect(mainActor == "info_plist_missing")
+    }
+
+    // MARK: - wifi_scan's authorization step must never stall the scan
+    // (v0.8.4 review fix: whether CoreLocation even shows the when-in-use
+    // prompt for an LSUIElement MCP subprocess is unverified, so waiting
+    // up to 45s for a delegate answer that might never arrive would have
+    // regressed v0.8.2's instant wifi_scan for everyone.)
+
+    @Test("ensureLocationAuthorizationRequested is bounded even if the requester never calls back")
+    func authorizationStepIsBounded() async {
+        let start = Date()
+        let result = await HardwareController.ensureLocationAuthorizationRequested(
+            currentStatus: { "not_determined" },
+            requester: {
+                // Simulates a requester whose delegate callback never
+                // fires (e.g. CoreLocation never shows a prompt at all).
+                // If ensureLocationAuthorizationRequested awaited this
+                // directly instead of bounding it, the test would hang
+                // for the duration of the sleep instead of the
+                // ~1s locationPromptWaitTimeout bound.
+                try? await Task.sleep(nanoseconds: 3_600_000_000_000)
+            }
+        )
+        let elapsed = Date().timeIntervalSince(start)
+        #expect(elapsed < 2.0, "authorization step waited \(elapsed)s instead of bounding to ~\(HardwareController.locationPromptWaitTimeout)s")
+        #expect(result.promptRequested == true)
+        #expect(result.status == "not_determined")
+    }
+
+    @Test("ensureLocationAuthorizationRequested skips the request entirely when already decided")
+    func authorizationStepSkipsWhenDecided() async {
+        final class CallFlag: @unchecked Sendable {
+            private let lock = NSLock()
+            private var value = false
+            func set() { lock.lock(); value = true; lock.unlock() }
+            func get() -> Bool { lock.lock(); defer { lock.unlock() }; return value }
+        }
+        let requesterCalled = CallFlag()
+        let result = await HardwareController.ensureLocationAuthorizationRequested(
+            currentStatus: { "granted" },
+            requester: { requesterCalled.set() }
+        )
+        #expect(!requesterCalled.get(), "must not fire a request when status is already decided")
+        #expect(result.promptRequested == false)
+        #expect(result.status == "granted")
+    }
+
+    @Test("ensureLocationAuthorizationRequested in the test bundle short-circuits on info_plist_missing without touching CoreLocation")
+    func authorizationStepUsesRealStatusByDefault() async {
+        // No injected args — exercises the real default `currentStatus`
+        // (locationPermissionStatusStringMainActor, itself guarded by
+        // hasInfoPlistKey) and proves the default path doesn't crash in
+        // the swift-test bundle either.
+        let result = await HardwareController.ensureLocationAuthorizationRequested()
+        #expect(result.status == "info_plist_missing")
+        #expect(result.promptRequested == false)
+    }
+
     // MARK: - request_permissions accepts "location" without crashing
 
     @Test("request_permissions accepts the location category and skips with info_plist_missing")

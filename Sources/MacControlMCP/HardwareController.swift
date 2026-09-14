@@ -270,11 +270,17 @@ actor HardwareController {
         /// The per-app Location authorization status at scan time (same
         /// strings as `locationPermissionStatusString()`).
         public let locationStatus: String
+        /// True when this call itself fired `requestWhenInUseAuthorization`
+        /// (status was `not_determined`) — the answer may still be
+        /// pending; it wasn't waited for past ~1s. See
+        /// `HardwareController.ensureLocationAuthorizationRequested`.
+        public let locationPromptRequested: Bool
 
         private enum CodingKeys: String, CodingKey {
             case ok, networks, hint
             case ssidsRedacted = "ssids_redacted"
             case locationStatus = "location_status"
+            case locationPromptRequested = "location_prompt_requested"
         }
 
         public struct Network: Codable, Sendable {
@@ -324,22 +330,45 @@ actor HardwareController {
         return (nil, true)
     }
 
-    /// Upper bound for waiting on the Location TCC prompt's answer, same
-    /// budget AppleAppsController uses for Calendar/Contacts.
-    static let locationPromptTimeout: TimeInterval = 45
+    /// v0.8.4 review fix: whether CoreLocation shows the when-in-use prompt
+    /// AT ALL for an LSUIElement MCP subprocess is unverified. Waiting up
+    /// to 45s for a delegate answer that might never come would regress
+    /// v0.8.2's instant `wifi_scan` for everyone, prompt-or-not. This is
+    /// now only the bound on the SYNCHRONOUS portion of the request (an
+    /// already-decided status, or some other immediate delegate answer) —
+    /// never a wait for a human. See `LocationAuthorizer` for how the
+    /// request keeps running safely in the background past this bound.
+    static let locationPromptWaitTimeout: TimeInterval = 1.0
 
-    /// If Location authorization is still undecided, request it and wait
-    /// (bounded) for the user's answer; otherwise return the current status
-    /// immediately without touching CoreLocation again. The request itself
-    /// runs on the main actor (see `LocationAuthorizer`).
-    private static func ensureLocationAuthorizationRequested() async -> String {
-        let status = ToolRegistry.locationPermissionStatusString()
-        guard status == "not_determined" else { return status }
+    /// How long a fired request is kept alive (self-retained inside
+    /// `LocationAuthorizer`) in the background after `locationPromptWaitTimeout`
+    /// gives up on this call — long enough for a user to notice and answer
+    /// a prompt that's actually on screen, short enough not to leak
+    /// forever if none ever appears.
+    static let locationPromptKeepAlive: TimeInterval = 60
+
+    /// If Location authorization is undecided, fires
+    /// `requestWhenInUseAuthorization` and waits AT MOST
+    /// `locationPromptWaitTimeout` for a synchronous answer — bounded via
+    /// `AsyncTimeout.run`, which returns nil rather than blocking on a
+    /// requester that hasn't finished by then — then returns immediately
+    /// with whatever the status is at that point and whether a request
+    /// was actually fired. `currentStatus` and `requester` are injectable
+    /// so tests can prove this bound holds even when the underlying
+    /// request never calls back at all, without touching CoreLocation.
+    static func ensureLocationAuthorizationRequested(
+        currentStatus: @Sendable () async -> String = { await ToolRegistry.locationPermissionStatusStringMainActor() },
+        requester: @escaping @Sendable () async -> Void = defaultLocationRequester
+    ) async -> (status: String, promptRequested: Bool) {
+        let status = await currentStatus()
+        guard status == "not_determined" else { return (status, false) }
+        _ = await AsyncTimeout.run(timeout: locationPromptWaitTimeout, requester)
+        return (await currentStatus(), true)
+    }
+
+    private static let defaultLocationRequester: @Sendable () async -> Void = {
         #if canImport(CoreLocation)
-        _ = await LocationAuthorizer().requestAndAwaitChange(timeout: locationPromptTimeout)
-        return ToolRegistry.locationPermissionStatusString()
-        #else
-        return status
+        _ = await LocationAuthorizer().requestAndWaitForChange(keepAlive: locationPromptKeepAlive)
         #endif
     }
 
@@ -362,16 +391,30 @@ actor HardwareController {
     func wifiScan() async -> WifiScanResult {
         #if canImport(CoreWLAN)
         guard let client = CWWiFiClient.shared().interface() else {
+            let status = await ToolRegistry.locationPermissionStatusStringMainActor()
             return WifiScanResult(
                 ok: false, networks: [],
                 hint: "no Wi-Fi interface available via CoreWLAN (adapter disabled?)",
                 ssidsRedacted: false,
-                locationStatus: ToolRegistry.locationPermissionStatusString()
+                locationStatus: status,
+                locationPromptRequested: false
             )
         }
 
-        let locationStatus = await Self.ensureLocationAuthorizationRequested()
+        let (locationStatus, promptRequested) = await Self.ensureLocationAuthorizationRequested()
         let granted = ToolRegistry.isGrantedPermissionStatus(locationStatus)
+
+        // When we just fired the request and it's still undecided, don't
+        // pretend we know it's a bare-redaction case (grantHint assumes a
+        // settled "not granted" state) — tell the caller a prompt may be
+        // on screen right now.
+        func hintForRedaction() -> String {
+            if promptRequested && locationStatus == "not_determined" {
+                let target = PermissionContext.current.permissionTarget.name
+                return "answer the Location prompt for '\(target)' then call wifi_scan again; if no prompt appears, enable it via open_permission_pane pane=location."
+            }
+            return PermissionContext.grantHint(paneTitle: "Location Services")
+        }
 
         do {
             let scan = try client.scanForNetworks(withName: nil)
@@ -407,17 +450,24 @@ actor HardwareController {
                     ok: false, networks: [],
                     hint: "CoreWLAN scan returned empty — adapter may be blocked by MDM policy, or no networks visible",
                     ssidsRedacted: !granted,
-                    locationStatus: locationStatus
+                    locationStatus: locationStatus,
+                    locationPromptRequested: promptRequested
                 )
             }
-            let hint: String? = granted ? nil : PermissionContext.grantHint(paneTitle: "Location Services")
-            return WifiScanResult(ok: true, networks: nets, hint: hint, ssidsRedacted: !granted, locationStatus: locationStatus)
+            let hint: String? = granted ? nil : hintForRedaction()
+            return WifiScanResult(
+                ok: true, networks: nets, hint: hint,
+                ssidsRedacted: !granted,
+                locationStatus: locationStatus,
+                locationPromptRequested: promptRequested
+            )
         } catch {
             return WifiScanResult(
                 ok: false, networks: [],
                 hint: "CoreWLAN scan failed: \(error.localizedDescription)",
                 ssidsRedacted: !granted,
-                locationStatus: locationStatus
+                locationStatus: locationStatus,
+                locationPromptRequested: promptRequested
             )
         }
         #else
@@ -425,7 +475,8 @@ actor HardwareController {
             ok: false, networks: [],
             hint: "CoreWLAN not available on this platform build",
             ssidsRedacted: false,
-            locationStatus: "unknown"
+            locationStatus: "unknown",
+            locationPromptRequested: false
         )
         #endif
     }

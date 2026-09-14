@@ -54,13 +54,16 @@ extension ToolRegistry {
 
     func currentPermissionStatuses() async -> [PermissionStatusEntry] {
         let ax = await accessibility.checkPermission()
+        // v0.8.4 review fix: location is read on the main actor — see
+        // locationPermissionStatusStringMainActor().
+        let locationStatus = await Self.locationPermissionStatusStringMainActor()
         return [
             PermissionStatusEntry(name: "accessibility", status: ax ? "granted" : "not_granted"),
             PermissionStatusEntry(name: "screen_recording", status: Self.screenPermissionStatusString()),
             PermissionStatusEntry(name: "calendar", status: Self.calendarPermissionStatusString()),
             PermissionStatusEntry(name: "reminders", status: Self.remindersPermissionStatusString()),
             PermissionStatusEntry(name: "contacts", status: Self.contactsPermissionStatusString()),
-            PermissionStatusEntry(name: "location", status: Self.locationPermissionStatusString()),
+            PermissionStatusEntry(name: "location", status: locationStatus),
             PermissionStatusEntry(name: "microphone", status: Self.microphonePermissionStatusString())
         ]
     }
@@ -238,15 +241,18 @@ extension ToolRegistry {
             #endif
 
         case "location":
-            // locationPermissionStatusString() already returns
+            // locationPermissionStatusStringMainActor() already returns
             // "info_plist_missing" without ever touching CLLocationManager
             // when the Info.plist key is absent (the XCTest bundle case),
             // so this guard alone keeps that path crash-free.
-            let status = Self.locationPermissionStatusString()
+            let status = await Self.locationPermissionStatusStringMainActor()
             guard status == "not_determined" else { return .skipped(status) }
             #if canImport(CoreLocation)
+            // Fire-and-forget: don't hold up this call on a human answering
+            // a dialog. LocationAuthorizer self-retains until the delegate
+            // answers or its keep-alive elapses.
             Task { @MainActor in
-                _ = await LocationAuthorizer().requestAndAwaitChange(timeout: HardwareController.locationPromptTimeout)
+                _ = await LocationAuthorizer().requestAndWaitForChange(keepAlive: HardwareController.locationPromptKeepAlive)
             }
             return .triggered
             #else

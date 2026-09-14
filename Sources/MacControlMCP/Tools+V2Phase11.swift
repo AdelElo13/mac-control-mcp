@@ -71,13 +71,16 @@ extension ToolRegistry {
         guard let pane = arguments["pane"]?.stringValue else {
             return invalidArgument("open_permission_pane requires 'pane'.")
         }
+        // v0.8.4: routed through the main-actor variant — see
+        // locationPermissionStatusStringMainActor().
+        let locationStatus = await Self.locationPermissionStatusStringMainActor()
         let mapping: [String: (url: String, status: String?)] = [
             "accessibility":     ("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",    Self.axPermissionStatusString()),
             "screen_recording":  ("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",    Self.screenPermissionStatusString()),
             "calendar":          ("x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars",        Self.calendarPermissionStatusString()),
             "reminders":         ("x-apple.systempreferences:com.apple.preference.security?Privacy_Reminders",        Self.remindersPermissionStatusString()),
             "contacts":          ("x-apple.systempreferences:com.apple.preference.security?Privacy_Contacts",         Self.contactsPermissionStatusString()),
-            "location":          ("x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices", Self.locationPermissionStatusString()),
+            "location":          ("x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices", locationStatus),
             "microphone":        ("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",       Self.microphonePermissionStatusString()),
             "automation":        ("x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",       nil),
             "full_disk_access":  ("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",         nil)
@@ -265,6 +268,22 @@ extension ToolRegistry {
         #else
         return "unknown"
         #endif
+    }
+
+    /// Same status as `locationPermissionStatusString()`, but performed on
+    /// the main actor.
+    ///
+    /// v0.8.4 review fix: CoreLocation's documented thread contract is
+    /// really about delegate callbacks needing a run-looped thread, but to
+    /// avoid depending on whichever actor/thread happens to call in for
+    /// reading `CLLocationManager().authorizationStatus` too, route the
+    /// read through the one thread `main.swift` guarantees keeps an active
+    /// run loop (`RunLoop.main.run()`). Prefer this from async call sites
+    /// (`wifi_scan`, `permissions_status`, `open_permission_pane`); the
+    /// synchronous `locationPermissionStatusString()` stays available for
+    /// callers that can't await, with the same Info.plist-key guard.
+    static func locationPermissionStatusStringMainActor() async -> String {
+        await MainActor.run { locationPermissionStatusString() }
     }
 
     static func microphonePermissionStatusString() -> String {

@@ -195,7 +195,7 @@ extension ToolRegistry {
 
         MCPToolDefinition(
             name: "wifi_scan",
-            description: "Scan for visible Wi-Fi networks via CoreWLAN. macOS withholds SSIDs unless Location Services is granted to the responsible process — this requests it if undecided, then reports 'ssids_redacted' + 'location_status' and nulls out SSIDs (distinct from a genuinely hidden network, flagged per-network via 'hidden') when it isn't granted.",
+            description: "Scan for visible Wi-Fi networks via CoreWLAN. macOS withholds SSIDs unless Location Services is granted to the responsible process. If Location authorization is undecided this fires the request, waits only ~1s (never for a human to answer a dialog), then scans immediately — never blocks the scan itself. Each network's 'ssid' may be JSON null: either withheld (Location not granted — check 'ssids_redacted':true and 'location_status') or genuinely hidden (Location IS granted and that network's 'hidden' is true). 'location_prompt_requested':true plus 'location_status':'not_determined' means a prompt may be on screen right now — answer it and call wifi_scan again, or use open_permission_pane pane=location if none appears.",
             inputSchema: schema(properties: [:])
         ),
         MCPToolDefinition(
@@ -503,7 +503,8 @@ extension ToolRegistry {
             "ok": .bool(r.ok),
             "networks": encodeAsJSONValue(r.networks),
             "ssids_redacted": .bool(r.ssidsRedacted),
-            "location_status": .string(r.locationStatus)
+            "location_status": .string(r.locationStatus),
+            "location_prompt_requested": .bool(r.locationPromptRequested)
         ]
         if let h = r.hint { payload["hint"] = .string(h) }
         return r.ok
