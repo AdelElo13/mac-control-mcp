@@ -183,12 +183,26 @@ extension ToolRegistry {
             guard let id = raw.stringValue, !id.isEmpty else {
                 return .failed(textArgumentError(tool, "element_id must be a non-empty string."))
             }
-            guard let element = await elementCache.resolve(id) else {
+            // Codex review 6 (HIGH): `resolve` hands back whatever handle was
+            // stored, skipping the process-identity and fingerprint checks
+            // every other element tool goes through — a recycled pid would
+            // have been written to. `resolveLive` verifies both and repairs a
+            // dead handle from its recorded AX path, or refuses.
+            let element: AXUIElement
+            switch await elementCache.resolveLive(id) {
+            case .resolved(let resolved):
+                element = resolved
+            case .unknown:
+                // Kept as not_found (not unknown_element_id) so the six text
+                // tools keep the error contract they shipped with; the hint
+                // already explains id expiry.
                 return .failed(textFailureResult(
                     tool,
                     .notFound,
                     extra: ["element_id": .string(id)]
                 ))
+            case .stale(let reason):
+                return .failed(staleElementResult(id, reason: reason))
             }
             return .ok(TextTarget(
                 element: element, source: "element_id", identity: ["element_id": .string(id)]
@@ -385,7 +399,7 @@ extension ToolRegistry {
             var payload = Self.writePayload(outcome, source: target.source)
             payload.merge(target.identity) { current, _ in current }
             return successResult(
-                "Inserted \(outcome.insertedCharacters) UTF-16 unit(s) at \(outcome.range.location)\(outcome.applied ? "" : " — but the element applied something else").",
+                "Inserted \(outcome.insertedCharacters) UTF-16 unit(s) at \(outcome.range.location)\(Self.appliedSuffix(outcome)).",
                 payload
             )
         } catch {
@@ -428,7 +442,7 @@ extension ToolRegistry {
             var payload = Self.writePayload(outcome, source: target.source)
             payload.merge(target.identity) { current, _ in current }
             return successResult(
-                "Replaced \(length) UTF-16 unit(s) at \(location) with \(outcome.insertedCharacters)\(outcome.applied ? "" : " — but the element applied something else").",
+                "Replaced \(length) UTF-16 unit(s) at \(location) with \(outcome.insertedCharacters)\(Self.appliedSuffix(outcome)).",
                 payload
             )
         } catch {
@@ -447,9 +461,14 @@ extension ToolRegistry {
             "inserted_characters": .number(Double(outcome.insertedCharacters)),
             "collapsed_selection": .bool(outcome.collapsedSelection),
             "selection_after": outcome.selectionAfter.map(rangePayload) ?? .null,
-            "applied": .bool(outcome.applied),
+            // Tri-state (Codex review 6): null means "could not be verified",
+            // never "probably fine". Only a read-back match reports true.
+            "applied": outcome.applied.map(JSONValue.bool) ?? .null,
             "verification": .string(outcome.verification)
         ]
+        if let warning = outcome.warning {
+            payload["warning"] = .string(warning)
+        }
         if let observed = outcome.observedText {
             payload["observed_text"] = .string(observed)
             payload["hint"] = .string(
@@ -457,6 +476,15 @@ extension ToolRegistry {
             )
         }
         return payload
+    }
+
+    /// Human-readable tail for a write's summary line, matching `applied`.
+    private static func appliedSuffix(_ outcome: TextEditingController.WriteOutcome) -> String {
+        switch outcome.applied {
+        case .some(true):  return ""
+        case .some(false): return " — but the element applied something else"
+        case .none:        return " — NOT verified (\(outcome.verification)); the element exposes no readable text"
+        }
     }
 
     // MARK: - text_get_value

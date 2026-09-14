@@ -33,6 +33,10 @@ struct TextEditingBackendTests {
         var substituteWrite: String?
         /// Hide AXValue so the count/string_for_range verification path runs.
         var exposesValue = true
+        /// Hide AXStringForRange so the count-only verification path runs.
+        var exposesStringForRange = true
+        /// Hide AXNumberOfCharacters so nothing at all can be verified.
+        var exposesCharacterCount = true
         var selectedTextWriteStatus: AXError = .success
         var rangeWriteStatus: AXError = .success
 
@@ -81,7 +85,8 @@ struct TextEditingBackendTests {
         }
 
         func intAttribute(_: AXUIElement, _ name: String) -> Int? {
-            name == "AXNumberOfCharacters" ? element.value.utf16.count : nil
+            guard name == "AXNumberOfCharacters", element.exposesCharacterCount else { return nil }
+            return element.value.utf16.count
         }
 
         func rangeAttribute(_: AXUIElement, _ name: String) -> TextEditingController.TextRange? {
@@ -123,7 +128,8 @@ struct TextEditingBackendTests {
         func lineForIndex(_: AXUIElement, index: Int) -> Int? { 0 }
 
         func stringForRange(_: AXUIElement, location: Int, length: Int) -> String? {
-            slice(.init(location: location, length: length))
+            guard element.exposesStringForRange else { return nil }
+            return slice(.init(location: location, length: length))
         }
     }
 
@@ -255,6 +261,83 @@ struct TextEditingBackendTests {
             #expect(error.reason == "write_not_applied")
         }
         #expect(element.value == "hello")
+    }
+
+    // MARK: - Honest `applied` reporting (Codex review 6)
+
+    /// An element that exposes neither AXValue nor AXStringForRange can only
+    /// be checked by its character count — which says nothing about WHAT was
+    /// written. Reporting `applied: true` there was an unverified claim.
+    @Test("a count-only verification reports applied: nil, not true")
+    func countOnlyIsNotApplied() async throws {
+        let element = FakeElement(value: "hello", selection: .init(location: 0, length: 0))
+        element.exposesValue = false
+        element.exposesStringForRange = false
+        let controller = Self.controller(element)
+        let outcome = try await controller.insertAtCaret(of: Self.dummyElement(), text: "abc")
+        #expect(outcome.verification == "count_only")
+        #expect(outcome.applied == nil, "a count match must never be reported as applied")
+        #expect(element.value == "abchello")
+    }
+
+    /// Nothing readable at all: neither value, nor slice, nor count.
+    @Test("an entirely unverifiable write reports applied: nil")
+    func unverifiedIsNotApplied() async throws {
+        let element = FakeElement(value: "hello", selection: .init(location: 0, length: 0))
+        element.exposesValue = false
+        element.exposesStringForRange = false
+        element.exposesCharacterCount = false
+        let controller = Self.controller(element)
+        let outcome = try await controller.insertAtCaret(of: Self.dummyElement(), text: "abc")
+        #expect(outcome.verification == "unverified")
+        #expect(outcome.applied == nil)
+    }
+
+    @Test("a read-back match is still reported as applied: true")
+    func readBackMatchIsApplied() async throws {
+        let element = FakeElement(value: "hello", selection: .init(location: 0, length: 0))
+        let outcome = try await Self.controller(element)
+            .insertAtCaret(of: Self.dummyElement(), text: "abc")
+        #expect(outcome.applied == true)
+        #expect(outcome.verification == "value")
+    }
+
+    // MARK: - Range arithmetic overflow (Codex review 6)
+
+    @Test("location + length overflow is an argument error, not a trap")
+    func rangeOverflowRejected() {
+        #expect(TextEditingController.validateRange(
+            location: Int.max, length: 1, numberOfCharacters: 100) != nil)
+        #expect(TextEditingController.validateRange(
+            location: Int.max, length: Int.max, numberOfCharacters: nil) != nil)
+        #expect(TextEditingController.validateRange(
+            location: 1, length: Int.max, numberOfCharacters: nil) != nil)
+        // The overflow guard must not reject honest ranges.
+        #expect(TextEditingController.validateRange(
+            location: 5, length: 5, numberOfCharacters: 10) == nil)
+        #expect(TextEditingController.validateRange(
+            location: Int.max, length: 0, numberOfCharacters: nil) == nil)
+    }
+
+    @Test("an overflowing range never reaches the element")
+    func overflowNeverWrites() async {
+        let element = FakeElement(value: "hello", selection: .init(location: 0, length: 0))
+        let controller = Self.controller(element)
+        do {
+            _ = try await controller.replaceRange(
+                of: Self.dummyElement(), location: Int.max, length: Int.max, text: "x"
+            )
+            Issue.record("an overflowing range should be rejected")
+        } catch {
+            #expect(error.code == "invalid_argument")
+        }
+        #expect(element.value == "hello")
+    }
+
+    @Test("replacingUTF16 rejects an overflowing range instead of trapping")
+    func spliceOverflowReturnsNil() {
+        #expect(TextEditingController.replacingUTF16(
+            "abc", range: .init(location: Int.max, length: Int.max), with: "x") == nil)
     }
 
     @Test("a write that lands differently returns applied=false with the observed text")

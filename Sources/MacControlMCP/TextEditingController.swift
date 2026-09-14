@@ -163,14 +163,34 @@ actor TextEditingController {
         let selectionAfter: TextRange?
         /// True when a non-empty selection was collapsed before inserting.
         let collapsedSelection: Bool
-        /// False when the element applied something other than what we asked
-        /// for. A write that applied nothing at all throws instead.
-        let applied: Bool
+        /// Tri-state (Codex review 6, HIGH):
+        ///   * `true`  — the text was read back and matched what we asked for;
+        ///   * `false` — the element applied something else (see observedText);
+        ///   * `nil`   — the write COULD NOT be verified. The element exposes
+        ///               no readable text, so only its character count (or
+        ///               nothing at all) could be checked. Never claim `true`
+        ///               on that evidence.
+        /// A write that demonstrably applied nothing throws instead.
+        let applied: Bool?
         /// The element's text after the write, when it differs from what was
         /// requested (so the caller can see what actually happened).
         let observedText: String?
-        /// How the write was verified: "value" | "string_for_range" | "unverified".
+        /// How the write was verified: "value" | "string_for_range" |
+        /// "count_only" | "unverified". The last two always pair with
+        /// `applied == nil`.
         let verification: String
+        /// Why `applied` is nil, in words the caller can act on.
+        var warning: String? {
+            guard applied == nil else { return nil }
+            switch verification {
+            case "count_only":
+                return "The element exposes no readable text, only AXNumberOfCharacters. The count moved by exactly the amount requested, but WHAT was written could not be read back — verify with text_get_value or by another route before relying on it."
+            case "unverified":
+                return "The element exposes neither its value, nor AXStringForRange, nor AXNumberOfCharacters. AX reported success, but nothing could be read back to confirm the write landed — verify by another route before relying on it."
+            default:
+                return "The write could not be verified by reading the element back."
+            }
+        }
     }
 
     struct Value: Sendable {
@@ -223,14 +243,24 @@ actor TextEditingController {
     /// acceptable, else a human-readable reason. `numberOfCharacters` nil
     /// means the element does not report a length — we then check signs only
     /// rather than guessing.
+    /// `location + length` is computed with `addingReportingOverflow`: a
+    /// caller passing `Int.max` for both used to TRAP the whole server
+    /// process on the overflow (Codex review 6, HIGH). An end offset that
+    /// does not fit in an Int cannot address any real document, so it is
+    /// rejected as an argument error before AX is touched — including when
+    /// the element does not report a length.
     static func validateRange(location: Int, length: Int, numberOfCharacters: Int?) -> String? {
         if location < 0 { return "location must be >= 0 (got \(location))." }
         if length < 0 { return "length must be >= 0 (got \(length))." }
+        let (end, overflowed) = location.addingReportingOverflow(length)
+        if overflowed {
+            return "range \(location)+\(length) overflows Int — no document can have an end offset that large."
+        }
         guard let total = numberOfCharacters else { return nil }
         if location > total {
             return "location \(location) is past the end of the text (number_of_characters=\(total), UTF-16 units)."
         }
-        if location + length > total {
+        if end > total {
             return "range \(location)+\(length) exceeds the text length (number_of_characters=\(total), UTF-16 units)."
         }
         return nil
@@ -261,8 +291,9 @@ actor TextEditingController {
     static func replacingUTF16(_ original: String, range: TextRange, with replacement: String) -> String? {
         guard range.location >= 0, range.length >= 0 else { return nil }
         var units = Array(original.utf16)
-        let end = range.location + range.length
-        guard end <= units.count else { return nil }
+        // Overflow-safe: Int.max + Int.max would trap (Codex review 6).
+        let (end, overflowed) = range.location.addingReportingOverflow(range.length)
+        guard !overflowed, end <= units.count else { return nil }
         units.replaceSubrange(range.location..<end, with: Array(replacement.utf16))
         return String(utf16CodeUnits: units, count: units.count)
     }
@@ -459,14 +490,17 @@ actor TextEditingController {
     ///
     /// Throws `write_not_applied` when the element is demonstrably unchanged;
     /// returns `applied: false` plus what it observed when it changed into
-    /// something other than what was asked for.
+    /// something other than what was asked for; returns `applied: nil` when
+    /// the element exposes nothing that could confirm the CONTENT of the
+    /// write (Codex review 6 — a matching character count is not evidence
+    /// that the right text was written).
     private func verify(
         _ element: AXUIElement,
         range: TextRange,
         text: String,
         beforeValue: String?,
         beforeCount: Int?
-    ) throws(Failure) -> (applied: Bool, observed: String?, method: String) {
+    ) throws(Failure) -> (applied: Bool?, observed: String?, method: String) {
         if let beforeValue,
            let afterValue = ax.stringAttribute(element, kAXValueAttribute as String) {
             let expected = Self.replacingUTF16(beforeValue, range: range, with: text)
@@ -500,17 +534,23 @@ actor TextEditingController {
 
         if let beforeCount, let afterCount {
             let expectedCount = beforeCount - range.length + text.utf16.count
-            if afterCount == expectedCount { return (true, nil, "count_only") }
+            // The count moving as predicted is consistent with the write, but
+            // says nothing about WHAT was written — report "unknown", never
+            // "applied" (Codex review 6).
+            if afterCount == expectedCount { return (nil, nil, "count_only") }
             if afterCount == beforeCount, expectedCount != beforeCount {
                 throw .notSupported(
                     "AXSelectedText write returned success but AXNumberOfCharacters is unchanged.",
                     reason: "write_not_applied"
                 )
             }
+            // The count moved, but not by the requested amount: the element
+            // demonstrably did something else.
             return (false, nil, "count_only")
         }
 
-        return (true, nil, "unverified")
+        // Nothing readable at all. AX said success; that is all we know.
+        return (nil, nil, "unverified")
     }
 
     // MARK: - Guards
