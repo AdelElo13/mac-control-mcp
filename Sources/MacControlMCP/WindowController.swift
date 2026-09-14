@@ -32,6 +32,11 @@ actor WindowController {
     /// is a no-op at the AX layer.
     private func enableManualAccessibility(pid: pid_t) {
         guard !manualAccessibilityEnabled.contains(pid) else { return }
+        Self.setManualAccessibility(pid: pid)
+        manualAccessibilityEnabled.insert(pid)
+    }
+
+    private static func setManualAccessibility(pid: pid_t) {
         let app = AXUIElementCreateApplication(pid)
         _ = AXUIElementSetAttributeValue(
             app, "AXManualAccessibility" as CFString, kCFBooleanTrue
@@ -39,7 +44,6 @@ actor WindowController {
         _ = AXUIElementSetAttributeValue(
             app, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue
         )
-        manualAccessibilityEnabled.insert(pid)
     }
 
     /// Resolve an app's window list through a three-step AX fallback
@@ -49,6 +53,12 @@ actor WindowController {
     /// only just finished AX wiring.
     private func axWindows(pid: pid_t) -> [AXUIElement] {
         enableManualAccessibility(pid: pid)
+        return Self.axWindowElements(pid: pid)
+    }
+
+    /// Actor-independent half of `axWindows` — AX is thread-safe, so
+    /// `listWindows` runs this for every app concurrently.
+    private static func axWindowElements(pid: pid_t) -> [AXUIElement] {
         let app = AXUIElementCreateApplication(pid)
 
         var ref: CFTypeRef?
@@ -70,6 +80,33 @@ actor WindowController {
         return []
     }
 
+    /// AX-described windows of one app with real (> 1×1) bounds, or `[]`
+    /// when the app exposes none — the caller then falls back to the
+    /// Window Server list.
+    private static func realAXWindowInfos(pid: pid_t, appName: String) -> [WindowInfo] {
+        let axList = axWindowElements(pid: pid)
+        guard !axList.isEmpty else { return [] }
+        let appElement = AXUIElementCreateApplication(pid)
+        var mainWindowRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute as CFString, &mainWindowRef)
+        let mainWindow = mainWindowRef.flatMap { raw -> AXUIElement? in
+            guard CFGetTypeID(raw) == AXUIElementGetTypeID() else { return nil }
+            return unsafeDowncast(raw, to: AXUIElement.self)
+        }
+        // Some Electron apps report AX windows with `0×0` bounds — drop
+        // those so the CG fallback supplies real numbers instead.
+        return axList.enumerated()
+            .map { index, window in
+                describe(window: window, index: index, appName: appName, pid: pid, mainWindow: mainWindow)
+            }
+            .filter { $0.width > 1 && $0.height > 1 }
+    }
+
+    private static func copyWindowServerList() -> [[String: Any]] {
+        let options: CGWindowListOption = [.optionAll, .excludeDesktopElements]
+        return (CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]]) ?? []
+    }
+
     /// Window Server fallback — for apps whose windows are NEVER
     /// registered with Accessibility (Chrome's browser windows are
     /// the canonical example; all AX attributes return nothing).
@@ -79,12 +116,13 @@ actor WindowController {
     /// only via CG cannot be mutated (`move_window` / `resize_window`
     /// still need an AX handle). `list_windows` callers get honest
     /// bounds + title instead of the previous `count: 0`.
-    private func cgWindows(pid: pid_t, appName: String) -> [WindowInfo] {
-        let options: CGWindowListOption = [.optionAll, .excludeDesktopElements]
-        guard let info = CGWindowListCopyWindowInfo(options, kCGNullWindowID)
-                as? [[String: Any]]
-        else { return [] }
-
+    ///
+    /// Pure over a pre-fetched window-server snapshot. PERF (v0.8.3):
+    /// `listWindows` used to call `CGWindowListCopyWindowInfo` (~5 ms,
+    /// ~470 entries) once PER app that needed the fallback — 10 of 22
+    /// apps on the benchmark machine, ~45 ms of a ~110 ms call. It now
+    /// fetches the snapshot once per call and filters it per pid here.
+    static func cgWindows(from info: [[String: Any]], pid: pid_t, appName: String) -> [WindowInfo] {
         var out: [WindowInfo] = []
         for dict in info {
             guard
@@ -121,10 +159,16 @@ actor WindowController {
     /// Enumerate all windows of all regular running apps. Windows are ordered
     /// per-app in the AX child order, which approximately matches z-order for
     /// the active app and is stable across calls for inactive apps.
+    ///
+    /// PERF (v0.8.3): per-app AX queries run concurrently (AX is
+    /// thread-safe and each app answers its own IPC independently — one
+    /// slow/beach-balling app no longer delays every app after it), and
+    /// the Window Server list is fetched at most once. Output order and
+    /// content are unchanged: apps stay in `runningApplications` order.
     func listWindows() async -> [WindowInfo] {
         // NSWorkspace.runningApplications is main-actor-affine under strict
         // concurrency — snapshot the (pid, name) pairs on MainActor, then
-        // do the AX work (which is thread-safe) here on the actor thread.
+        // do the AX work (which is thread-safe) off the main actor.
         struct AppSnap: Sendable { let pid: pid_t; let name: String }
         let apps: [AppSnap] = await MainActor.run {
             NSWorkspace.shared.runningApplications
@@ -132,36 +176,33 @@ actor WindowController {
                 .map { AppSnap(pid: $0.processIdentifier, name: $0.localizedName ?? "Unknown") }
         }
 
+        let needsEnable = Set(apps.map(\.pid)).subtracting(manualAccessibilityEnabled)
+        let axResults: [[WindowInfo]] = await withTaskGroup(of: (Int, [WindowInfo]).self) { group in
+            for (i, app) in apps.enumerated() {
+                let enable = needsEnable.contains(app.pid)
+                group.addTask {
+                    if enable { Self.setManualAccessibility(pid: app.pid) }
+                    return (i, Self.realAXWindowInfos(pid: app.pid, appName: app.name))
+                }
+            }
+            var ordered = Array(repeating: [WindowInfo](), count: apps.count)
+            for await (i, infos) in group { ordered[i] = infos }
+            return ordered
+        }
+        manualAccessibilityEnabled.formUnion(needsEnable)
+
+        var windowServerList: [[String: Any]]?
         var result: [WindowInfo] = []
-        for app in apps {
-            // Try AX first (cheaper, gives us a mutable handle) …
-            let axList = axWindows(pid: app.pid)
-            if !axList.isEmpty {
-                let appElement = AXUIElementCreateApplication(app.pid)
-                var mainWindowRef: CFTypeRef?
-                AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute as CFString, &mainWindowRef)
-                let mainWindow = mainWindowRef.flatMap { raw -> AXUIElement? in
-                    guard CFGetTypeID(raw) == AXUIElementGetTypeID() else { return nil }
-                    return unsafeDowncast(raw, to: AXUIElement.self)
-                }
-                for (index, window) in axList.enumerated() {
-                    let info = describe(
-                        window: window, index: index,
-                        appName: app.name, pid: app.pid,
-                        mainWindow: mainWindow
-                    )
-                    // Some Electron apps report AX windows with
-                    // `0×0` bounds — if that's all we got, fall
-                    // through to the CG fallback for real numbers.
-                    if info.width > 1 && info.height > 1 {
-                        result.append(info)
-                    }
-                }
-                if result.contains(where: { $0.pid == app.pid }) { continue }
+        for (i, app) in apps.enumerated() {
+            if !axResults[i].isEmpty {
+                result.append(contentsOf: axResults[i])
+                continue
             }
             // … otherwise (or if AX gave only zero-sized frames) fall
-            // back to the Window Server list.
-            result.append(contentsOf: cgWindows(pid: app.pid, appName: app.name))
+            // back to the Window Server list, fetched once per call.
+            let list = windowServerList ?? Self.copyWindowServerList()
+            windowServerList = list
+            result.append(contentsOf: Self.cgWindows(from: list, pid: app.pid, appName: app.name))
         }
 
         return result
@@ -174,23 +215,11 @@ actor WindowController {
             NSRunningApplication(processIdentifier: pid)?.localizedName ?? "Unknown"
         }
 
-        let axList = axWindows(pid: pid)
-        if !axList.isEmpty {
-            let appElement = AXUIElementCreateApplication(pid)
-            var mainWindowRef: CFTypeRef?
-            AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute as CFString, &mainWindowRef)
-            let mainWindow = mainWindowRef.flatMap { raw -> AXUIElement? in
-                guard CFGetTypeID(raw) == AXUIElementGetTypeID() else { return nil }
-                return unsafeDowncast(raw, to: AXUIElement.self)
-            }
-            let described = axList.enumerated().map { index, window in
-                describe(window: window, index: index, appName: name, pid: pid, mainWindow: mainWindow)
-            }
-            let real = described.filter { $0.width > 1 && $0.height > 1 }
-            if !real.isEmpty { return real }
-        }
+        enableManualAccessibility(pid: pid)
+        let real = Self.realAXWindowInfos(pid: pid, appName: name)
+        if !real.isEmpty { return real }
         // Chrome / apps with no AX-exposed windows.
-        return cgWindows(pid: pid, appName: name)
+        return Self.cgWindows(from: Self.copyWindowServerList(), pid: pid, appName: name)
     }
 
     /// Bring a window to the front. Raises the app first, then the window.
@@ -309,51 +338,44 @@ actor WindowController {
         return array[index]
     }
 
-    private func describe(
+    private static let describeAttributes: [String] = [
+        kAXTitleAttribute as String,
+        kAXPositionAttribute as String,
+        kAXSizeAttribute as String,
+        kAXMinimizedAttribute as String
+    ]
+
+    /// Title / position / size / minimized in one batched AX round trip
+    /// (was four). Decoding goes through the same type-checked helpers
+    /// as tree walks: a missing attribute arrives as an `.axError`
+    /// AXValue in its slot and decodes to the documented zero/nil output.
+    private static func describe(
         window: AXUIElement,
         index: Int,
         appName: String,
         pid: pid_t,
         mainWindow: AXUIElement?
     ) -> WindowInfo {
-        var titleRef: CFTypeRef?
-        AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleRef)
-        let title = titleRef as? String
-
-        // Extract position/size; we check every step of the AX chain so
-        // malformed AX responses produce documented zero-output rather than
-        // silent misreporting. AXValueGetValue itself returns a bool that
-        // must be honoured — if the conversion fails, the pointee is
-        // undefined, not zero.
-        var point = CGPoint.zero
-        var positionRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &positionRef) == .success,
-           let raw = positionRef,
-           CFGetTypeID(raw) == AXValueGetTypeID() {
-            let axValue = unsafeDowncast(raw, to: AXValue.self)
-            var tmp = CGPoint.zero
-            if AXValueGetType(axValue) == .cgPoint,
-               AXValueGetValue(axValue, .cgPoint, &tmp) {
-                point = tmp
+        var raw: CFArray?
+        let status = AXUIElementCopyMultipleAttributeValues(
+            window, describeAttributes as CFArray, [], &raw
+        )
+        let slots: [AnyObject]
+        if status == .success, let array = raw as? [AnyObject], array.count == describeAttributes.count {
+            slots = array
+        } else {
+            slots = describeAttributes.map { name in
+                var value: CFTypeRef?
+                guard AXUIElementCopyAttributeValue(window, name as CFString, &value) == .success,
+                      let value else { return kCFNull }
+                return value
             }
         }
 
-        var size = CGSize.zero
-        var sizeRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &sizeRef) == .success,
-           let raw = sizeRef,
-           CFGetTypeID(raw) == AXValueGetTypeID() {
-            let axValue = unsafeDowncast(raw, to: AXValue.self)
-            var tmp = CGSize.zero
-            if AXValueGetType(axValue) == .cgSize,
-               AXValueGetValue(axValue, .cgSize, &tmp) {
-                size = tmp
-            }
-        }
-
-        var minimizedRef: CFTypeRef?
-        AXUIElementCopyAttributeValue(window, kAXMinimizedAttribute as CFString, &minimizedRef)
-        let minimized = (minimizedRef as? Bool) ?? false
+        let title = slots[0] as? String
+        let point = AXAttributeBatch.point(slots[1]) ?? .zero
+        let size = AXAttributeBatch.size(slots[2]) ?? .zero
+        let minimized = (slots[3] as? NSNumber)?.boolValue ?? false
 
         let isMain: Bool = {
             guard let mainWindow else { return false }
