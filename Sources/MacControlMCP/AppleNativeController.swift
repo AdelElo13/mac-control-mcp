@@ -8,10 +8,6 @@ import AppIntents
 
 /// Apple-native automation surfaces introduced 2025-2026:
 ///
-///   - **Foundation Models** (macOS Tahoe 26+) — on-device LLM callable
-///     by 3rd-party apps. We wrap with a `#if canImport(FoundationModels)`
-///     and degrade to a structured "not available on this macOS" hint
-///     when the framework isn't present.
 ///   - **App Intents** — lightweight enumeration of installed apps that
 ///     expose App Intents via Spotlight, and a generic `invoke` shim that
 ///     routes through the `shortcuts` CLI (the only sanctioned
@@ -21,16 +17,17 @@ import AppIntents
 /// v0.7.0 ships a minimal surface — enough for agents to discover and
 /// dispatch common app-level automations. v0.8.0 can deepen once Apple
 /// stabilises the ThirdPartyAppIntents story.
+///
+/// Note: a `foundation_models_generate` tool (Apple's on-device LLM) was
+/// removed in v0.9 (see A-5 in the gap audit) — the public
+/// `LanguageModelSession` API could not be live-verified end to end
+/// (this dev Mac reports `SystemLanguageModel.default.availability ==
+/// .unavailable(.appleIntelligenceNotEnabled)`, and enabling Apple
+/// Intelligence is a system-settings change outside this task's
+/// read-only-desktop constraint), and the shipped stub always threw a
+/// hard "integration pending" error — a tool that can never succeed
+/// must not be listed per this project's own honest-failure rule.
 actor AppleNativeController {
-
-    public struct FoundationModelsResult: Codable, Sendable {
-        public let ok: Bool
-        public let text: String?
-        public let model: String?        // "apple-intelligence" when we hit the real framework
-        public let onDevice: Bool
-        public let error: String?
-        public let hint: String?
-    }
 
     public struct AppIntentSummary: Codable, Sendable {
         public let bundleId: String
@@ -52,82 +49,6 @@ actor AppleNativeController {
         public let stdout: String?
         public let stderr: String?
     }
-
-    // MARK: - Foundation Models
-
-    /// Call Apple's on-device Foundation Models framework to generate
-    /// text from a prompt.  When the framework isn't available (older
-    /// macOS, Intel Mac w/o Apple Intelligence), returns a structured
-    /// hint so callers can fall back to a network model.
-    ///
-    /// Note on Swift compile-time availability: the FoundationModels
-    /// framework ships with macOS Tahoe (26+). To let this file compile
-    /// on older SDKs / CI runners, we guard with `#if canImport`. When
-    /// the import succeeds at build time, the real call site is compiled;
-    /// otherwise the stub path runs.
-    func foundationModelsGenerate(
-        prompt: String,
-        system: String?
-    ) async -> FoundationModelsResult {
-        #if canImport(FoundationModels)
-        // Real path. `LanguageModelSession` / `LanguageModel` are the
-        // macOS Tahoe API surface. Kept name-flexible so we don't break
-        // on minor API renames.
-        do {
-            let session = try await createFoundationSession(system: system)
-            let response = try await session.respond(to: prompt)
-            return FoundationModelsResult(
-                ok: true,
-                text: response,
-                model: "apple-intelligence",
-                onDevice: true,
-                error: nil,
-                hint: nil
-            )
-        } catch {
-            return FoundationModelsResult(
-                ok: false, text: nil,
-                model: "apple-intelligence",
-                onDevice: true,
-                error: error.localizedDescription,
-                hint: "Foundation Models returned an error — check that Apple Intelligence is enabled for this Mac"
-            )
-        }
-        #else
-        return FoundationModelsResult(
-            ok: false,
-            text: nil,
-            model: nil,
-            onDevice: false,
-            error: nil,
-            hint: "FoundationModels framework not available on this build (requires macOS 26 Tahoe+ and Apple Intelligence). Fall back to a network model."
-        )
-        #endif
-    }
-
-    #if canImport(FoundationModels)
-    // Compile-isolated helper so the TYPE references only exist when the
-    // framework is available.
-    private func createFoundationSession(system: String?) async throws -> FoundationModelsStub {
-        // The framework's public Swift API will likely look like
-        // `LanguageModelSession(...).respond(to:)` by GA. We abstract
-        // behind this stub so we can adapt without a rebuild chain.
-        return FoundationModelsStub(system: system)
-    }
-
-    private struct FoundationModelsStub {
-        let system: String?
-        func respond(to prompt: String) async throws -> String {
-            // Hard-fails so the real API lands before v0.7.0 depends on
-            // generated text. We don't want to invent output the framework
-            // didn't generate.
-            throw NSError(domain: "mac-control-mcp.FoundationModels",
-                          code: -1,
-                          userInfo: [NSLocalizedDescriptionKey:
-                                     "FoundationModels integration pending — the framework is importable at build time but the public session API we need has not been wired yet. Use a Shortcut that invokes Apple Intelligence as a workaround."])
-        }
-    }
-    #endif
 
     // MARK: - App Intents
 

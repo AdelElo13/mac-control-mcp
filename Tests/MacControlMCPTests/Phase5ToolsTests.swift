@@ -23,7 +23,7 @@ struct Phase5ToolsTests {
         #expect(expected.isSubset(of: names))
     }
 
-    @Test("total tool count is 143 after v0.8.0 (+2 Phase 11 tools)")
+    @Test("total tool count is 142 after v0.9 (-1 foundation_models_generate)")
     func totalToolCount() {
         // v0.2.6 baseline:      64
         // v0.3.0 Phase 6 adds:   6 (tiered perms + AX observer waits)  → 70
@@ -34,8 +34,12 @@ struct Phase5ToolsTests {
         //                          Models, App Intents, undo queue,
         //                          artifact store)                      → 141
         // v0.8.0 Phase 11 adds:  2 (open_permission_pane, mcp_server_info) → 143
+        // v0.9 removes:          1 (foundation_models_generate — see gap
+        //                          audit A-5: the tool could never
+        //                          succeed, `LanguageModelSession`'s
+        //                          real API was never wired up)          → 142
         let registry = ToolRegistry(accessibility: AccessibilityController())
-        #expect(registry.toolDefinitions.count == 143)
+        #expect(registry.toolDefinitions.count == 142)
     }
 
     @Test("set_volume requires volume argument")

@@ -6,6 +6,9 @@ import CoreWLAN
 #if canImport(AppKit)
 import AppKit
 #endif
+#if canImport(CoreLocation)
+import CoreLocation
+#endif
 
 /// Hardware-adjacent controls: display brightness, Wi-Fi, Bluetooth,
 /// Night Shift, AirPlay. macOS gates most of these behind system daemons
@@ -260,12 +263,113 @@ actor HardwareController {
         public let ok: Bool
         public let networks: [Network]
         public let hint: String?
+        /// True when SSIDs were withheld because Location isn't granted to
+        /// the responsible process — distinct from a network that is
+        /// genuinely hidden (see `Network.hidden`).
+        public let ssidsRedacted: Bool
+        /// The per-app Location authorization status at scan time (same
+        /// strings as `locationPermissionStatusString()`).
+        public let locationStatus: String
+        /// True when this call itself fired `requestWhenInUseAuthorization`
+        /// (status was `not_determined`) — the answer may still be
+        /// pending; it wasn't waited for past ~1s. See
+        /// `HardwareController.ensureLocationAuthorizationRequested`.
+        public let locationPromptRequested: Bool
+
+        private enum CodingKeys: String, CodingKey {
+            case ok, networks, hint
+            case ssidsRedacted = "ssids_redacted"
+            case locationStatus = "location_status"
+            case locationPromptRequested = "location_prompt_requested"
+        }
+
         public struct Network: Codable, Sendable {
-            public let ssid: String
+            /// nil when redacted (Location not granted — CoreWLAN's nil is
+            /// ambiguous) OR when the network is genuinely hidden (Location
+            /// IS granted and CoreWLAN still reported no name). Distinguish
+            /// the two via `hidden`.
+            public let ssid: String?
             public let rssi: Int?       // signal strength in dBm, nil when unavailable
             public let channel: Int?
             public let security: String?
+            /// True only when Location is granted and CoreWLAN reported no
+            /// SSID for this network — i.e. a real hidden network, not a
+            /// redaction artifact.
+            public let hidden: Bool
+
+            private enum CodingKeys: String, CodingKey { case ssid, rssi, channel, security, hidden }
+
+            // Manual encode so `ssid: nil` serializes as JSON `null` rather
+            // than being omitted — callers need to tell "redacted/hidden"
+            // (key present, null) apart from a field that was never there.
+            public func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(ssid, forKey: .ssid)
+                try container.encode(rssi, forKey: .rssi)
+                try container.encode(channel, forKey: .channel)
+                try container.encode(security, forKey: .security)
+                try container.encode(hidden, forKey: .hidden)
+            }
         }
+    }
+
+    /// Pure decision, given the current Location authorization and the raw
+    /// SSID CoreWLAN returned, of what to expose and whether the network is
+    /// a genuinely hidden one. Kept pure (no framework calls) so it's
+    /// directly testable without touching CoreWLAN/CoreLocation.
+    static func classifyNetworkSSID(granted: Bool, rawSSID: String?) -> (ssid: String?, hidden: Bool) {
+        guard granted else {
+            // Location not granted: CoreWLAN's nil is ambiguous (could be a
+            // real hidden network OR just withheld), so we can't claim
+            // "hidden" — redact instead of guessing.
+            return (nil, false)
+        }
+        if let rawSSID {
+            return (rawSSID, false)
+        }
+        return (nil, true)
+    }
+
+    /// v0.8.4 review fix: whether CoreLocation shows the when-in-use prompt
+    /// AT ALL for an LSUIElement MCP subprocess is unverified. Waiting up
+    /// to 45s for a delegate answer that might never come would regress
+    /// v0.8.2's instant `wifi_scan` for everyone, prompt-or-not. This is
+    /// now only the bound on the SYNCHRONOUS portion of the request (an
+    /// already-decided status, or some other immediate delegate answer) —
+    /// never a wait for a human. See `LocationAuthorizer` for how the
+    /// request keeps running safely in the background past this bound.
+    static let locationPromptWaitTimeout: TimeInterval = 1.0
+
+    /// How long a fired request is kept alive (self-retained inside
+    /// `LocationAuthorizer`) in the background after `locationPromptWaitTimeout`
+    /// gives up on this call — long enough for a user to notice and answer
+    /// a prompt that's actually on screen, short enough not to leak
+    /// forever if none ever appears.
+    static let locationPromptKeepAlive: TimeInterval = 60
+
+    /// If Location authorization is undecided, fires
+    /// `requestWhenInUseAuthorization` and waits AT MOST
+    /// `locationPromptWaitTimeout` for a synchronous answer — bounded via
+    /// `AsyncTimeout.run`, which returns nil rather than blocking on a
+    /// requester that hasn't finished by then — then returns immediately
+    /// with whatever the status is at that point and whether a request
+    /// was actually fired. `currentStatus` and `requester` are injectable
+    /// so tests can prove this bound holds even when the underlying
+    /// request never calls back at all, without touching CoreLocation.
+    static func ensureLocationAuthorizationRequested(
+        currentStatus: @Sendable () async -> String = { await ToolRegistry.locationPermissionStatusStringMainActor() },
+        requester: @escaping @Sendable () async -> Void = defaultLocationRequester
+    ) async -> (status: String, promptRequested: Bool) {
+        let status = await currentStatus()
+        guard status == "not_determined" else { return (status, false) }
+        _ = await AsyncTimeout.run(timeout: locationPromptWaitTimeout, requester)
+        return (await currentStatus(), true)
+    }
+
+    private static let defaultLocationRequester: @Sendable () async -> Void = {
+        #if canImport(CoreLocation)
+        _ = await LocationAuthorizer().requestAndWaitForChange(keepAlive: locationPromptKeepAlive)
+        #endif
     }
 
     /// Scan for visible Wi-Fi networks. v0.6.0 A5: switched from the
@@ -275,14 +379,43 @@ actor HardwareController {
     /// CoreWLAN works on macOS 10.6+, no private entitlement needed for
     /// basic scan. Some managed-fleet devices have scan blocked; in
     /// that case CoreWLAN returns an empty set and we surface a hint.
-    func wifiScan() -> WifiScanResult {
+    ///
+    /// v0.8.4: macOS 14+ returns `ssid == nil` for EVERY network unless
+    /// Location Services authorization is granted to the responsible
+    /// process — CoreWLAN never surfaces this as an error. The old code
+    /// mapped nil straight to "(hidden)", making every network
+    /// indistinguishable from a genuinely hidden one. We now request
+    /// Location (bounded, only if undecided) before scanning and use the
+    /// *actual* per-app status — not a network-count heuristic — to decide
+    /// whether a nil SSID means "redacted" or "hidden".
+    func wifiScan() async -> WifiScanResult {
         #if canImport(CoreWLAN)
         guard let client = CWWiFiClient.shared().interface() else {
+            let status = await ToolRegistry.locationPermissionStatusStringMainActor()
             return WifiScanResult(
                 ok: false, networks: [],
-                hint: "no Wi-Fi interface available via CoreWLAN (adapter disabled?)"
+                hint: "no Wi-Fi interface available via CoreWLAN (adapter disabled?)",
+                ssidsRedacted: false,
+                locationStatus: status,
+                locationPromptRequested: false
             )
         }
+
+        let (locationStatus, promptRequested) = await Self.ensureLocationAuthorizationRequested()
+        let granted = ToolRegistry.isGrantedPermissionStatus(locationStatus)
+
+        // When we just fired the request and it's still undecided, don't
+        // pretend we know it's a bare-redaction case (grantHint assumes a
+        // settled "not granted" state) — tell the caller a prompt may be
+        // on screen right now.
+        func hintForRedaction() -> String {
+            if promptRequested && locationStatus == "not_determined" {
+                let target = PermissionContext.current.permissionTarget.name
+                return "answer the Location prompt for '\(target)' then call wifi_scan again; if no prompt appears, enable it via open_permission_pane pane=location."
+            }
+            return PermissionContext.grantHint(paneTitle: "Location Services")
+        }
+
         do {
             let scan = try client.scanForNetworks(withName: nil)
             let nets = scan.map { network -> WifiScanResult.Network in
@@ -303,44 +436,47 @@ actor HardwareController {
                 } else {
                     security = nil
                 }
+                let (ssid, hidden) = Self.classifyNetworkSSID(granted: granted, rawSSID: network.ssid)
                 return WifiScanResult.Network(
-                    ssid: network.ssid ?? "(hidden)",
+                    ssid: ssid,
                     rssi: rssi,
                     channel: channel,
-                    security: security
+                    security: security,
+                    hidden: hidden
                 )
             }
             if nets.isEmpty {
                 return WifiScanResult(
                     ok: false, networks: [],
-                    hint: "CoreWLAN scan returned empty — adapter may be blocked by MDM policy, or no networks visible"
+                    hint: "CoreWLAN scan returned empty — adapter may be blocked by MDM policy, or no networks visible",
+                    ssidsRedacted: !granted,
+                    locationStatus: locationStatus,
+                    locationPromptRequested: promptRequested
                 )
             }
-            // v0.7.1 fix (BUG 1): macOS 14+ hides SSIDs unless Location
-            // Services is granted to the calling process. If CoreWLAN
-            // returns a full network list but EVERY ssid is nil, that is
-            // always this TCC case — not "17 access points all hidden".
-            // Return the network list for channel/RSSI/security visibility
-            // but flag the TCC issue loud and clear.
-            let anyNamed = nets.contains(where: { $0.ssid != "(hidden)" })
-            if !anyNamed && nets.count >= 3 {
-                return WifiScanResult(
-                    ok: true,
-                    networks: nets,
-                    hint: "Found \(nets.count) networks but all SSIDs are hidden — mac-control-mcp needs Location Services permission to read SSIDs. Grant in System Settings → Privacy & Security → Location Services and restart the MCP server."
-                )
-            }
-            return WifiScanResult(ok: true, networks: nets, hint: nil)
+            let hint: String? = granted ? nil : hintForRedaction()
+            return WifiScanResult(
+                ok: true, networks: nets, hint: hint,
+                ssidsRedacted: !granted,
+                locationStatus: locationStatus,
+                locationPromptRequested: promptRequested
+            )
         } catch {
             return WifiScanResult(
                 ok: false, networks: [],
-                hint: "CoreWLAN scan failed: \(error.localizedDescription)"
+                hint: "CoreWLAN scan failed: \(error.localizedDescription)",
+                ssidsRedacted: !granted,
+                locationStatus: locationStatus,
+                locationPromptRequested: promptRequested
             )
         }
         #else
         return WifiScanResult(
             ok: false, networks: [],
-            hint: "CoreWLAN not available on this platform build"
+            hint: "CoreWLAN not available on this platform build",
+            ssidsRedacted: false,
+            locationStatus: "unknown",
+            locationPromptRequested: false
         )
         #endif
     }

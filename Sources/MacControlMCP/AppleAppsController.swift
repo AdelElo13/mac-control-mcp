@@ -30,6 +30,9 @@ actor AppleAppsController {
         public let ok: Bool
         public let data: T?
         public let error: String?
+        /// v0.8.3: structured error fields (error_code, pane, reason, …)
+        /// merged into the tool's error payload. nil for plain errors.
+        public var errorPayload: [String: JSONValue]? = nil
     }
 
     // v0.8.0: lazy EKEventStore for calendar/reminders access.
@@ -262,19 +265,26 @@ actor AppleAppsController {
         // "denied" message sent users on a wild goose chase when they
         // had actually granted write-only access in an earlier session.
         let access = await requestCalendarAccess()
-        guard access.granted else {
-            let message: String
-            switch access.status {
-            case "writeOnly":
-                message = "Calendar access is write-only. listCalendarEvents needs FULL access to read events. In System Settings → Privacy & Security → Calendars, toggle mac-control-mcp to 'Full Access' (not 'Add Events Only'), then restart the MCP server."
-            case "denied", "denied_after_prompt":
-                message = "Calendar access denied. Grant in System Settings → Privacy & Security → Calendars (enable mac-control-mcp), then restart the MCP server."
-            case "restricted":
-                message = "Calendar access restricted by MDM / parental controls. An administrator must unblock Calendar access for this user account."
-            default:
-                message = "Calendar access not available (status=\(access.status)). Grant in System Settings → Privacy & Security → Calendars."
+        guard access.outcome == .granted else {
+            if access.status == "write_only" {
+                let message = "Calendar access is write-only. calendar_list_events needs FULL access to read events. In System Settings → Privacy & Security → Calendars, set '\(PermissionContext.current.permissionTarget.name)' to 'Full Access' (not 'Add Events Only'), then restart the MCP client."
+                return Result(ok: false, data: nil, error: message, errorPayload: [
+                    "error_code": .string("permission_missing"),
+                    "reason": .string("write_only"),
+                    "status": .string(access.status),
+                    "pane": .string("calendar")
+                ])
             }
-            return Result(ok: false, data: nil, error: message)
+            // v0.8.3: "denied" used to cover both a user refusal and macOS
+            // refusing without ever prompting (status still not_determined).
+            let failure = PermissionContext.permissionError(
+                service: "Calendar",
+                pane: "calendar",
+                entitlement: "com.apple.security.personal-information.calendars",
+                outcome: access.outcome,
+                statusAfter: access.status
+            )
+            return Result(ok: false, data: nil, error: failure.message, errorPayload: failure.payload)
         }
 
         let start = Date()
@@ -318,26 +328,32 @@ actor AppleAppsController {
     /// only for write scope, and the upgrade-to-full request in a
     /// background MCP process never shows the UI. We now surface the
     /// exact state so listCalendarEvents can tell the user what to do.
-    private func requestCalendarAccess() async -> (granted: Bool, status: String) {
-        if #available(macOS 14.0, *) {
-            let status = EKEventStore.authorizationStatus(for: .event)
-            if status == .fullAccess { return (true, "fullAccess") }
-            if status == .denied { return (false, "denied") }
-            if status == .restricted { return (false, "restricted") }
-            if status == .writeOnly { return (false, "writeOnly") }
-
-            // Slow path: show prompt / wait for user decision.
-            let eventStoreRef = eventStore
-            let granted: Bool = await withCheckedContinuation { continuation in
-                eventStoreRef.requestFullAccessToEvents { granted, _ in
-                    continuation.resume(returning: granted)
-                }
-            }
-            return (granted, granted ? "fullAccess" : "denied_after_prompt")
-        } else {
-            return (false, "macos_pre_14")
+    ///
+    /// v0.8.3: the request result is classified against the status read
+    /// AFTER the request. `false` with status still `not_determined` means
+    /// macOS refused without prompting (missing entitlement / responsible app
+    /// can't prompt) — previously reported as a user denial. The wait is
+    /// bounded: an unanswered prompt no longer holds the call forever.
+    private func requestCalendarAccess() async -> (outcome: PermissionContext.AuthOutcome, status: String) {
+        let before = ToolRegistry.calendarPermissionStatusString()
+        switch before {
+        case "granted": return (.granted, before)
+        case "denied": return (.deniedByUser, before)
+        case "write_only": return (.writeOnly, before)
+        case "restricted": return (.restricted, before)
+        case "info_plist_missing": return (.deniedWithoutPrompt, before)
+        default: break
         }
+        let store = eventStore
+        let granted: Bool? = await PermissionContext.awaitCallback(timeout: Self.permissionPromptTimeout) { done in
+            store.requestFullAccessToEvents { granted, _ in done(granted) }
+        }
+        let after = ToolRegistry.calendarPermissionStatusString()
+        return (PermissionContext.classify(granted: granted, statusAfter: after), after)
     }
+
+    /// Upper bound for waiting on a TCC prompt answer inside one tool call.
+    static let permissionPromptTimeout: TimeInterval = 45
     #endif
 
     private func parseISO(_ s: String) -> Date? {
@@ -354,6 +370,29 @@ actor AppleAppsController {
         public let title: String
         public let dueISO: String?
         public let list: String?
+    }
+
+    /// v0.9 review fix (A-7): sending Apple Events to Reminders.app is
+    /// gated by the **Automation** TCC bucket, not by EventKit's
+    /// `kTCCServiceReminders` — those are independently toggled. An
+    /// earlier version of this fix pre-blocked `createReminder`/
+    /// `listReminders` on `remindersPermissionStatusString()`, which
+    /// wrongly refused a user who had granted Automation but never
+    /// touched EventKit reminders (still `not_determined`/`denied`
+    /// there) even though the AppleScript call would have worked fine.
+    /// So: never pre-block. Run the script, and classify whatever it
+    /// actually failed with via `AppleScriptErrorClassifier` — the same
+    /// approach `BrowserErrorClassifier` uses for browser AppleScript
+    /// calls. `ok:true, reminders:[]` is only ever returned after the
+    /// script itself succeeded.
+    private func classifiedFailure<T: Codable & Sendable>(stderr: String) -> Result<T> {
+        let trimmed = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        let c = AppleScriptErrorClassifier.classify(stderr: trimmed, appName: "Reminders")
+        return Result(ok: false, data: nil, error: trimmed.isEmpty ? c.error : trimmed, errorPayload: [
+            "error_code": .string(c.errorCode),
+            "pane": c.pane.map(JSONValue.string) ?? .null,
+            "hint": c.hint.map(JSONValue.string) ?? .null
+        ])
     }
 
     /// Create a reminder in Reminders.app. Optional `due` and `list`.
@@ -378,8 +417,7 @@ actor AppleAppsController {
         """
         let r = OsascriptRunner.run(script)
         guard r.ok else {
-            return Result(ok: false, data: nil,
-                          error: r.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+            return classifiedFailure(stderr: r.stderr)
         }
         return Result(ok: true, data: Reminder(title: title, dueISO: dueISO, list: list), error: nil)
     }
@@ -390,9 +428,19 @@ actor AppleAppsController {
         public let list: String
     }
 
+    /// v0.9 (A-7): carries the list names alongside the (possibly
+    /// filtered/capped) reminders, so callers can tell "no reminders
+    /// anywhere" (`lists` non-empty, `reminders` empty) apart from
+    /// "no lists at all" — both of which used to render as the same
+    /// bare `reminders:[]`.
+    public struct ReminderListResult: Codable, Sendable {
+        public let reminders: [ReminderSummary]
+        public let lists: [String]
+    }
+
     /// List reminders across all lists. Optional `includeCompleted` — default
     /// false so agents see only actionable items.
-    func listReminders(includeCompleted: Bool, limit: Int) -> Result<[ReminderSummary]> {
+    func listReminders(includeCompleted: Bool, limit: Int) -> Result<ReminderListResult> {
         let cap = max(1, min(limit, 200))
         let filter = includeCompleted ? "" : "whose completed is false"
         // `total` caps globally — the old `if n > cap` capped per list, so a
@@ -403,8 +451,12 @@ actor AppleAppsController {
         let script = """
         tell application "Reminders"
             set out to {}
-            set total to 0
+            set names to {}
             set ls to lists
+            repeat with l in ls
+                set end of names to (name of l as string)
+            end repeat
+            set total to 0
             repeat with l in ls
                 if total ≥ \(cap) then exit repeat
                 try
@@ -421,16 +473,23 @@ actor AppleAppsController {
             end repeat
             set AppleScript's text item delimiters to "§§REC§§"
             set outStr to out as string
+            set namesStr to names as string
             set AppleScript's text item delimiters to ""
-            return outStr
+            return namesStr & "§§LISTS_END§§" & outStr
         end tell
         """
         let r = OsascriptRunner.run(script)
         guard r.ok else {
-            return Result(ok: false, data: nil,
-                          error: r.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+            return classifiedFailure(stderr: r.stderr)
         }
-        let lines = r.stdout
+        let sections = r.stdout.components(separatedBy: "§§LISTS_END§§")
+        let namesSection = sections.first ?? ""
+        let recordsSection = sections.count > 1 ? sections[1] : ""
+        let listNames = namesSection
+            .components(separatedBy: "§§REC§§")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        let lines = recordsSection
             .components(separatedBy: "§§REC§§")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
@@ -443,7 +502,11 @@ actor AppleAppsController {
                 list: parts[0]
             )
         }
-        return Result(ok: true, data: reminders, error: nil)
+        return Result(
+            ok: true,
+            data: ReminderListResult(reminders: reminders, lists: listNames),
+            error: nil
+        )
     }
 
     // MARK: - Contacts
@@ -454,12 +517,52 @@ actor AppleAppsController {
         public let emails: [String]
     }
 
+    #if canImport(Contacts)
+    /// v0.8.3: request access explicitly and classify the outcome. v0.8.2
+    /// went straight to `unifiedContacts`, whose implicit TCC check turned
+    /// `not_determined` into `denied` within one call and never surfaced a
+    /// prompt when the responsible app couldn't show one. Returns nil when
+    /// access is available.
+    private func ensureContactsAccess(_ store: CNContactStore) async -> Result<[Contact]>? {
+        var status = ToolRegistry.contactsPermissionStatusString()
+        let outcome: PermissionContext.AuthOutcome
+        switch status {
+        case "granted", "limited":
+            return nil
+        case "denied":
+            outcome = .deniedByUser
+        case "restricted":
+            outcome = .restricted
+        case "info_plist_missing":
+            outcome = .deniedWithoutPrompt
+        default:
+            let granted: Bool? = await PermissionContext.awaitCallback(timeout: Self.permissionPromptTimeout) { done in
+                store.requestAccess(for: .contacts) { granted, _ in done(granted) }
+            }
+            status = ToolRegistry.contactsPermissionStatusString()
+            outcome = PermissionContext.classify(granted: granted, statusAfter: status)
+            if outcome == .granted { return nil }
+        }
+        let failure = PermissionContext.permissionError(
+            service: "Contacts",
+            pane: "contacts",
+            entitlement: "com.apple.security.personal-information.addressbook",
+            outcome: outcome,
+            statusAfter: status
+        )
+        return Result(ok: false, data: nil, error: failure.message, errorPayload: failure.payload)
+    }
+    #endif
+
     /// Search contacts by name substring via CNContactStore — works whether or
     /// not Contacts.app is running (no AppleScript / no -600 error).
-    func searchContacts(query: String, limit: Int) -> Result<[Contact]> {
+    func searchContacts(query: String, limit: Int) async -> Result<[Contact]> {
         #if canImport(Contacts)
         let cap = max(1, min(limit, 50))
         let store = CNContactStore()
+        if let refused = await ensureContactsAccess(store) {
+            return refused
+        }
         let keys: [CNKeyDescriptor] = [
             CNContactGivenNameKey as CNKeyDescriptor,
             CNContactFamilyNameKey as CNKeyDescriptor,

@@ -159,9 +159,9 @@ actor AccessibilityController {
         var output: [ElementInfo] = []
         let deadline = Date().addingTimeInterval(5.0)
 
-        _ = walk(element: root, depth: 0, maxDepth: max(1, maxDepth), visited: &visited, deadline: deadline) { element, depth, role in
-            guard self.actionableRoles.contains(role) else { return false }
-            output.append(self.buildElementInfo(element: element, depth: depth, cachedRole: role))
+        _ = walk(element: root, depth: 0, maxDepth: max(1, maxDepth), visited: &visited, deadline: deadline) { _, depth, attrs in
+            guard self.actionableRoles.contains(attrs.role ?? "AXUnknown") else { return false }
+            output.append(Self.elementInfo(from: attrs, depth: depth))
             return false
         }
 
@@ -190,27 +190,47 @@ actor AccessibilityController {
             // the pointer address is wrong here.
             guard visited.insert(AXKey(element: element)).inserted else { return false }
 
-            let currentRole = stringAttribute(of: element, attribute: kAXRoleAttribute as CFString) ?? "AXUnknown"
+            // One batched IPC round trip per node (AXAttributeBatch).
+            let attrs = AXAttributeBatch.fetch(element, includeChildren: true)
+            let currentRole = attrs.role ?? "AXUnknown"
             let roleMatches: Bool = {
                 guard let role, !role.isEmpty else { return true }
                 return currentRole.range(of: role, options: [.caseInsensitive]) != nil
             }()
             let titleMatches: Bool = {
                 guard let title, !title.isEmpty else { return true }
-                let candidate = self.title(for: element) ?? self.stringAttribute(of: element, attribute: kAXValueAttribute as CFString)
+                let candidate = attrs.title ?? attrs.value
                 return candidate?.range(of: title, options: [.caseInsensitive]) != nil
             }()
             if roleMatches && titleMatches {
                 match = element
                 return true
             }
-            for child in childElements(of: element) {
+            for child in attrs.children {
                 if recurse(element: child, depth: depth + 1) { return true }
             }
             return false
         }
         _ = recurse(element: root, depth: 0)
         return match
+    }
+
+    /// Outcome of attempting to press an element via the AX-native
+    /// `AXPress` action, WITHOUT ever falling back to a coordinate
+    /// CGEvent click. Split out from the old single-`Bool` `clickElement`
+    /// (input-focus-guard follow-up) so callers can apply the focus guard
+    /// only to the coordinate-fallback path — `AXPress` acts on the
+    /// element handle directly and does not depend on which app is
+    /// frontmost, so it needs no guard.
+    enum AXPressOutcome: Sendable, Equatable {
+        /// AXPress succeeded — nothing else to do.
+        case succeeded
+        /// AXEnabled=false — short-circuited before ever attempting
+        /// AXPress or a coordinate click (bug #3, see below).
+        case disabled
+        /// AXPress is unsupported/failed on this element. The caller may
+        /// fall back to a coordinate click via `clickElementCoordinateFallback`.
+        case unsupported
     }
 
     // BUG-FIX v0.2.6 #3 (AXEnabled): previously clickElement forwarded
@@ -221,15 +241,23 @@ actor AccessibilityController {
     // available for AX-press-unsupported controls (bug #5) but the
     // disabled check is evaluated first — a disabled control shouldn't
     // silently turn into a coord click either.
-    func clickElement(element: AXUIElement) -> Bool {
+    func pressElementViaAX(element: AXUIElement) -> AXPressOutcome {
         if let enabled = stringAttribute(of: element, attribute: "AXEnabled" as CFString),
            enabled == "0" || enabled.lowercased() == "false" {
-            return false
+            return .disabled
         }
         if AXUIElementPerformAction(element, kAXPressAction as CFString) == .success {
-            return true
+            return .succeeded
         }
+        return .unsupported
+    }
 
+    /// Coordinate-click fallback for elements where `AXPress` is
+    /// unsupported (bug #5). THIS is the synthetic-CGEvent path that
+    /// depends on which app is frontmost — callers must apply the
+    /// input-focus guard immediately before calling this, not before
+    /// `pressElementViaAX`.
+    func clickElementCoordinateFallback(element: AXUIElement) -> Bool {
         guard
             let position = pointAttribute(of: element, attribute: kAXPositionAttribute as CFString),
             let size = sizeAttribute(of: element, attribute: kAXSizeAttribute as CFString)
@@ -447,7 +475,7 @@ actor AccessibilityController {
     /// Walks the AX tree for an app and returns every node (including
     /// non-actionable containers) up to `maxDepth`. Each node's `childIndices`
     /// points into the returned array so the tree can be reconstructed.
-    func treeWalk(pid: pid_t, maxDepth: Int) -> [TreeNode] {
+    func treeWalk(pid: pid_t, maxDepth: Int, nodeCap: Int = 5000) -> [TreeNode] {
         enableManualAccessibility(pid: pid)
         let root = AXUIElementCreateApplication(pid)
         var visited = Set<AXKey>()
@@ -458,7 +486,6 @@ actor AccessibilityController {
         // hangs until it disconnects. Matches the 5 s / 5000-node budget
         // used elsewhere in this controller.
         let deadline = Date().addingTimeInterval(5.0)
-        let nodeCap = 5000
 
         func recurse(element: AXUIElement, depth: Int) -> Int {
             guard Date() < deadline, nodes.count < nodeCap else { return -1 }
@@ -468,25 +495,27 @@ actor AccessibilityController {
             guard visited.insert(key).inserted else { return -1 }
 
             let placeholderIndex = nodes.count
+            // Leaves at max depth don't need their child lists — skip
+            // copying them (a big container's AXChildren is not free).
+            let descend = depth < max(1, maxDepth)
+            let attrs = AXAttributeBatch.fetch(element, includeChildren: descend)
             nodes.append(
                 TreeNode(
                     element: element,
-                    role: stringAttribute(of: element, attribute: kAXRoleAttribute as CFString),
-                    title: title(for: element),
-                    value: stringAttribute(of: element, attribute: kAXValueAttribute as CFString),
-                    position: pointAttribute(of: element, attribute: kAXPositionAttribute as CFString)
-                        .map { Point(x: Double($0.x), y: Double($0.y)) },
-                    size: sizeAttribute(of: element, attribute: kAXSizeAttribute as CFString)
-                        .map { Size(width: Double($0.width), height: Double($0.height)) },
+                    role: attrs.role,
+                    title: attrs.title,
+                    value: attrs.value,
+                    position: attrs.position.map { Point(x: Double($0.x), y: Double($0.y)) },
+                    size: attrs.size.map { Size(width: Double($0.width), height: Double($0.height)) },
                     depth: depth,
                     childIndices: []
                 )
             )
 
-            guard depth < max(1, maxDepth) else { return placeholderIndex }
+            guard descend else { return placeholderIndex }
 
             var childIndices: [Int] = []
-            for child in childElements(of: element) {
+            for child in attrs.children {
                 if Date() >= deadline || nodes.count >= nodeCap { break }
                 let idx = recurse(element: child, depth: depth + 1)
                 if idx >= 0 { childIndices.append(idx) }
@@ -544,13 +573,13 @@ actor AccessibilityController {
             // AXKey wraps CFHash + CFEqual — see its definition.
             guard visited.insert(AXKey(element: element)).inserted else { return }
 
-            let currentRole = stringAttribute(of: element, attribute: kAXRoleAttribute as CFString) ?? "AXUnknown"
-            if matchesFilter(element: element, currentRole: currentRole, role: role, title: title, value: value) {
-                matches.append((element, buildElementInfo(element: element, depth: depth, cachedRole: currentRole)))
+            let attrs = AXAttributeBatch.fetch(element, includeChildren: true)
+            if Self.matchesFilter(attrs: attrs, role: role, title: title, value: value) {
+                matches.append((element, Self.elementInfo(from: attrs, depth: depth)))
                 if matches.count >= limit { return }
             }
 
-            for child in childElements(of: element) {
+            for child in attrs.children {
                 recurse(element: child, depth: depth + 1)
                 if matches.count >= limit { return }
             }
@@ -560,8 +589,31 @@ actor AccessibilityController {
         return matches
     }
 
+    /// v0.9 (A-13): which of `role_regex`/`title_regex`/`value_regex` was
+    /// not a valid regex, and why. Non-empty when at least one pattern
+    /// silently fell back to case-insensitive substring matching —
+    /// previously that fallback was invisible, so a typo'd/unclosed
+    /// pattern and a genuine no-match both came back as plain
+    /// `{ok:true, count:0}`.
+    struct InvalidPattern: Sendable {
+        let field: String
+        let pattern: String
+        let error: String
+    }
+
+    private static func compileRegex(_ pattern: String?, field: String, invalid: inout [InvalidPattern]) -> NSRegularExpression? {
+        guard let pattern, !pattern.isEmpty else { return nil }
+        do {
+            return try NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+        } catch {
+            invalid.append(InvalidPattern(field: field, pattern: pattern, error: error.localizedDescription))
+            return nil
+        }
+    }
+
     /// Regex-aware search. Matches on role/title/value with case-insensitive
-    /// regex semantics. Invalid regex falls back to literal substring.
+    /// regex semantics. Invalid regex falls back to literal substring —
+    /// `invalidPatterns` in the result says exactly when that happened.
     func queryElements(
         pid: pid_t,
         rolePattern: String?,
@@ -569,10 +621,11 @@ actor AccessibilityController {
         valuePattern: String?,
         maxDepth: Int = 32,
         limit: Int = 200
-    ) -> [(AXUIElement, ElementInfo)] {
-        let roleRegex = rolePattern.flatMap { try? NSRegularExpression(pattern: $0, options: .caseInsensitive) }
-        let titleRegex = titlePattern.flatMap { try? NSRegularExpression(pattern: $0, options: .caseInsensitive) }
-        let valueRegex = valuePattern.flatMap { try? NSRegularExpression(pattern: $0, options: .caseInsensitive) }
+    ) -> (matches: [(AXUIElement, ElementInfo)], invalidPatterns: [InvalidPattern]) {
+        var invalidPatterns: [InvalidPattern] = []
+        let roleRegex = Self.compileRegex(rolePattern, field: "role_regex", invalid: &invalidPatterns)
+        let titleRegex = Self.compileRegex(titlePattern, field: "title_regex", invalid: &invalidPatterns)
+        let valueRegex = Self.compileRegex(valuePattern, field: "value_regex", invalid: &invalidPatterns)
 
         // Inline recurse for the same reason documented in findElements:
         // the private `walk(...)` helper's inout-visited-set + capturing-
@@ -598,25 +651,24 @@ actor AccessibilityController {
             let key = AXKey(element: element)
             guard visited.insert(key).inserted else { return }
 
-            let currentRole = stringAttribute(of: element, attribute: kAXRoleAttribute as CFString) ?? "AXUnknown"
+            let attrs = AXAttributeBatch.fetch(element, includeChildren: true)
+            let currentRole = attrs.role ?? "AXUnknown"
             let roleOk = Self.matches(regex: roleRegex, literal: rolePattern, candidate: currentRole)
-            let titleCandidate = title(for: element) ?? ""
-            let titleOk = Self.matches(regex: titleRegex, literal: titlePattern, candidate: titleCandidate)
-            let valueCandidate = stringAttribute(of: element, attribute: kAXValueAttribute as CFString) ?? ""
-            let valueOk = Self.matches(regex: valueRegex, literal: valuePattern, candidate: valueCandidate)
+            let titleOk = Self.matches(regex: titleRegex, literal: titlePattern, candidate: attrs.title ?? "")
+            let valueOk = Self.matches(regex: valueRegex, literal: valuePattern, candidate: attrs.value ?? "")
             if roleOk && titleOk && valueOk {
-                matches.append((element, buildElementInfo(element: element, depth: depth, cachedRole: currentRole)))
+                matches.append((element, Self.elementInfo(from: attrs, depth: depth)))
                 if matches.count >= limit { return }
             }
 
-            for child in childElements(of: element) {
+            for child in attrs.children {
                 recurse(element: child, depth: depth + 1)
                 if matches.count >= limit { return }
             }
         }
 
         recurse(element: root, depth: 0)
-        return matches
+        return (matches, invalidPatterns)
     }
 
     /// List every AX attribute name exposed by this element.
@@ -848,25 +900,36 @@ actor AccessibilityController {
 
     // MARK: - helpers for v0.2.0
 
-    private func matchesFilter(
-        element: AXUIElement,
-        currentRole: String,
+    static func matchesFilter(
+        attrs: AXAttributeBatch.Values,
         role: String?,
         title: String?,
         value: String?
     ) -> Bool {
+        let currentRole = attrs.role ?? "AXUnknown"
         if let role, !role.isEmpty, currentRole.range(of: role, options: [.caseInsensitive]) == nil {
             return false
         }
         if let title, !title.isEmpty {
-            let candidate = self.title(for: element) ?? ""
+            let candidate = attrs.title ?? ""
             if candidate.range(of: title, options: [.caseInsensitive]) == nil { return false }
         }
         if let value, !value.isEmpty {
-            let candidate = stringAttribute(of: element, attribute: kAXValueAttribute as CFString) ?? ""
+            let candidate = attrs.value ?? ""
             if candidate.range(of: value, options: [.caseInsensitive]) == nil { return false }
         }
         return true
+    }
+
+    static func elementInfo(from attrs: AXAttributeBatch.Values, depth: Int?) -> ElementInfo {
+        ElementInfo(
+            role: attrs.role,
+            title: attrs.title,
+            value: attrs.value,
+            position: attrs.position.map { Point(x: Double($0.x), y: Double($0.y)) },
+            size: attrs.size.map { Size(width: Double($0.width), height: Double($0.height)) },
+            depth: depth
+        )
     }
 
     private static func matches(regex: NSRegularExpression?, literal: String?, candidate: String) -> Bool {
@@ -908,25 +971,14 @@ actor AccessibilityController {
     }
 
     private func buildElementInfo(element: AXUIElement, depth: Int?, cachedRole: String?) -> ElementInfo {
-        let role = cachedRole ?? stringAttribute(of: element, attribute: kAXRoleAttribute as CFString)
-        let title = title(for: element)
-        let value = stringAttribute(of: element, attribute: kAXValueAttribute as CFString)
-
-        let position = pointAttribute(of: element, attribute: kAXPositionAttribute as CFString).map { point in
-            Point(x: Double(point.x), y: Double(point.y))
-        }
-
-        let size = sizeAttribute(of: element, attribute: kAXSizeAttribute as CFString).map { size in
-            Size(width: Double(size.width), height: Double(size.height))
-        }
-
-        return ElementInfo(
-            role: role,
-            title: title,
-            value: value,
-            position: position,
-            size: size,
+        let info = Self.elementInfo(
+            from: AXAttributeBatch.fetch(element, includeChildren: false),
             depth: depth
+        )
+        guard let cachedRole else { return info }
+        return ElementInfo(
+            role: cachedRole, title: info.title, value: info.value,
+            position: info.position, size: info.size, depth: info.depth
         )
     }
 
@@ -943,7 +995,7 @@ actor AccessibilityController {
         visited: inout Set<AXKey>,
         deadline: Date,
         nodeCap: Int = 5000,
-        visitor: (AXUIElement, Int, String) -> Bool
+        visitor: (AXUIElement, Int, AXAttributeBatch.Values) -> Bool
     ) -> Bool {
         guard depth <= maxDepth else { return false }
         // Wall-clock + node-count budget. Each AX attribute read is an IPC
@@ -954,12 +1006,12 @@ actor AccessibilityController {
 
         guard visited.insert(AXKey(element: element)).inserted else { return false }
 
-        let role = stringAttribute(of: element, attribute: kAXRoleAttribute as CFString) ?? "AXUnknown"
-        if visitor(element, depth, role) {
+        let attrs = AXAttributeBatch.fetch(element, includeChildren: depth < maxDepth)
+        if visitor(element, depth, attrs) {
             return true
         }
 
-        for child in childElements(of: element) {
+        for child in attrs.children {
             if walk(element: child, depth: depth + 1, maxDepth: maxDepth, visited: &visited, deadline: deadline, nodeCap: nodeCap, visitor: visitor) {
                 return true
             }

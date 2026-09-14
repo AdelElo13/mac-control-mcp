@@ -135,7 +135,7 @@ final class ToolRegistry: @unchecked Sendable {
         // — if the caller didn't pass one, construct with the defaults so the
         // registry is self-consistent.
         self.grounding = grounding ?? GroundingController(
-            accessibility: accessibility, screen: screen
+            accessibility: accessibility, screen: screen, elementCache: elementCache
         )
         self.voice = voice
         self.browserDOM = browserDOM ?? BrowserDOMController(browser: browser)
@@ -154,7 +154,10 @@ final class ToolRegistry: @unchecked Sendable {
     // MARK: - Tool dispatch
     //
     // MAINTAINABILITY NOTE (Codex v1 LOW):
-    // This single switch statement now dispatches 63 tools. Splitting it
+    // This single switch statement now dispatches every tool in
+    // `toolDefinitions` (see docs/TOOLS.md for the current count — this
+    // comment intentionally doesn't hardcode a number that would drift).
+    // Splitting it
     // into a `[String: @Sendable (Arguments) -> ToolCallResult]` table per
     // phase file would reduce surface area and make tool registration
     // self-contained. The split is intentionally deferred until we add
@@ -287,7 +290,7 @@ final class ToolRegistry: @unchecked Sendable {
         case "move_window_to_display":
             return await callMoveWindowToDisplay(arguments)
         case "request_permissions":
-            return await callRequestPermissions()
+            return await callRequestPermissions(arguments)
         case "scroll_to_element":
             return await callScrollToElement(arguments)
         case "force_quit_app":
@@ -461,8 +464,6 @@ final class ToolRegistry: @unchecked Sendable {
             return await callBrowserVisibleText(arguments)
         case "browser_iframes":
             return await callBrowserIframes(arguments)
-        case "foundation_models_generate":
-            return await callFoundationModelsGenerate(arguments)
         case "list_app_intents":
             return await callListAppIntents()
         case "invoke_app_intent":
@@ -476,6 +477,7 @@ final class ToolRegistry: @unchecked Sendable {
         guard let pid = parsePID(arguments["pid"]) else {
             return invalidArgument("list_elements requires a positive integer pid.")
         }
+        if let dead = noSuchProcessResult(pid: pid, tool: "list_elements") { return dead }
 
         let maxDepth = max(1, min(arguments["max_depth"]?.intValue ?? 8, 32))
         let elements = await accessibility.listElements(pid: pid, maxDepth: maxDepth)
@@ -497,6 +499,7 @@ final class ToolRegistry: @unchecked Sendable {
         guard let pid = parsePID(arguments["pid"]) else {
             return invalidArgument("find_element requires a positive integer pid.")
         }
+        if let dead = noSuchProcessResult(pid: pid, tool: "find_element") { return dead }
 
         let role = arguments["role"]?.stringValue
         let title = arguments["title"]?.stringValue
@@ -565,6 +568,12 @@ final class ToolRegistry: @unchecked Sendable {
         let pid = parsePID(arguments["pid"])
 
         if let x = arguments["x"]?.doubleValue, let y = arguments["y"]?.doubleValue {
+            // Coordinate clicks are ALWAYS a synthetic CGEvent delivered to
+            // whatever app is frontmost — guard right before injecting.
+            if let mismatch = await checkFocusGuard(arguments) {
+                return mismatch
+            }
+
             let success = await accessibility.click(at: CGPoint(x: CGFloat(x), y: CGFloat(y)))
             var payload: [String: JSONValue] = [
                 "x": .number(x),
@@ -613,7 +622,25 @@ final class ToolRegistry: @unchecked Sendable {
             )
         }
 
-        let success = await accessibility.clickElement(element: element)
+        // AXPress acts on the element handle directly — it does not depend
+        // on which app is frontmost, so it needs no focus guard. Only the
+        // coordinate-click fallback (bug #5, when AXPress is unsupported)
+        // is a synthetic CGEvent that depends on focus; the guard is
+        // applied right before that fallback fires, not before AXPress.
+        let axOutcome = await accessibility.pressElementViaAX(element: element)
+        let success: Bool
+        switch axOutcome {
+        case .succeeded:
+            success = true
+        case .disabled:
+            success = false
+        case .unsupported:
+            if let mismatch = await checkFocusGuard(arguments) {
+                return mismatch
+            }
+            success = await accessibility.clickElementCoordinateFallback(element: element)
+        }
+
         if success {
             return successResult(
                 "Element clicked.",
@@ -651,6 +678,17 @@ final class ToolRegistry: @unchecked Sendable {
             return invalidArgument(
                 "type_text strategy must be one of: auto, clipboard, keys, ax (got '\(strategyArg ?? "")')."
             )
+        }
+
+        // `.ax` (explicit AX set_value) acts on the currently-focused
+        // element's attribute directly and posts no CGEvent, so it does
+        // not depend on which app is frontmost — skip the guard for it,
+        // same reasoning as AXPress in `callClick`. `.auto` / `.clipboard`
+        // / `.keys` all attempt a synthetic event first (clipboard paste
+        // or CGEvent unicode) even though `.auto` may itself fall back to
+        // `.ax` internally, so they're guarded conservatively.
+        if strategy != .ax, let mismatch = await checkFocusGuard(arguments) {
+            return mismatch
         }
 
         let result = await accessibility.typeText(text: text, strategy: strategy)
@@ -740,6 +778,10 @@ final class ToolRegistry: @unchecked Sendable {
         case .failure(let error):
             return invalidArgument(error.description)
         case .success(let modifiers):
+            if let mismatch = await checkFocusGuard(arguments) {
+                return mismatch
+            }
+
             let pressed = await accessibility.pressKey(keyCode: keyCode, modifiers: modifiers)
             if pressed {
                 return successResult(
@@ -799,6 +841,35 @@ final class ToolRegistry: @unchecked Sendable {
         return pid_t(integer)
     }
 
+    /// v0.9 (A-8): `find_element`/`find_elements`/`get_ui_tree`/
+    /// `list_elements` used to send a pid that belongs to no running
+    /// process straight into the AX walk, which came back with the same
+    /// "app exposes no AX children or windows" hint a genuinely
+    /// AX-headless *running* app gets — indistinguishable from a plain
+    /// typo/stale pid. `kill(pid, 0)` sends no signal, just probes
+    /// whether the process exists (ESRCH => it doesn't); it works for
+    /// any process, not only ones NSRunningApplication tracks (GUI apps
+    /// registered with the WindowServer).
+    func isRunningProcess(_ pid: pid_t) -> Bool {
+        if kill(pid, 0) == 0 { return true }
+        return errno != ESRCH
+    }
+
+    /// Structured `error_code: no_such_process` payload for the AX-tool
+    /// family above. `nil` when the pid is alive — callers proceed as
+    /// before.
+    func noSuchProcessResult(pid: pid_t, tool: String) -> ToolCallResult? {
+        guard !isRunningProcess(pid) else { return nil }
+        return errorResult(
+            "\(tool): no running process with pid \(pid).",
+            [
+                "ok": .bool(false),
+                "pid": .number(Double(pid)),
+                "error_code": .string("no_such_process")
+            ]
+        )
+    }
+
     struct ToolInputError: Error, CustomStringConvertible {
         let description: String
     }
@@ -846,6 +917,68 @@ final class ToolRegistry: @unchecked Sendable {
         ToolCallResult(text: message, structuredContent: .object(payload), isError: false)
     }
 
+    /// Input-focus guard for tools that inject synthetic CGEvent
+    /// keyboard/mouse input. Synthetic input always goes to whatever app
+    /// is frontmost *at delivery time* — not whatever the caller last
+    /// observed — so when another app steals focus between a caller's
+    /// check and its keystroke, the input lands in the wrong window.
+    /// (Measured: two concurrent MCP clients both driving this server —
+    /// a `press_key` cmd+a/cmd+v landed in the wrong app.)
+    ///
+    /// Call this immediately before injecting synthetic input. Returns
+    /// `nil` when the caller omitted both `expected_app` and
+    /// `expected_window` (the guard is opt-in and existing behaviour is
+    /// unchanged), or when the actual focus matches. Returns a
+    /// `focus_mismatch` error result — inject nothing — on mismatch.
+    func checkFocusGuard(_ arguments: [String: JSONValue]) async -> ToolCallResult? {
+        let expectedApp = arguments["expected_app"]?.stringValue
+        let expectedWindow = arguments["expected_window"]?.stringValue
+
+        let actual = await FocusGuard.currentFocus()
+        let outcome = FocusGuard.evaluate(
+            expectedApp: expectedApp,
+            expectedWindow: expectedWindow,
+            actualAppName: actual.appName,
+            actualBundleIdentifier: actual.bundleIdentifier,
+            actualWindowTitle: actual.windowTitle
+        )
+
+        guard case .mismatch(let reason) = outcome else {
+            return nil
+        }
+
+        var actualAppDescription = actual.appName ?? "unknown"
+        if let bundle = actual.bundleIdentifier {
+            actualAppDescription += " (\(bundle))"
+        }
+        if let pid = actual.pid {
+            actualAppDescription += " pid \(pid)"
+        }
+
+        var payload: [String: JSONValue] = [
+            "ok": .bool(false),
+            "error_code": .string("focus_mismatch"),
+            "error": .string(reason),
+            "actual_app": .string(actualAppDescription),
+            "actual_window": actual.windowTitle.map(JSONValue.string) ?? .null,
+            "hint": .string(
+                "Frontmost app/window changed since your last check. Call activate_app / "
+                    + "focus_window to bring the expected target back to front and retry, or — "
+                    + "when you already have an AX element handle — prefer perform_element_action "
+                    + "(AXPress) / set_element_attribute (AXValue), which act on that element "
+                    + "directly and do not depend on what is frontmost."
+            )
+        ]
+        if let expectedApp {
+            payload["expected_app"] = .string(expectedApp)
+        }
+        if let expectedWindow {
+            payload["expected_window"] = .string(expectedWindow)
+        }
+
+        return errorResult(reason, payload)
+    }
+
     static func schema(properties: [String: JSONValue], required: [String] = []) -> JSONValue {
         var schema: [String: JSONValue] = [
             "type": .string("object"),
@@ -863,7 +996,8 @@ final class ToolRegistry: @unchecked Sendable {
     private static let definitions: [MCPToolDefinition] = [
         MCPToolDefinition(
             name: "list_elements",
-            description: "List actionable accessibility elements for a process ID.",
+            description: "Survey the ACTIONABLE controls of an app (fixed role whitelist: buttons, links, text fields/areas, checkboxes, radio buttons, pop-up/menu buttons, sliders, switches, steppers… — no containers, rows or static text) down to max_depth (default 8). "
+                + "No filters and no element ids. Use it to answer \"what can I interact with here?\"; use find_elements / query_elements to target specific elements and get ids for follow-up calls, and get_ui_tree for the full structure including containers.",
             inputSchema: schema(
                 properties: [
                     "pid": .object([
@@ -880,7 +1014,9 @@ final class ToolRegistry: @unchecked Sendable {
         ),
         MCPToolDefinition(
             name: "find_element",
-            description: "Find a matching accessibility element by role/title.",
+            description: "Return the FIRST element (depth-first, depth <= 20, 5 s budget) whose role contains `role` and whose title contains `title` — case-insensitive substring; title matches AXTitle → AXDescription → AXIdentifier and falls back to AXValue. "
+                + "Returns role/title/value/position/size but NO element id. Cheapest existence/geometry check. "
+                + "Use find_elements when you need every match or an element id for perform_element_action / get_element_attributes / set_element_attribute; query_elements for regex (e.g. exact ^Save$); list_elements to survey controls; get_ui_tree for full structure.",
             inputSchema: schema(
                 properties: [
                     "pid": .object([
@@ -901,7 +1037,14 @@ final class ToolRegistry: @unchecked Sendable {
         ),
         MCPToolDefinition(
             name: "click",
-            description: "Click an element by role/title or click absolute coordinates.",
+            description: "Click an element by role/title or click absolute coordinates. "
+                + "Coordinate clicks post a synthetic CGEvent that always lands on the "
+                + "frontmost app — pass expected_app/expected_window to abort instead of "
+                + "clicking the wrong window if focus changed. Role/title clicks try AXPress "
+                + "first (focus-independent) and only fall back to a coordinate CGEvent click "
+                + "when AXPress is unsupported on that element — expected_app/expected_window "
+                + "is checked only if/when that fallback fires. Prefer perform_element_action "
+                + "(AXPress) directly when you already have an element handle.",
             inputSchema: schema(
                 properties: [
                     "pid": .object([
@@ -919,6 +1062,14 @@ final class ToolRegistry: @unchecked Sendable {
                     ]),
                     "y": .object([
                         "type": .string("number")
+                    ]),
+                    "expected_app": .object([
+                        "type": .string("string"),
+                        "description": .string("Bundle id or localized app name expected to be frontmost. On mismatch, nothing is clicked.")
+                    ]),
+                    "expected_window": .object([
+                        "type": .string("string"),
+                        "description": .string("Case-insensitive substring expected in the focused window title. On mismatch, nothing is clicked.")
                     ])
                 ]
             )
@@ -927,7 +1078,11 @@ final class ToolRegistry: @unchecked Sendable {
             name: "type_text",
             description: "Type text into the currently focused field. "
                 + "Strategies: auto (clipboard → keys → ax, default; best for React/Angular SPAs), "
-                + "clipboard (paste events), keys (CGEvent unicode), ax (AX set_value last-resort).",
+                + "clipboard (paste events), keys (CGEvent unicode), ax (AX set_value last-resort). "
+                + "auto/clipboard/keys post synthetic events and are checked against "
+                + "expected_app/expected_window before typing; strategy=ax sets the value "
+                + "directly and is not checked, since it does not depend on focus. Prefer "
+                + "set_element_attribute (AXValue) directly when you already have an element handle.",
             inputSchema: schema(
                 properties: [
                     "text": .object([
@@ -942,6 +1097,14 @@ final class ToolRegistry: @unchecked Sendable {
                             .string("ax")
                         ]),
                         "default": .string("auto")
+                    ]),
+                    "expected_app": .object([
+                        "type": .string("string"),
+                        "description": .string("Bundle id or localized app name expected to be frontmost. On mismatch, nothing is typed.")
+                    ]),
+                    "expected_window": .object([
+                        "type": .string("string"),
+                        "description": .string("Case-insensitive substring expected in the focused window title. On mismatch, nothing is typed.")
                     ])
                 ],
                 required: ["text"]
@@ -967,7 +1130,11 @@ final class ToolRegistry: @unchecked Sendable {
         ),
         MCPToolDefinition(
             name: "press_key",
-            description: "Send a keyboard key with optional modifiers.",
+            description: "Send a keyboard key with optional modifiers. Posts a synthetic CGEvent "
+                + "that always lands on the frontmost app — pass expected_app/expected_window to "
+                + "abort instead of sending a key (e.g. cmd+a/cmd+v) to the wrong window if focus "
+                + "changed since your last check. Prefer perform_element_action when the effect "
+                + "you want is available as an AX action on a known element.",
             inputSchema: schema(
                 properties: [
                     "key": .object([
@@ -978,6 +1145,14 @@ final class ToolRegistry: @unchecked Sendable {
                         "items": .object([
                             "type": .string("string")
                         ])
+                    ]),
+                    "expected_app": .object([
+                        "type": .string("string"),
+                        "description": .string("Bundle id or localized app name expected to be frontmost. On mismatch, no key is sent.")
+                    ]),
+                    "expected_window": .object([
+                        "type": .string("string"),
+                        "description": .string("Case-insensitive substring expected in the focused window title. On mismatch, no key is sent.")
                     ])
                 ],
                 required: ["key"]

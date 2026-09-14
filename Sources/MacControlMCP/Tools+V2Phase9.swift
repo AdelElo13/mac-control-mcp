@@ -28,9 +28,11 @@ extension ToolRegistry {
             name: "ground",
             description: """
                 Mixture-of-grounding: find screen coordinates for a target text.
-                Strategy: 'ax' (fastest, structured), 'ocr' (works on any app \
-                including Electron/Canvas), 'auto' (AX first, OCR fallback). \
-                Returns (x,y) with confidence 0..1 + candidate list.
+                Strategy: 'ax' (fastest, structured), 'ocr' (OCRs the target \
+                app's own window — works on Electron/Canvas and on windows that \
+                are covered by other windows), 'auto' (AX first, OCR fallback). \
+                Returns (x,y) plus the match's bounds, element_id and \
+                max_depth_used, with confidence 0..1 + candidate list.
                 """,
             inputSchema: schema(
                 properties: [
@@ -39,6 +41,10 @@ extension ToolRegistry {
                     "strategy": .object([
                         "type": .string("string"),
                         "description": .string("ax | ocr | auto (default auto)")
+                    ]),
+                    "max_depth": .object([
+                        "type": .array([.string("integer"), .string("string")]),
+                        "description": .string("AX search depth. Default 32 (same as find_elements), clamped 1-64.")
                     ])
                 ],
                 required: ["target", "pid"]
@@ -48,7 +54,9 @@ extension ToolRegistry {
             name: "ax_tree_augmented",
             description: """
                 AX tree walk augmented with OCR-derived labels for unlabeled \
-                elements. ONE OCR pass + geometric join (not per-node OCR). \
+                elements. ONE OCR pass over THAT APP'S OWN WINDOW + geometric \
+                join (not per-node OCR, never a display-wide grab, so text from \
+                an overlapping window can't be attributed to this app). \
                 Useful for Electron/Chromium/Canvas apps where native AX is sparse. \
                 Trimmed to max_nodes (default 300, range 50-1000) with labelled \
                 elements preferred over unlabelled when truncating.
@@ -231,12 +239,22 @@ extension ToolRegistry {
         case "ocr":  strategy = .ocr
         default:     strategy = .auto
         }
-        let r = await grounding.ground(target: target, pid: pid, strategy: strategy)
+        let r = await grounding.ground(target: target, pid: pid, strategy: strategy,
+                                       maxDepth: arguments["max_depth"]?.intValue)
+        var payload: [String: JSONValue] = [
+            "ok": .bool(r.ok),
+            "result": encodeAsJSONValue(r),
+            // Snake-case echoes alongside the nested camelCase result, so a
+            // caller does not have to know both spellings (A-2 / A-14 / D-4).
+            "max_depth_used": .number(Double(r.maxDepthUsed))
+        ]
+        if let id = r.elementId { payload["element_id"] = .string(id) }
+        if let b = r.bounds { payload["bounds"] = encodeAsJSONValue(b) }
+        if let c = r.errorCode { payload["error_code"] = .string(c) }
         return r.ok
-            ? successResult("grounded at (\(Int(r.x ?? 0)),\(Int(r.y ?? 0))) via \(r.strategyUsed)",
-                            ["ok": .bool(true), "result": encodeAsJSONValue(r)])
-            : errorResult(r.error ?? "ground failed",
-                          ["ok": .bool(false), "result": encodeAsJSONValue(r)])
+            ? successResult("grounded at (\(Int(r.x ?? 0)),\(Int(r.y ?? 0))) via \(r.strategyUsed) (max_depth_used \(r.maxDepthUsed))",
+                            payload)
+            : errorResult(r.error ?? "ground failed", payload)
     }
 
     func callAXTreeAugmented(_ arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -247,11 +265,16 @@ extension ToolRegistry {
         // v0.7.1: expose the maxNodes cap to callers; clamp 50..1000.
         let maxNodes = max(50, min(arguments["max_nodes"]?.intValue ?? 300, 1000))
         let r = await grounding.axTreeAugmented(pid: pid, maxDepth: maxDepth, maxNodes: maxNodes)
+        var payload: [String: JSONValue] = [
+            "ok": .bool(r.ok),
+            "result": encodeAsJSONValue(r),
+            "max_depth_used": .number(Double(r.maxDepthUsed))
+        ]
+        if let c = r.errorCode { payload["error_code"] = .string(c) }
         return r.ok
             ? successResult("augmented tree: \(r.nodeCount) nodes, \(r.inferredCount) inferred in \(r.elapsedMs)ms",
-                            ["ok": .bool(true), "result": encodeAsJSONValue(r)])
-            : errorResult(r.error ?? "ax_tree_augmented failed",
-                          ["ok": .bool(false), "result": encodeAsJSONValue(r)])
+                            payload)
+            : errorResult(r.error ?? "ax_tree_augmented failed", payload)
     }
 
     func callAXSnapshotCapture(_ arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -270,8 +293,15 @@ extension ToolRegistry {
                 ["ok": .bool(false), "pid": .number(Double(pid)), "node_count": .number(0)]
             )
         }
+        // A-14: echo the id in snake_case at the top level too. The nested
+        // `result.snapshotID` is camelCase while docs/TOOLS.md and every
+        // other tool argument are snake_case, which made scripted chaining
+        // into ax_snapshot_diff pass null.
         return successResult("snapshot \(r.snapshotID) captured, \(r.nodeCount) nodes",
-                             ["ok": .bool(true), "result": encodeAsJSONValue(r)])
+                             ["ok": .bool(true),
+                              "snapshot_id": .string(r.snapshotID),
+                              "node_count": .number(Double(r.nodeCount)),
+                              "result": encodeAsJSONValue(r)])
     }
 
     func callAXSnapshotDiff(_ arguments: [String: JSONValue]) async -> ToolCallResult {

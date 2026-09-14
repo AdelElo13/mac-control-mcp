@@ -49,28 +49,48 @@ actor DisplayController {
         }
     }
 
+    /// v0.9 (A-11): why a coordinate-space string didn't resolve, so the
+    /// caller can report a real `error` + `error_code` + the valid range
+    /// instead of a bare `{"ok":false}` (previously both a malformed
+    /// space like "displayX" and a syntactically valid but out-of-range
+    /// one like "display:5" on a single-display Mac hit the exact same
+    /// silent failure).
+    enum SpaceError: Error, Sendable, Equatable {
+        /// Not "global" and not "display:<int>" at all.
+        case malformed(field: String, value: String)
+        /// "display:<int>" parsed, but no display has that index.
+        case outOfRange(field: String, value: String, index: Int, displayCount: Int)
+    }
+
     /// Convert between coordinate spaces. `from`/`to` accept:
     /// - "global" (default Quartz/AX space, origin top-left of main display)
     /// - "display:<index>" (origin at that display's top-left in points)
-    func convert(x: Double, y: Double, from: String, to: String) -> CGPoint? {
+    func convert(x: Double, y: Double, from: String, to: String) -> Result<CGPoint, SpaceError> {
         let displays = list()
-        guard let fromOrigin = originFor(space: from, displays: displays),
-              let toOrigin = originFor(space: to, displays: displays)
-        else { return nil }
-
-        let globalX = fromOrigin.x + x
-        let globalY = fromOrigin.y + y
-        return CGPoint(x: globalX - toOrigin.x, y: globalY - toOrigin.y)
-    }
-
-    private func originFor(space: String, displays: [DisplayInfo]) -> CGPoint? {
-        if space == "global" { return .zero }
-        if space.hasPrefix("display:") {
-            let idx = Int(space.dropFirst("display:".count))
-            if let idx, idx >= 0, idx < displays.count {
-                return CGPoint(x: displays[idx].x, y: displays[idx].y)
+        switch originFor(space: from, field: "from", displays: displays) {
+        case .failure(let e): return .failure(e)
+        case .success(let fromOrigin):
+            switch originFor(space: to, field: "to", displays: displays) {
+            case .failure(let e): return .failure(e)
+            case .success(let toOrigin):
+                let globalX = fromOrigin.x + x
+                let globalY = fromOrigin.y + y
+                return .success(CGPoint(x: globalX - toOrigin.x, y: globalY - toOrigin.y))
             }
         }
-        return nil
+    }
+
+    private func originFor(space: String, field: String, displays: [DisplayInfo]) -> Result<CGPoint, SpaceError> {
+        if space == "global" { return .success(.zero) }
+        if space.hasPrefix("display:") {
+            let raw = String(space.dropFirst("display:".count))
+            if let idx = Int(raw) {
+                if idx >= 0, idx < displays.count {
+                    return .success(CGPoint(x: displays[idx].x, y: displays[idx].y))
+                }
+                return .failure(.outOfRange(field: field, value: space, index: idx, displayCount: displays.count))
+            }
+        }
+        return .failure(.malformed(field: field, value: space))
     }
 }

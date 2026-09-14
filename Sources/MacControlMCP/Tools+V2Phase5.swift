@@ -30,24 +30,27 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "capture_window",
-            description: "Screenshot a specific window of an app by PID (and optional title filter).",
+            description: "Screenshot ONE window of an app by pid (optional title_contains). Picks the largest onscreen, layer-0 window matching the filter and captures just that window via ScreenCaptureKit — it works when the window is occluded or on another Space (legacy CG fallbacks otherwise). "
+                + "Use this instead of capture_screen + cropping when you want a specific app window; use capture_screen for the whole main display or an arbitrary region. "
+                + "Returns path/width/height plus format, scale, source size, pixels_per_point (image pixels per window point, from the window's top-left) and window_bounds. "
+                + "pixels_per_point and window_bounds derive from the window bounds read from the window server immediately BEFORE the capture (geometry_source=window_bounds_before_capture); if the window moves or resizes in between, re-capture before mapping image coordinates to clicks. Supports max_width / format / quality.",
             inputSchema: schema(
-                properties: [
+                properties: withImageOutputProperties([
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "title_contains": .object(["type": .string("string")]),
                     "output_path": .object(["type": .string("string")])
-                ],
+                ]),
                 required: ["pid"]
             )
         ),
         MCPToolDefinition(
             name: "capture_display",
-            description: "Screenshot a specific display by its index from list_displays.",
+            description: "Screenshot a whole display by its index from list_displays — the way to capture a secondary display (capture_screen and capture_screen_v2 only cover the main display). Supports max_width / format / quality; returns scale and pixels_per_point.",
             inputSchema: schema(
-                properties: [
+                properties: withImageOutputProperties([
                     "display_index": .object(["type": .array([.string("integer"), .string("string")])]),
                     "output_path": .object(["type": .string("string")])
-                ],
+                ]),
                 required: ["display_index"]
             )
         ),
@@ -107,13 +110,23 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "key_down",
-            description: "Post a key-down event without releasing. Pair with key_up.",
+            description: "Post a key-down event without releasing. Pair with key_up. "
+                + "Always lands on the frontmost app — pass expected_app/expected_window to "
+                + "abort instead of posting to the wrong window if focus changed.",
             inputSchema: schema(
                 properties: [
                     "key": .object(["type": .string("string")]),
                     "modifiers": .object([
                         "type": .string("array"),
                         "items": .object(["type": .string("string")])
+                    ]),
+                    "expected_app": .object([
+                        "type": .string("string"),
+                        "description": .string("Bundle id or localized app name expected to be frontmost. On mismatch, nothing is posted.")
+                    ]),
+                    "expected_window": .object([
+                        "type": .string("string"),
+                        "description": .string("Case-insensitive substring expected in the focused window title. On mismatch, nothing is posted.")
                     ])
                 ],
                 required: ["key"]
@@ -121,13 +134,23 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "key_up",
-            description: "Post a key-up event to release a previously held key.",
+            description: "Post a key-up event to release a previously held key. "
+                + "Always lands on the frontmost app — pass expected_app/expected_window to "
+                + "abort instead of posting to the wrong window if focus changed.",
             inputSchema: schema(
                 properties: [
                     "key": .object(["type": .string("string")]),
                     "modifiers": .object([
                         "type": .string("array"),
                         "items": .object(["type": .string("string")])
+                    ]),
+                    "expected_app": .object([
+                        "type": .string("string"),
+                        "description": .string("Bundle id or localized app name expected to be frontmost. On mismatch, nothing is posted.")
+                    ]),
+                    "expected_window": .object([
+                        "type": .string("string"),
+                        "description": .string("Case-insensitive substring expected in the focused window title. On mismatch, nothing is posted.")
                     ])
                 ],
                 required: ["key"]
@@ -135,7 +158,10 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "press_key_sequence",
-            description: "Press multiple keys in order. Each step is {key, modifiers?}.",
+            description: "Press multiple keys in order. Each step is {key, modifiers?}. "
+                + "Always lands on the frontmost app — pass expected_app/expected_window to "
+                + "abort the whole sequence instead of sending it to the wrong window if focus "
+                + "changed (checked once immediately before the first key).",
             inputSchema: schema(
                 properties: [
                     "steps": .object([
@@ -152,7 +178,15 @@ extension ToolRegistry {
                             "required": .array([.string("key")])
                         ])
                     ]),
-                    "delay_ms": .object(["type": .array([.string("integer"), .string("string")])])
+                    "delay_ms": .object(["type": .array([.string("integer"), .string("string")])]),
+                    "expected_app": .object([
+                        "type": .string("string"),
+                        "description": .string("Bundle id or localized app name expected to be frontmost. On mismatch, nothing is sent.")
+                    ]),
+                    "expected_window": .object([
+                        "type": .string("string"),
+                        "description": .string("Case-insensitive substring expected in the focused window title. On mismatch, nothing is sent.")
+                    ])
                 ],
                 required: ["steps"]
             )
@@ -206,8 +240,19 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "request_permissions",
-            description: "Prompt the user for Accessibility permission (shows system dialog).",
-            inputSchema: schema(properties: [:])
+            description: "Trigger macOS permission prompts WITHOUT waiting for the user's answer; returns the current status immediately. Default categories: accessibility + folders (Desktop/Documents/Downloads). Call permissions_status after the user has responded.",
+            inputSchema: schema(
+                properties: [
+                    "categories": .object([
+                        "type": .string("array"),
+                        "items": .object([
+                            "type": .string("string"),
+                            "enum": .array(ToolRegistry.requestablePermissionCategories.map(JSONValue.string))
+                        ]),
+                        "description": .string("Which prompts to trigger. Already-decided categories are skipped.")
+                    ])
+                ]
+            )
         ),
         MCPToolDefinition(
             name: "force_quit_app",
@@ -251,35 +296,50 @@ extension ToolRegistry {
     func callBrowserNewTab(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         let kind = BrowserController.Browser.detect(arguments["browser"]?.stringValue)
         let url = arguments["url"]?.stringValue
-        let ok = await browser.newTab(browser: kind, url: url)
-        let err = await browser.lastError
-        let payload: [String: JSONValue] = [
+        // Single actor call returns ok + classification together — see
+        // BrowserController.classifiedError for why a separate follow-up
+        // read would race under concurrent tool calls.
+        let outcome = await browser.newTab(browser: kind, url: url)
+        let ok = outcome.ok
+        let classification = outcome.classification
+        var payload: [String: JSONValue] = [
             "ok": .bool(ok),
             "browser": .string(kind.rawValue),
             "url": url.map(JSONValue.string) ?? .null,
-            "error": err.map(JSONValue.string) ?? .null
+            "error": classification.map { JSONValue.string($0.error) } ?? .null
         ]
+        if let c = classification {
+            payload["error_code"] = .string(c.errorCode)
+            if let hint = c.hint { payload["hint"] = .string(hint) }
+            if let pane = c.pane { payload["pane"] = .string(pane) }
+        }
         return ok
             ? successResult("New tab opened.", payload)
-            : errorResult("Failed to open tab: \(err ?? "is the browser running?")", payload)
+            : errorResult("Failed to open tab: \(classification?.error ?? "is the browser running?")", payload)
     }
 
     func callBrowserCloseTab(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         let kind = BrowserController.Browser.detect(arguments["browser"]?.stringValue)
         let windowIndex = arguments["window_index"]?.intValue ?? 1
         let tabIndex = arguments["tab_index"]?.intValue
-        let ok = await browser.closeTab(browser: kind, windowIndex: windowIndex, tabIndex: tabIndex)
-        let err = await browser.lastError
-        let payload: [String: JSONValue] = [
+        let outcome = await browser.closeTab(browser: kind, windowIndex: windowIndex, tabIndex: tabIndex)
+        let ok = outcome.ok
+        let classification = outcome.classification
+        var payload: [String: JSONValue] = [
             "ok": .bool(ok),
             "browser": .string(kind.rawValue),
             "window_index": .number(Double(windowIndex)),
             "tab_index": tabIndex.map { .number(Double($0)) } ?? .null,
-            "error": err.map(JSONValue.string) ?? .null
+            "error": classification.map { JSONValue.string($0.error) } ?? .null
         ]
+        if let c = classification {
+            payload["error_code"] = .string(c.errorCode)
+            if let hint = c.hint { payload["hint"] = .string(hint) }
+            if let pane = c.pane { payload["pane"] = .string(pane) }
+        }
         return ok
             ? successResult("Tab closed.", payload)
-            : errorResult("Failed to close tab: \(err ?? "unknown error")", payload)
+            : errorResult("Failed to close tab: \(classification?.error ?? "unknown error")", payload)
     }
 
     func callCaptureWindow(_ arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -294,28 +354,83 @@ extension ToolRegistry {
         } catch {
             return invalidArgument(String(describing: error))
         }
-        do {
-            let capture = try await screen.captureWindow(ownerPID: pid, titleContains: title, outputPath: outputPath)
-            return successResult(
-                "Captured window to \(capture.path).",
-                [
-                    "ok": .bool(true),
-                    "path": .string(capture.path),
-                    "width": .number(Double(capture.width)),
-                    "height": .number(Double(capture.height))
-                ]
-            )
-        } catch {
-            return errorResult(
-                "Window capture failed: \(error)",
-                [
-                    "ok": .bool(false),
-                    "pid": .number(Double(pid)),
-                    "error": .string(String(describing: error)),
-                    "hint": .string("If this is a permission issue, add mac-control-mcp to System Settings → Privacy & Security → Screen Recording and restart. If the window is on another Space, focus it first via focus_window.")
-                ]
-            )
+        let options: ImageOutputOptions
+        switch parseImageOutputOptions(arguments, tool: "capture_window") {
+        case .success(let parsed): options = parsed
+        case .failure(let box): return box.result
         }
+        do {
+            let capture = try await screen.captureWindow(
+                ownerPID: pid, titleContains: title, outputPath: outputPath, options: options
+            )
+            var payload: [String: JSONValue] = [
+                "ok": .bool(true),
+                "path": .string(capture.path),
+                "width": .number(Double(capture.width)),
+                "height": .number(Double(capture.height))
+            ]
+            payload.merge(Self.captureMetadata(capture)) { existing, _ in existing }
+            return successResult("Captured window to \(capture.path).", payload)
+        } catch {
+            var payload: [String: JSONValue] = [
+                "ok": .bool(false),
+                "pid": .number(Double(pid))
+            ]
+            var errorCode = "failed"
+            var hint = "If this is a permission issue, add mac-control-mcp to System Settings → Privacy & Security → Screen Recording and restart. If the window is on another Space, focus it first via focus_window."
+
+            if let screenError = error as? ScreenController.ScreenError {
+                switch screenError {
+                case .noMatchingWindow:
+                    errorCode = "not_found"
+                    if let title, !title.isEmpty {
+                        hint = "No window belonging to this pid matched title_contains=\"\(title)\". Call list_windows to see available titles for this pid."
+                    } else {
+                        hint = "No capturable window was found for this pid. Call list_windows to confirm the app has an open window."
+                    }
+                case .permissionDenied(_, let window):
+                    errorCode = "permission_missing"
+                    payload["pane"] = .string("screen_recording")
+                    if let window {
+                        payload["window"] = Self.windowPayload(window)
+                    }
+                case .windowNotOnCurrentSpace(let window):
+                    errorCode = "failed"
+                    payload["window"] = Self.windowPayload(window)
+                    hint = "The chosen window is on a different macOS Space. Bring it to the foreground (or switch Spaces) before capturing."
+                case .windowCaptureFailed(let window, _):
+                    errorCode = "failed"
+                    payload["window"] = Self.windowPayload(window)
+                default:
+                    errorCode = "failed"
+                }
+            }
+
+            payload["error_code"] = .string(errorCode)
+            payload["error"] = .string(String(describing: error))
+            payload["hint"] = .string(hint)
+
+            return errorResult("Window capture failed: \(error)", payload)
+        }
+    }
+
+    /// Serializes `ScreenController.SelectedWindowInfo` into the JSON
+    /// shape surfaced on capture_window failures, so the caller can see
+    /// exactly which window was chosen (id, title, bounds, onscreen) and
+    /// diagnose a wrong pick (e.g. a tiny helper window) instead of just
+    /// getting "Screen capture failed."
+    private static func windowPayload(_ window: ScreenController.SelectedWindowInfo) -> JSONValue {
+        .object([
+            "id": .number(Double(window.windowID)),
+            "title": .string(window.title),
+            "bounds": .object([
+                "x": .number(window.bounds.origin.x),
+                "y": .number(window.bounds.origin.y),
+                "width": .number(window.bounds.width),
+                "height": .number(window.bounds.height)
+            ]),
+            "onscreen": .bool(window.isOnscreen)
+        ])
     }
 
     func callCaptureDisplay(_ arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -324,7 +439,17 @@ extension ToolRegistry {
         }
         let list = await displays.list()
         guard idx < list.count else {
-            return errorResult("display_index out of range — found \(list.count) display(s).", ["ok": .bool(false)])
+            let validRange = list.isEmpty ? "(no displays detected)" : "0..\(list.count - 1)"
+            let message = "display_index \(idx) is out of range — this Mac has \(list.count) display(s), " +
+                "valid indices: \(validRange)."
+            return errorResult(message, [
+                "ok": .bool(false),
+                "error": .string(message),
+                "error_code": .string("no_such_display"),
+                "display_index": .number(Double(idx)),
+                "display_count": .number(Double(list.count)),
+                "valid_display_indices": .string(validRange)
+            ])
         }
         let rawPath = arguments["output_path"]?.stringValue
         let outputPath: String?
@@ -333,18 +458,24 @@ extension ToolRegistry {
         } catch {
             return invalidArgument(String(describing: error))
         }
+        let options: ImageOutputOptions
+        switch parseImageOutputOptions(arguments, tool: "capture_display") {
+        case .success(let parsed): options = parsed
+        case .failure(let box): return box.result
+        }
         do {
-            let capture = try await screen.captureDisplayByID(CGDirectDisplayID(list[idx].id), outputPath: outputPath)
-            return successResult(
-                "Captured display \(idx) to \(capture.path).",
-                [
-                    "ok": .bool(true),
-                    "path": .string(capture.path),
-                    "width": .number(Double(capture.width)),
-                    "height": .number(Double(capture.height)),
-                    "display_index": .number(Double(idx))
-                ]
+            let capture = try await screen.captureDisplayByID(
+                CGDirectDisplayID(list[idx].id), outputPath: outputPath, options: options
             )
+            var payload: [String: JSONValue] = [
+                "ok": .bool(true),
+                "path": .string(capture.path),
+                "width": .number(Double(capture.width)),
+                "height": .number(Double(capture.height)),
+                "display_index": .number(Double(idx))
+            ]
+            payload.merge(Self.captureMetadata(capture)) { existing, _ in existing }
+            return successResult("Captured display \(idx) to \(capture.path).", payload)
         } catch {
             return errorResult(
                 "Display capture failed: \(error).",
@@ -490,6 +621,10 @@ extension ToolRegistry {
             modifiers.append(flag)
         }
 
+        if let mismatch = await checkFocusGuard(arguments) {
+            return mismatch
+        }
+
         let ok = down
             ? await accessibility.keyDown(keyCode: code, modifiers: modifiers)
             : await accessibility.keyUp(keyCode: code, modifiers: modifiers)
@@ -523,6 +658,16 @@ extension ToolRegistry {
                 flags.append(f)
             }
             parsed.append((code, flags))
+        }
+
+        // Checked once immediately before injecting the whole sequence —
+        // re-checking between every step would be the more thorough guard
+        // but the sequence typically fires within milliseconds, so a
+        // single check right before the first key covers the realistic
+        // race (another app stealing focus between the caller's check
+        // and this call).
+        if let mismatch = await checkFocusGuard(arguments) {
+            return mismatch
         }
 
         // Clamp the upper bound: delay_ms drives a Thread.sleep inside the
@@ -709,34 +854,6 @@ extension ToolRegistry {
         return ok
             ? successResult("Window moved to display \(displayIdx).", payload)
             : errorResult("Window move failed.", payload)
-    }
-
-    func callRequestPermissions() async -> ToolCallResult {
-        let granted = await accessibility.requestPermission()
-        // Also trigger the protected-folder TCC prompts up-front so the
-        // user grants everything in one visit to System Settings
-        // instead of getting a surprise prompt on the first Spotlight
-        // search. Each `contentsOfDirectory` call either succeeds
-        // silently (grant already given), throws silently (we ignore),
-        // or pops the system dialog the very first time.
-        let home = NSHomeDirectory()
-        var folderAccess: [String: Bool] = [:]
-        for folder in ["Desktop", "Documents", "Downloads"] {
-            let ok = (try? FileManager.default.contentsOfDirectory(
-                atPath: home + "/" + folder
-            )) != nil
-            folderAccess[folder.lowercased()] = ok
-        }
-        return successResult(
-            granted ? "Permission already granted." : "Permission dialog shown (user action required).",
-            [
-                "ok": .bool(true),
-                "accessibility": .bool(granted),
-                "desktop": .bool(folderAccess["desktop"] ?? false),
-                "documents": .bool(folderAccess["documents"] ?? false),
-                "downloads": .bool(folderAccess["downloads"] ?? false)
-            ]
-        )
     }
 
     func callScrollToElement(_ arguments: [String: JSONValue]) async -> ToolCallResult {

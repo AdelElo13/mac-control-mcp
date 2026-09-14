@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+Info.plist template for MacControlMCP.app. build-bundle.sh substitutes
+__VERSION__. Minimum fields TCC needs to identify the app stably:
+  - CFBundleIdentifier: stable identity across rebuilds so TCC grants persist.
+  - CFBundleExecutable: matches the binary copied into Contents/MacOS.
+  - LSUIElement: MCP server; no Dock icon, no menu.
+
+Usage-description strings are MANDATORY for TCC prompts: without them the
+framework calls silently deny (or SIGABRT). Each one that maps to a
+hardened-runtime entitlement must also be present in
+MacControlMCP.entitlements — scripts/check-entitlements.sh enforces that.
+
+Desktop / Documents / Downloads keys are required for spotlight_search:
+without them metadatad silently filters hits under those folders from our
+mdfind subprocess. See SpotlightController.primeFilesystemAccess().
+-->
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>MacControlMCP</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleIdentifier</key>
+    <string>dev.macmcp.server</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>MacControlMCP</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>__VERSION__</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>mac-control-mcp</string>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>mac-control-mcp captures windows and the screen on behalf of the MCP client (Claude Code, etc) to let an AI agent see and analyse on-screen content.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>mac-control-mcp automates other apps (menus, browser JS, volume, dark mode) via AppleScript.</string>
+    <key>NSAccessibilityUsageDescription</key>
+    <string>mac-control-mcp reads and controls UI elements across all apps to let an AI agent drive macOS.</string>
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>mac-control-mcp searches your Desktop via Spotlight to help the AI agent find files you've just saved there.</string>
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>mac-control-mcp searches your Documents folder via Spotlight so the AI agent can locate files you've stored there.</string>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>mac-control-mcp searches your Downloads folder via Spotlight so the AI agent can locate files you've just downloaded.</string>
+    <key>NSCalendarsUsageDescription</key>
+    <string>mac-control-mcp reads and creates Calendar events on your behalf so the AI agent can answer "what's on my schedule" and schedule new meetings.</string>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>mac-control-mcp reads and creates Calendar events on your behalf so the AI agent can answer "what's on my schedule" and schedule new meetings.</string>
+    <key>NSRemindersUsageDescription</key>
+    <string>mac-control-mcp reads and creates reminders so the AI agent can capture tasks on your behalf.</string>
+    <key>NSRemindersFullAccessUsageDescription</key>
+    <string>mac-control-mcp reads and creates reminders so the AI agent can capture tasks on your behalf.</string>
+    <key>NSContactsUsageDescription</key>
+    <string>mac-control-mcp looks up phone numbers and emails from Contacts so the AI agent can send messages or emails to people you know.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>mac-control-mcp reads Location to include Wi-Fi SSIDs in wifi_scan results — macOS requires Location Services to reveal SSIDs since Ventura.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>mac-control-mcp records audio for speech-to-text and audio capture tools.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>mac-control-mcp transcribes recorded audio to text via Apple Speech.</string>
+</dict>
+</plist>

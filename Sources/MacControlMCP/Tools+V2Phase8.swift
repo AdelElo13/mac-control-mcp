@@ -195,7 +195,7 @@ extension ToolRegistry {
 
         MCPToolDefinition(
             name: "wifi_scan",
-            description: "Scan for visible Wi-Fi networks. Uses Apple's private airport utility; returns a structured hint if it's been removed in this macOS version.",
+            description: "Scan for visible Wi-Fi networks via CoreWLAN. macOS withholds SSIDs unless Location Services is granted to the responsible process. If Location authorization is undecided this fires the request, waits only ~1s (never for a human to answer a dialog), then scans immediately — never blocks the scan itself. Each network's 'ssid' may be JSON null: either withheld (Location not granted — check 'ssids_redacted':true and 'location_status') or genuinely hidden (Location IS granted and that network's 'hidden' is true). 'location_prompt_requested':true plus 'location_status':'not_determined' means a prompt may be on screen right now — answer it and call wifi_scan again, or use open_permission_pane pane=location if none appears.",
             inputSchema: schema(properties: [:])
         ),
         MCPToolDefinition(
@@ -324,7 +324,8 @@ extension ToolRegistry {
             ? successResult("found \(r.data?.count ?? 0) event(s)",
                             ["ok": .bool(true), "events": encodeAsJSONValue(r.data ?? [])])
             : errorResult(r.error ?? "calendar_list_events failed",
-                          ["ok": .bool(false), "error": .string(r.error ?? "")])
+                          ["ok": .bool(false), "error": .string(r.error ?? "")]
+                              .merging(r.errorPayload ?? [:]) { _, structured in structured })
     }
 
     func callRemindersCreate(_ arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -336,11 +337,23 @@ extension ToolRegistry {
         }
         let dueISO = arguments["due_iso"]?.stringValue
         let list = arguments["list"]?.stringValue
+        // v0.9 review fix (A-7): the osascript call is gated by Automation
+        // TCC, not EventKit reminders — never pre-block on
+        // `remindersPermissionStatusString()`. Run it, then report that
+        // EventKit status purely as informational context alongside the
+        // real result.
         let r = await appleApps.createReminder(title: title, dueISO: dueISO, list: list)
-        return r.ok
-            ? successResult("reminder created", ["ok": .bool(true), "result": encodeAsJSONValue(r)])
-            : errorResult(r.error ?? "reminders_create failed",
-                          ["ok": .bool(false), "result": encodeAsJSONValue(r)])
+        let eventkitAuthorization = ToolRegistry.remindersPermissionStatusString()
+        if r.ok {
+            return successResult("reminder created",
+                                 ["ok": .bool(true), "result": encodeAsJSONValue(r),
+                                  "automation": .string("granted"),
+                                  "eventkit_authorization": .string(eventkitAuthorization)])
+        }
+        var payload: [String: JSONValue] = ["ok": .bool(false), "result": encodeAsJSONValue(r),
+                                             "eventkit_authorization": .string(eventkitAuthorization)]
+        payload.merge(r.errorPayload ?? [:]) { _, structured in structured }
+        return errorResult(r.error ?? "reminders_create failed", payload)
     }
 
     func callRemindersList(_ arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -349,12 +362,25 @@ extension ToolRegistry {
         }
         let includeCompleted = arguments["include_completed"]?.boolValue ?? false
         let limit = arguments["limit"]?.intValue ?? 50
+        // v0.9 review fix (A-7): same rationale as reminders_create — run
+        // the AppleScript unconditionally; only classify a failure the
+        // script itself produced. `ok:true, reminders:[]` is now only
+        // possible after the script actually succeeded.
         let r = await appleApps.listReminders(includeCompleted: includeCompleted, limit: limit)
-        return r.ok
-            ? successResult("found \(r.data?.count ?? 0) reminder(s)",
-                            ["ok": .bool(true), "reminders": encodeAsJSONValue(r.data ?? [])])
-            : errorResult(r.error ?? "reminders_list failed",
-                          ["ok": .bool(false), "error": .string(r.error ?? "")])
+        let eventkitAuthorization = ToolRegistry.remindersPermissionStatusString()
+        guard r.ok, let result = r.data else {
+            var payload: [String: JSONValue] = ["ok": .bool(false), "error": .string(r.error ?? "reminders_list failed"),
+                                                 "eventkit_authorization": .string(eventkitAuthorization)]
+            payload.merge(r.errorPayload ?? [:]) { _, structured in structured }
+            return errorResult(r.error ?? "reminders_list failed", payload)
+        }
+        return successResult("found \(result.reminders.count) reminder(s)",
+                             ["ok": .bool(true),
+                              "reminders": encodeAsJSONValue(result.reminders),
+                              "count": .number(Double(result.reminders.count)),
+                              "lists": .array(result.lists.map(JSONValue.string)),
+                              "automation": .string("granted"),
+                              "eventkit_authorization": .string(eventkitAuthorization)])
     }
 
     func callContactsSearch(_ arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -370,7 +396,8 @@ extension ToolRegistry {
             ? successResult("found \(r.data?.count ?? 0) contact(s)",
                             ["ok": .bool(true), "contacts": encodeAsJSONValue(r.data ?? [])])
             : errorResult(r.error ?? "contacts_search failed",
-                          ["ok": .bool(false), "error": .string(r.error ?? "")])
+                          ["ok": .bool(false), "error": .string(r.error ?? "")]
+                              .merging(r.errorPayload ?? [:]) { _, structured in structured })
     }
 
     // MARK: Power
@@ -494,9 +521,15 @@ extension ToolRegistry {
         // the ok:true path. That hid Location-Services diagnostics from the
         // caller even when HardwareController.wifiScan set it. Always
         // include hint when present, regardless of ok/error path.
+        // v0.8.4: also surface ssids_redacted + location_status so callers
+        // can tell "SSIDs withheld, Location not granted" apart from
+        // genuinely hidden networks (each Network already carries `hidden`).
         var payload: [String: JSONValue] = [
             "ok": .bool(r.ok),
-            "networks": encodeAsJSONValue(r.networks)
+            "networks": encodeAsJSONValue(r.networks),
+            "ssids_redacted": .bool(r.ssidsRedacted),
+            "location_status": .string(r.locationStatus),
+            "location_prompt_requested": .bool(r.locationPromptRequested)
         ]
         if let h = r.hint { payload["hint"] = .string(h) }
         return r.ok

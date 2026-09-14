@@ -19,14 +19,34 @@ actor GroundingController {
         case auto  // AX first, fall through to OCR on zero results or ambiguity
     }
 
+    struct Bounds: Codable, Sendable {
+        let x: Double
+        let y: Double
+        let width: Double
+        let height: Double
+    }
+
     struct GroundResult: Codable, Sendable {
         let ok: Bool
         let strategyUsed: String         // "ax" | "ocr" | "none"
         let x: Double?
         let y: Double?
+        /// Frame of the matched element (AX) or OCR text block, in global
+        /// screen points — so a caller can hit-test, scroll or drag it
+        /// rather than only click its center.
+        let bounds: Bounds?
+        /// ElementCache id of the matched AX element, resolvable by
+        /// get_element_attributes / perform_element_action. nil for OCR
+        /// matches, which have no AX element behind them.
+        let elementId: String?
         let confidence: Double           // 0.0 - 1.0
+        /// The AX depth ceiling actually used for this call (A-2 / D-2:
+        /// every search response says how deep it looked, so "not found"
+        /// is distinguishable from "below the ceiling").
+        let maxDepthUsed: Int
         let candidates: [Candidate]
         let error: String?
+        let errorCode: String?
     }
 
     struct Candidate: Codable, Sendable {
@@ -34,16 +54,53 @@ actor GroundingController {
         let title: String?
         let x: Double
         let y: Double
+        let bounds: Bounds?
+        let elementId: String?
         let source: String               // "ax" | "ocr"
         let confidence: Double
     }
 
+    /// Default AX depth ceiling. Deliberately identical to
+    /// `AccessibilityController.findElements` (32): `ground` used to
+    /// hard-code 16, so elements at depth 17 — routine in Electron apps —
+    /// were invisible to `ground` while `find_elements` returned them
+    /// (A-2 / B-7).
+    static let defaultMaxDepth = 32
+    static let maxAllowedDepth = 64
+
+    static func resolveMaxDepth(_ requested: Int?) -> Int {
+        guard let requested else { return defaultMaxDepth }
+        return max(1, min(requested, maxAllowedDepth))
+    }
+
+    /// Classify a window-capture failure so callers get an actionable
+    /// `error_code` instead of a bare "no grounding candidate".
+    static func errorCode(for error: Error) -> String {
+        if let e = error as? ScreenController.ScreenError {
+            switch e {
+            case .permissionDenied: return "permission_missing"
+            case .noMatchingWindow, .windowNotOnCurrentSpace: return "not_found"
+            default: return "capture_failed"
+            }
+        }
+        if let e = error as? ScreenCaptureKitBridge.BridgeError {
+            switch e {
+            case .permissionDenied: return "permission_missing"
+            case .windowNotFound: return "not_found"
+            case .captureFailed: return "capture_failed"
+            }
+        }
+        return "capture_failed"
+    }
+
     private let accessibility: AccessibilityController
     private let screen: ScreenController
+    private let elementCache: ElementCache?
 
-    init(accessibility: AccessibilityController, screen: ScreenController) {
+    init(accessibility: AccessibilityController, screen: ScreenController, elementCache: ElementCache? = nil) {
         self.accessibility = accessibility
         self.screen = screen
+        self.elementCache = elementCache
     }
 
     /// Find coordinates to click for `target` text. `strategy`:
@@ -54,10 +111,12 @@ actor GroundingController {
     func ground(
         target: String,
         pid: pid_t,
-        strategy: Strategy = .auto
+        strategy: Strategy = .auto,
+        maxDepth: Int? = nil
     ) async -> GroundResult {
         let wantsAX = strategy == .ax || strategy == .auto
         let wantsOCR = strategy == .ocr || strategy == .auto
+        let depth = Self.resolveMaxDepth(maxDepth)
 
         // 1. AX attempt. `findElements` returns [(AXUIElement, ElementInfo)]
         var axCandidates: [Candidate] = []
@@ -67,7 +126,7 @@ actor GroundingController {
                 role: nil,
                 title: target,
                 value: nil,
-                maxDepth: 16,
+                maxDepth: depth,
                 limit: 20
             )
             // v0.7.1 fix (BUG 5): pull main display bounds to filter
@@ -75,7 +134,8 @@ actor GroundingController {
             // (0, screen_height) with size (0,0) — those are technically
             // "AX-matched" but cannot be clicked.
             let mainBounds = CGDisplayBounds(CGMainDisplayID())
-            for (_, info) in results {
+            var survivors: [(element: AXUIElement, info: AccessibilityController.ElementInfo)] = []
+            for (element, info) in results {
                 guard let pos = info.position, let size = info.size else { continue }
 
                 // Filter: AXApplication is a container, not a clickable
@@ -99,6 +159,20 @@ actor GroundingController {
                     continue
                 }
 
+                survivors.append((element, info))
+            }
+
+            // Element ids for every surviving AX match, in ONE cache hop,
+            // so the caller can act on the match (get_element_attributes /
+            // perform_element_action) instead of only clicking a point.
+            var ids: [String?] = Array(repeating: nil, count: survivors.count)
+            if let elementCache {
+                ids = await elementCache.storeMany(survivors.map(\.element), pid: pid)
+            }
+
+            for (index, survivor) in survivors.enumerated() {
+                let info = survivor.info
+                guard let pos = info.position, let size = info.size else { continue }
                 let centerX = pos.x + size.width / 2
                 let centerY = pos.y + size.height / 2
                 let titleLower = info.title?.lowercased() ?? ""
@@ -108,6 +182,8 @@ actor GroundingController {
                     role: info.role,
                     title: info.title,
                     x: centerX, y: centerY,
+                    bounds: Bounds(x: pos.x, y: pos.y, width: size.width, height: size.height),
+                    elementId: ids[index],
                     source: "ax",
                     confidence: conf
                 ))
@@ -121,24 +197,40 @@ actor GroundingController {
                     ok: true,
                     strategyUsed: "ax",
                     x: best.x, y: best.y,
+                    bounds: best.bounds,
+                    elementId: best.elementId,
                     confidence: best.confidence,
+                    maxDepthUsed: depth,
                     candidates: axCandidates,
-                    error: nil
+                    error: nil,
+                    errorCode: nil
                 )
             }
             if strategy == .ax {
                 return GroundResult(
                     ok: false, strategyUsed: "ax",
-                    x: nil, y: nil, confidence: 0,
-                    candidates: [], error: "no AX match"
+                    x: nil, y: nil, bounds: nil, elementId: nil, confidence: 0,
+                    maxDepthUsed: depth,
+                    candidates: [],
+                    error: "no AX match at depth \(depth)",
+                    errorCode: "not_found"
                 )
             }
         }
 
-        // 2. OCR fallback / disambiguation
+        // 2. OCR fallback / disambiguation — scoped to the TARGET app's
+        // window, never the whole display (A-3).
         var ocrCandidates: [Candidate] = []
+        var ocrFailure: (message: String, code: String)?
         if wantsOCR {
-            ocrCandidates = await ocrLookup(target: target)
+            do {
+                ocrCandidates = try await ocrLookup(target: target, pid: pid)
+            } catch {
+                ocrFailure = (
+                    "OCR capture of pid \(pid)'s window failed: \(error)",
+                    Self.errorCode(for: error)
+                )
+            }
         }
 
         // Merge and rank
@@ -148,16 +240,37 @@ actor GroundingController {
                 ok: true,
                 strategyUsed: best.source,
                 x: best.x, y: best.y,
+                bounds: best.bounds,
+                elementId: best.elementId,
                 confidence: best.confidence,
+                maxDepthUsed: depth,
                 candidates: all,
-                error: nil
+                error: nil,
+                errorCode: nil
+            )
+        }
+
+        // Nothing matched. A capture failure is reported as itself — the
+        // old code silently OCR'd the main display instead, which could
+        // "ground" text belonging to a completely different app.
+        if let ocrFailure {
+            return GroundResult(
+                ok: false, strategyUsed: "none",
+                x: nil, y: nil, bounds: nil, elementId: nil, confidence: 0,
+                maxDepthUsed: depth,
+                candidates: [],
+                error: ocrFailure.message,
+                errorCode: ocrFailure.code
             )
         }
 
         return GroundResult(
             ok: false, strategyUsed: "none",
-            x: nil, y: nil, confidence: 0,
-            candidates: [], error: "no grounding candidate from \(strategy.rawValue)"
+            x: nil, y: nil, bounds: nil, elementId: nil, confidence: 0,
+            maxDepthUsed: depth,
+            candidates: [],
+            error: "no grounding candidate from \(strategy.rawValue)",
+            errorCode: "not_found"
         )
     }
 
@@ -189,39 +302,72 @@ actor GroundingController {
         return CGPoint(x: centerX * sx, y: centerY * sy)
     }
 
-    private func ocrLookup(target: String) async -> [Candidate] {
-        // Use the screen controller's OCR pass. The OCR result contains
-        // blocks with bounding boxes in image PIXELS; we find the block
-        // whose text best matches the target and convert its center to
-        // global screen points so the caller can click it directly.
-        let capture: ScreenController.CaptureResult
-        let ocrBlocks: [ScreenController.OCRBlock]
-        do {
-            let (cap, result) = try await screen.captureAndOCR(keepImage: false)
-            capture = cap
-            ocrBlocks = result.blocks
-        } catch {
-            return []
+    /// Map an OCR block center from WINDOW-image pixel space to a GLOBAL
+    /// screen point.
+    ///
+    /// A per-window ScreenCaptureKit capture is an image of just that
+    /// window, so block (0,0) is the window's top-left corner, not the
+    /// display's. Two steps: scale pixels → points using the window's own
+    /// point size (exact for any backing factor, identity on 1×), then
+    /// offset by the window's global origin.
+    static func ocrPixelCenterToGlobalPoints(
+        blockX: Double, blockY: Double, blockW: Double, blockH: Double,
+        imagePixelWidth: Int, imagePixelHeight: Int,
+        windowBounds: CGRect
+    ) -> CGPoint {
+        let local = ocrPixelCenterToPoints(
+            blockX: blockX, blockY: blockY, blockW: blockW, blockH: blockH,
+            imagePixelWidth: imagePixelWidth, imagePixelHeight: imagePixelHeight,
+            displayPointWidth: Double(windowBounds.width),
+            displayPointHeight: Double(windowBounds.height)
+        )
+        return CGPoint(x: Double(windowBounds.origin.x) + local.x,
+                       y: Double(windowBounds.origin.y) + local.y)
+    }
+
+    /// Scale a window-pixel LENGTH to points using the same exact ratio.
+    private static func pixelsToPoints(_ value: Double, pixels: Int, points: Double) -> Double {
+        guard pixels > 0 else { return value }
+        return value * (points / Double(pixels))
+    }
+
+    /// OCR the TARGET app's window (never the whole display) and return
+    /// every block whose text matches `target`, with coordinates already
+    /// mapped to global screen points.
+    ///
+    /// Throws on capture failure. There is no display-wide fallback on
+    /// purpose: OCR'ing the main display for an occluded window returns
+    /// the text of whatever is on top of it, which is how A-1 produced
+    /// confident labels belonging to a different application.
+    private func ocrLookup(target: String, pid: pid_t) async throws -> [Candidate] {
+        let (capture, result) = try await screen.ocrWindow(ownerPID: pid)
+        guard let windowBounds = capture.pointBounds, windowBounds.width > 0, windowBounds.height > 0 else {
+            throw ScreenController.ScreenError.captureFailed
         }
-        let bounds = CGDisplayBounds(CGMainDisplayID())
         let needle = target.lowercased()
         var out: [Candidate] = []
-        for block in ocrBlocks {
+        for block in result.blocks {
             let text = block.text.lowercased()
             let exact = text == needle
             let contains = text.contains(needle)
             if !exact && !contains { continue }
-            let center = Self.ocrPixelCenterToPoints(
+            let center = Self.ocrPixelCenterToGlobalPoints(
                 blockX: block.x, blockY: block.y,
                 blockW: block.width, blockH: block.height,
                 imagePixelWidth: capture.width, imagePixelHeight: capture.height,
-                displayPointWidth: Double(bounds.width),
-                displayPointHeight: Double(bounds.height)
+                windowBounds: windowBounds
             )
+            let widthPt = Self.pixelsToPoints(block.width, pixels: capture.width,
+                                              points: Double(windowBounds.width))
+            let heightPt = Self.pixelsToPoints(block.height, pixels: capture.height,
+                                               points: Double(windowBounds.height))
             out.append(.init(
                 role: nil,
                 title: block.text,
                 x: center.x, y: center.y,
+                bounds: Bounds(x: center.x - widthPt / 2, y: center.y - heightPt / 2,
+                               width: widthPt, height: heightPt),
+                elementId: nil,
                 source: "ocr",
                 confidence: exact ? 0.9 : (contains ? 0.6 : 0.3)
             ))
@@ -251,7 +397,9 @@ actor GroundingController {
         let inferredCount: Int
         let nodes: [AugmentedNode]
         let elapsedMs: Int
+        let maxDepthUsed: Int
         let error: String?
+        let errorCode: String?
     }
 
     /// Codex v3 design — single OCR pass + geometric join instead of
@@ -277,40 +425,55 @@ actor GroundingController {
             let ms = Int(Date().timeIntervalSince(start) * 1000)
             return AugmentedTreeResult(
                 ok: false, pid: Int32(pid), nodeCount: 0, inferredCount: 0,
-                nodes: [], elapsedMs: ms,
-                error: "no AX nodes found — app may lack AX support"
+                nodes: [], elapsedMs: ms, maxDepthUsed: maxDepth,
+                error: "no AX nodes found — app may lack AX support",
+                errorCode: "not_found"
             )
         }
 
-        // 2. Single OCR pass over the visible region. Block coordinates
-        // come back in image PIXELS; convert their centers to global
-        // screen POINTS so the geometric join below compares like with
-        // like against AX frames (which are in points). Without this the
-        // join silently fails on Retina — pixel centers are 2× too large
-        // and fall outside every small AX rect, so only oversized
-        // containers ever match and no useful label is inferred.
+        // 2. Single OCR pass over the TARGET APP'S WINDOW (A-1/A-3).
+        //
+        // This used to OCR the main display. On a laptop the target window
+        // is usually partly or fully covered, so the OCR text belonged to
+        // whatever sat ON TOP of it — and the geometric join then stamped
+        // that foreign text onto the covered app's AX nodes as
+        // `inferredLabel` with confidence 0.8. A per-window capture can
+        // only ever see the target's own content.
+        //
+        // Block coordinates come back in WINDOW-image PIXELS; convert
+        // their centers to global screen POINTS so the join below compares
+        // like with like against AX frames (which are in global points).
         let capture: ScreenController.CaptureResult
         let ocrBlocks: [ScreenController.OCRBlock]
         do {
-            let (cap, result) = try await screen.captureAndOCR(keepImage: false)
+            let (cap, result) = try await screen.ocrWindow(ownerPID: pid)
             capture = cap
             ocrBlocks = result.blocks
         } catch {
             let ms = Int(Date().timeIntervalSince(start) * 1000)
             return AugmentedTreeResult(
                 ok: false, pid: Int32(pid), nodeCount: axBoxes.count, inferredCount: 0,
-                nodes: axBoxes.map { $0.node }, elapsedMs: ms,
-                error: "OCR pass failed: \(error)"
+                nodes: axBoxes.map { $0.node }, elapsedMs: ms, maxDepthUsed: maxDepth,
+                error: "window OCR pass failed for pid \(pid): \(error)",
+                errorCode: Self.errorCode(for: error)
             )
         }
-        let displayBounds = CGDisplayBounds(CGMainDisplayID())
+        guard let windowBounds = capture.pointBounds,
+              windowBounds.width > 0, windowBounds.height > 0 else {
+            let ms = Int(Date().timeIntervalSince(start) * 1000)
+            return AugmentedTreeResult(
+                ok: false, pid: Int32(pid), nodeCount: axBoxes.count, inferredCount: 0,
+                nodes: axBoxes.map { $0.node }, elapsedMs: ms, maxDepthUsed: maxDepth,
+                error: "window capture for pid \(pid) reported no point bounds; cannot map OCR to screen coordinates",
+                errorCode: "capture_failed"
+            )
+        }
         let ocrPointCenters: [CGPoint] = ocrBlocks.map { block in
-            Self.ocrPixelCenterToPoints(
+            Self.ocrPixelCenterToGlobalPoints(
                 blockX: block.x, blockY: block.y,
                 blockW: block.width, blockH: block.height,
                 imagePixelWidth: capture.width, imagePixelHeight: capture.height,
-                displayPointWidth: Double(displayBounds.width),
-                displayPointHeight: Double(displayBounds.height)
+                windowBounds: windowBounds
             )
         }
 
@@ -399,9 +562,11 @@ actor GroundingController {
             inferredCount: inferredCount,
             nodes: capped,
             elapsedMs: ms,
+            maxDepthUsed: maxDepth,
             error: capped.count < out.count
                 ? "truncated to \(maxNodes) nodes of \(out.count) total (labelled first)"
-                : nil
+                : nil,
+            errorCode: nil
         )
     }
 

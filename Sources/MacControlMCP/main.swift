@@ -9,69 +9,77 @@ import CoreGraphics
 import AppKit
 #endif
 
-// MCPServer is an actor so its mutable `readBuffer` is safely isolated,
-// which lets us hold the global server reference without resorting to
-// `nonisolated(unsafe)`. The stdio loop still runs in a single Task; the
-// actor just gives the compiler a correct concurrency story.
+// MCPServer is an actor so its mutable `readBuffer` and in-flight counter
+// are safely isolated.
+//
+// v0.8.3 request model (see ServerLifecycle.swift for the measured v0.8.2
+// failures this replaces):
+//   - stdin is read on a dedicated thread (StdinPump) and delivered in order
+//     through an AsyncStream; the blocking read never occupies the actor.
+//   - every complete request is handled in its own Task, so a slow tool
+//     (unanswered TCC prompt, hung AppleScript) no longer blocks reading
+//     stdin or answering other requests. JSON-RPC responses carry their id,
+//     so out-of-order replies are valid.
+//   - each tools/call is bounded by ToolTimeouts.
+//   - stdin EOF → wait up to `shutdownGrace` for in-flight requests, exit.
 actor MCPServer {
+    static let shutdownGrace: TimeInterval = 2
+
     private let toolRegistry: ToolRegistry
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
-    private let input = FileHandle.standardInput
-    private let output = FileHandle.standardOutput
     private let errorOutput = FileHandle.standardError
     private var readBuffer = Data()
+    private var inFlight = 0
 
     init(toolRegistry: ToolRegistry) {
         self.toolRegistry = toolRegistry
     }
 
-    func run() async {
-        while true {
-            let handledBufferedMessage = await drainReadBuffer()
-            if handledBufferedMessage {
-                continue
-            }
-
-            // `availableData` returns whatever bytes are ready right now
-            // (one read(2) syscall). Previously `readData(ofLength: 4096)`
-            // blocked the task until either 4096 bytes were buffered OR
-            // stdin closed — which froze interactive MCP clients who send
-            // small JSON-RPC frames (~100 bytes) and expect a reply before
-            // sending the next request. Functional test against a Python
-            // MCP driver pinpointed this: the server processed the frame
-            // in memory but readData blocked while waiting for 3.5 KB
-            // more bytes that the client was never going to send.
-            let chunk = input.availableData
-            if chunk.isEmpty {
-                _ = await drainReadBuffer()
-                if !readBuffer.isEmpty {
-                    write(response: parseErrorResponse("Unexpected EOF while reading MCP frame."))
-                    log("EOF reached with \(readBuffer.count) unparsed bytes in stdin buffer.")
-                    readBuffer.removeAll(keepingCapacity: false)
-                }
-                return
-            }
-
+    func run(chunks: AsyncStream<Data>) async {
+        for await chunk in chunks {
             readBuffer.append(chunk)
+            drainReadBuffer()
         }
+
+        drainReadBuffer()
+        if !readBuffer.isEmpty {
+            write(response: parseErrorResponse("Unexpected EOF while reading MCP frame."))
+            log("EOF reached with \(readBuffer.count) unparsed bytes in stdin buffer.")
+            readBuffer.removeAll(keepingCapacity: false)
+        }
+        await waitForInFlightRequests(grace: Self.shutdownGrace)
     }
 
-    private func drainReadBuffer() async -> Bool {
-        var handled = false
-
+    private func drainReadBuffer() {
         while true {
             switch StdioMessageFramer.popMessage(from: &readBuffer) {
             case .message(let message):
-                handled = true
-                await handleRawMessage(message)
+                inFlight += 1
+                Task {
+                    await self.handleRawMessage(message)
+                    self.requestFinished()
+                }
             case .malformed(let reason):
-                handled = true
                 log("Discarded malformed MCP frame header: \(reason)")
                 write(response: parseErrorResponse("Malformed MCP frame header: \(reason)"))
             case .needMoreData:
-                return handled
+                return
             }
+        }
+    }
+
+    private func requestFinished() {
+        inFlight -= 1
+    }
+
+    private func waitForInFlightRequests(grace: TimeInterval) async {
+        let deadline = Date().addingTimeInterval(grace)
+        while inFlight > 0 && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        if inFlight > 0 {
+            log("stdin closed; exiting with \(inFlight) request(s) still running.")
         }
     }
 
@@ -109,7 +117,7 @@ actor MCPServer {
                 ]),
                 "serverInfo": .object([
                     "name": .string("mac-control-mcp"),
-                    "version": .string("0.8.2")
+                    "version": .string("0.8.3")
                 ]),
                 "accessibilityPermission": .bool(permission)
             ])
@@ -140,7 +148,16 @@ actor MCPServer {
             }
 
             let arguments = params["arguments"]?.objectValue ?? [:]
-            let toolResult = await toolRegistry.callTool(name: name, arguments: arguments)
+            let limit = ToolTimeouts.limit(for: name, arguments: arguments)
+            let registry = toolRegistry
+            let finished = await AsyncTimeout.run(timeout: limit) {
+                await registry.callTool(name: name, arguments: arguments)
+            }
+            if finished == nil {
+                log("tools/call \(name) exceeded \(Int(limit))s; answered with a timeout error.")
+            }
+            let toolResult = (finished ?? ToolTimeouts.timeoutResult(name: name, limit: limit))
+                .withPermissionContext()
             return JSONRPCResponse.success(id: request.id, result: toolResult.asMCPResult())
 
         case "notifications/initialized":
@@ -158,29 +175,16 @@ actor MCPServer {
         }
     }
 
-    // ARCHITECTURAL NOTE (Codex v5/v6 MEDIUM, deferred):
-    // `write` performs a blocking Darwin.write inside actor-isolated code,
-    // which means a slow or stalled stdout consumer head-of-line stalls
-    // the protocol handler — we cannot process the next incoming request
-    // until the previous response has been fully flushed to the pipe.
-    //
-    // This is acceptable for the MCP stdio use case: an MCP client drives
-    // the server over its own stdio, drains promptly, and tears down when
-    // done. A misbehaving client freezing us simply stalls the client it
-    // owns. A more concurrency-correct design would offload writes to a
-    // dedicated writer Task with a bounded queue, but that's added
-    // complexity for a scenario that doesn't materialise in practice.
+    // Writes are actor-isolated, so concurrent request Tasks never interleave
+    // frames. A blocking Darwin.write can still head-of-line stall other
+    // responses if the client stops draining stdout; an MCP client that does
+    // that has stalled itself, so this is acceptable.
     private func write(response: JSONRPCResponse) {
         do {
             let message = try StdioMessageFramer.frame(response, encoder: encoder)
             // Bypass FileHandle and write via the raw POSIX descriptor so the
             // response arrives immediately even when the client keeps stdin
-            // open between requests. Functional testing against a Python MCP
-            // driver showed FileHandle-backed writes appearing to the other
-            // side only after stdin close or EOF — a subtle buffering gap
-            // that breaks live MCP clients which stream requests and expect
-            // streamed responses. Direct write(2) + fflush(nil) makes the
-            // write atomic and visible at once.
+            // open between requests.
             try message.withUnsafeBytes { buffer -> Void in
                 guard let base = buffer.baseAddress else {
                     throw NSError(domain: "mac-control-mcp", code: -1,
@@ -191,16 +195,17 @@ actor MCPServer {
                 while remaining > 0 {
                     let written = Darwin.write(1, ptr, remaining)
                     if written < 0 {
-                        // Retry transparently on EINTR. Any other errno is a
-                        // real write failure and we surface it.
                         if errno == EINTR { continue }
+                        if errno == EPIPE {
+                            // The client closed its read end: nobody can
+                            // receive responses any more.
+                            log("stdout closed by client (EPIPE); exiting.")
+                            exit(EXIT_SUCCESS)
+                        }
                         throw NSError(domain: "mac-control-mcp", code: Int(errno),
                                       userInfo: [NSLocalizedDescriptionKey: String(cString: strerror(errno))])
                     }
                     if written == 0 {
-                        // POSIX write(2) returning 0 with positive `remaining`
-                        // is not supposed to happen on a pipe, but defend
-                        // against it explicitly so we never spin here.
                         throw NSError(domain: "mac-control-mcp", code: -1,
                                       userInfo: [NSLocalizedDescriptionKey: "write(2) returned 0; refusing to loop"])
                     }
@@ -266,31 +271,14 @@ if let exitCode = handleScreenRecordingCommand(arguments: CommandLine.arguments)
     exit(exitCode)
 }
 
-// Ignore SIGPIPE. This is an MCP stdio server — when the client closes
-// its end of stdout, any pending Darwin.write call would otherwise take
-// down the process with SIGPIPE before we can handle EPIPE in Swift
-// and exit cleanly. Seen on CI: one stdio test closed its subprocess
-// pipe mid-write, the binary died with signal 13, and `swift test`
-// flagged the whole run as failed even though every test assertion
-// had actually passed. Ignoring the signal converts the write failure
-// into a plain EPIPE return, which our existing write loop handles.
+// Ignore SIGPIPE: when the client closes stdout, a pending write returns
+// EPIPE (handled in `write`) instead of killing the process mid-response.
 #if canImport(Darwin)
 signal(SIGPIPE, SIG_IGN)
 
-// v0.8.0: install explicit SIGTERM + SIGINT handlers that exit cleanly.
-// Claude Desktop restarts the MCP extension on each app-launch by
-// sending SIGTERM to the old child and spawning a new one. Without
-// handlers, Swift's default behaviour on SIGTERM is immediate exit
-// WITHOUT running deferred actor cleanup, which can leave the old
-// process sticking around as a zombie if there are outstanding async
-// tasks (e.g. an in-flight osascript subprocess). The handler below
-// sets a flag, flushes stdout, then exits 0 — that's enough for the
-// macOS kernel to reap us immediately and lets Claude Desktop see a
-// clean teardown. Zombies observed on 2026-04-22 with 3 leftover
-// processes motivated this fix.
+// Claude Desktop restarts the MCP extension by sending SIGTERM to the old
+// child. Flush stdout and exit immediately so no instance lingers.
 signal(SIGTERM) { _ in
-    // Flush stdout so any in-flight JSON-RPC reply hits the client
-    // before we exit. fflush is async-signal-safe.
     _ = fflush(stdout)
     _exit(0)
 }
@@ -300,11 +288,16 @@ signal(SIGINT) { _ in
 }
 #endif
 
+// v0.8.3: exit when the launching client dies, even if stdin stays open.
+let parentWatchdog = ParentWatchdog.start(parentPID: getppid())
+
+let stdinChunks = StdinPump.start()
+
 Task {
     let accessibility = AccessibilityController()
     let toolRegistry = ToolRegistry(accessibility: accessibility)
     let server = MCPServer(toolRegistry: toolRegistry)
-    await server.run()
+    await server.run(chunks: stdinChunks)
     exit(EXIT_SUCCESS)
 }
 

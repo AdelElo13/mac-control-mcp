@@ -111,13 +111,18 @@ MANIFEST_PATH="${OUT_DIR}/manifest.json"
 echo ""
 echo "[release] writing manifest.json..."
 
-# Tool count is pulled from the registry so the manifest can never drift.
-TOOL_COUNT=$(swift run mac-control-mcp --help 2>/dev/null | grep -Eo '[0-9]+ tools' | head -1 | awk '{print $1}' || true)
+# Tool count is derived from docs/TOOLS.md, which is itself generated
+# straight from ToolRegistry.toolDefinitions (the same list `tools/list`
+# serves) by Tests/MacControlMCPTests/ToolDocsDriftTests.swift — and CI
+# fails if that file is stale. That test is the single source of truth
+# for this number now; do not hand-edit or hardcode a fallback here, that
+# is exactly the drift this replaced (README said "63 tools" while the
+# server registered 143).
+TOOL_COUNT=$(grep -Eo '<!-- tool-count -->[0-9]+' "$PROJECT_ROOT/docs/TOOLS.md" 2>/dev/null | grep -Eo '[0-9]+' | head -1 || true)
 if [ -z "$TOOL_COUNT" ]; then
-    # Fallback: count from the test expectation we just updated. Keep this in
-    # sync with Tests/MacControlMCPTests/Phase5ToolsTests.swift.
-    TOOL_COUNT=$(grep -E 'toolDefinitions\.count == ' Tests/MacControlMCPTests/Phase5ToolsTests.swift \
-        | grep -Eo '[0-9]+' | head -1 || echo "64")
+    echo "[release] ERROR: could not derive tool count from docs/TOOLS.md." >&2
+    echo "[release] Run 'UPDATE_TOOL_DOCS=1 swift test --filter ToolDocsDriftTests' first." >&2
+    exit 1
 fi
 echo "[release] tool count = ${TOOL_COUNT}"
 

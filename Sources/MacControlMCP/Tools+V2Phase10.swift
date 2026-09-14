@@ -10,8 +10,7 @@ import Foundation
 //                    record_screen
 //   Browser DOM layers: browser_dom_tree, browser_visible_text,
 //                       browser_iframes
-//   Apple native: foundation_models_generate, list_app_intents,
-//                 invoke_app_intent
+//   Apple native: list_app_intents, invoke_app_intent
 
 extension ToolRegistry {
     static let definitionsV2Phase10: [MCPToolDefinition] = [
@@ -22,18 +21,25 @@ extension ToolRegistry {
             name: "capture_screen_v2",
             description: """
                 Capture the main display, store as a content-addressed \
-                artifact at ~/.mac-control-mcp/artifacts/<sha256>.png, and \
-                return {content_ref, bytes, sha256}. Default inline=false \
-                prevents context-size blowups (claude-code #13383, #45785). \
-                Optional max_dimension (default 4000px) and max_bytes \
-                (default 4MB) downscale before return.
+                artifact at ~/.mac-control-mcp/artifacts/<sha256>.<png|jpg> \
+                (1 h TTL), and return {content_ref, bytes, sha256, \
+                mime_type, width, height, format, scale}. Default \
+                inline=false prevents context-size blowups (claude-code \
+                #13383, #45785); inline=true adds base64 bytes. \
+                max_dimension (default 4000 px, longest side) downscales; \
+                max_bytes (default 4 MB) rejects anything still larger. \
+                Use this when you need dedup/hash/inline bytes; use \
+                capture_screen for a region or a plain temp file, \
+                capture_window for one window, capture_display for a \
+                secondary display. format=jpeg / max_width shrink bytes \
+                and latency further.
                 """,
             inputSchema: schema(
-                properties: [
+                properties: withImageOutputProperties([
                     "inline": .object(["type": .string("boolean")]),
                     "max_dimension": .object(["type": .array([.string("integer"), .string("string")])]),
                     "max_bytes": .object(["type": .array([.string("integer"), .string("string")])])
-                ]
+                ])
             )
         ),
         MCPToolDefinition(
@@ -178,22 +184,6 @@ extension ToolRegistry {
         // MARK: Apple native
 
         MCPToolDefinition(
-            name: "foundation_models_generate",
-            description: """
-                Generate text via Apple's Foundation Models framework \
-                (macOS Tahoe 26+, Apple Intelligence). On-device, free, \
-                offline. Gracefully reports 'not available' when framework \
-                missing.
-                """,
-            inputSchema: schema(
-                properties: [
-                    "prompt": .object(["type": .string("string")]),
-                    "system": .object(["type": .string("string")])
-                ],
-                required: ["prompt"]
-            )
-        ),
-        MCPToolDefinition(
             name: "list_app_intents",
             description: """
                 Enumerate installed apps that ship App Intents metadata \
@@ -228,19 +218,23 @@ extension ToolRegistry {
         let inline = arguments["inline"]?.boolValue ?? false
         let maxDim = arguments["max_dimension"]?.intValue ?? 4000
         let maxBytes = arguments["max_bytes"]?.intValue ?? (4 * 1024 * 1024)
-        // First capture to a temp file via existing ScreenController path.
+        let options: ImageOutputOptions
+        switch parseImageOutputOptions(arguments, tool: "capture_screen_v2") {
+        case .success(let parsed): options = parsed
+        case .failure(let box): return box.result
+        }
+        // PERF (v0.8.3): capture → (downscale) → encode ONCE in memory →
+        // content-address. The old path PNG-encoded to a temp file, read
+        // it back, decoded it, re-rendered a thumbnail and PNG-encoded a
+        // second time. No temp file is written any more.
         do {
-            let tmpDir = NSTemporaryDirectory()
-            let tmpPath = tmpDir + "mc-\(Int(Date().timeIntervalSince1970)).png"
-            // Clean up the temp capture on every exit — the old code removed it
-            // only on the success path, so a storeImage failure leaked a
-            // full-resolution screenshot into the temp dir.
-            defer { try? FileManager.default.removeItem(atPath: tmpPath) }
-            let capture = try await screen.captureDisplay(outputPath: tmpPath)
-            guard let artifact = await artifactStore.storeImage(
-                sourcePath: capture.path,
-                maxBytes: maxBytes,
-                maxDimension: maxDim
+            let (data, encoded) = try await screen.captureMainDisplayEncoded(
+                maxDimension: maxDim, options: options
+            )
+            guard let artifact = await artifactStore.storeEncoded(
+                data: data,
+                format: encoded.format,
+                maxBytes: maxBytes
             ) else {
                 return errorResult(
                     "artifact store rejected the image (likely exceeds max_bytes=\(maxBytes) even after downscale — try a smaller max_dimension)",
@@ -253,9 +247,16 @@ extension ToolRegistry {
                 "bytes": .number(Double(artifact.bytes)),
                 "sha256": .string(artifact.sha256),
                 "mime_type": .string(artifact.mimeType),
-                "_schema": .string(artifact.schema)
+                "_schema": .string(artifact.schema),
+                "width": .number(Double(encoded.width)),
+                "height": .number(Double(encoded.height)),
+                "format": .string(encoded.format.rawValue),
+                "source_width": .number(Double(encoded.sourceWidth)),
+                "source_height": .number(Double(encoded.sourceHeight)),
+                "scale": .number(ImageEncoder.scale(outputWidth: encoded.width, sourceWidth: encoded.sourceWidth))
             ]
-            if inline, let data = try? Data(contentsOf: URL(fileURLWithPath: artifact.contentRef)) {
+            // The artifact bytes ARE `data` (content-addressed) — no re-read.
+            if inline {
                 payload["inline_base64"] = .string(data.base64EncodedString())
             }
             return successResult(
@@ -357,47 +358,46 @@ extension ToolRegistry {
     func callBrowserDOMTree(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         let b = arguments["browser"]?.stringValue ?? "safari"
         let r = await browserDOM.domTree(browser: b)
-        return r.ok
-            ? successResult("dom tree: \(r.nodeCount) nodes",
-                            ["ok": .bool(true), "result": encodeAsJSONValue(r)])
-            : errorResult(r.error ?? "browser_dom_tree failed",
-                          ["ok": .bool(false), "result": encodeAsJSONValue(r)])
+        if r.ok {
+            return successResult("dom tree: \(r.nodeCount) nodes",
+                                 ["ok": .bool(true), "result": encodeAsJSONValue(r)])
+        }
+        var payload: [String: JSONValue] = ["ok": .bool(false), "result": encodeAsJSONValue(r)]
+        if let c = r.errorCode { payload["error_code"] = .string(c) }
+        if let h = r.hint { payload["hint"] = .string(h) }
+        if let p = r.pane { payload["pane"] = .string(p) }
+        return errorResult(r.error ?? "browser_dom_tree failed", payload)
     }
 
     func callBrowserVisibleText(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         let b = arguments["browser"]?.stringValue ?? "safari"
         let r = await browserDOM.visibleText(browser: b)
-        return r.ok
-            ? successResult("\(r.charCount) chars visible",
-                            ["ok": .bool(true), "result": encodeAsJSONValue(r)])
-            : errorResult(r.error ?? "browser_visible_text failed",
-                          ["ok": .bool(false), "result": encodeAsJSONValue(r)])
+        if r.ok {
+            return successResult("\(r.charCount) chars visible",
+                                 ["ok": .bool(true), "result": encodeAsJSONValue(r)])
+        }
+        var payload: [String: JSONValue] = ["ok": .bool(false), "result": encodeAsJSONValue(r)]
+        if let c = r.errorCode { payload["error_code"] = .string(c) }
+        if let h = r.hint { payload["hint"] = .string(h) }
+        if let p = r.pane { payload["pane"] = .string(p) }
+        return errorResult(r.error ?? "browser_visible_text failed", payload)
     }
 
     func callBrowserIframes(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         let b = arguments["browser"]?.stringValue ?? "safari"
         let r = await browserDOM.iframes(browser: b)
-        return r.ok
-            ? successResult("\(r.count) iframe(s)",
-                            ["ok": .bool(true), "result": encodeAsJSONValue(r)])
-            : errorResult(r.error ?? "browser_iframes failed",
-                          ["ok": .bool(false), "result": encodeAsJSONValue(r)])
+        if r.ok {
+            return successResult("\(r.count) iframe(s)",
+                                 ["ok": .bool(true), "result": encodeAsJSONValue(r)])
+        }
+        var payload: [String: JSONValue] = ["ok": .bool(false), "result": encodeAsJSONValue(r)]
+        if let c = r.errorCode { payload["error_code"] = .string(c) }
+        if let h = r.hint { payload["hint"] = .string(h) }
+        if let p = r.pane { payload["pane"] = .string(p) }
+        return errorResult(r.error ?? "browser_iframes failed", payload)
     }
 
     // Apple native
-
-    func callFoundationModelsGenerate(_ arguments: [String: JSONValue]) async -> ToolCallResult {
-        guard let prompt = arguments["prompt"]?.stringValue, !prompt.isEmpty else {
-            return invalidArgument("foundation_models_generate requires 'prompt'.")
-        }
-        let system = arguments["system"]?.stringValue
-        let r = await appleNative.foundationModelsGenerate(prompt: prompt, system: system)
-        return r.ok
-            ? successResult("generated \(r.text?.count ?? 0) chars",
-                            ["ok": .bool(true), "result": encodeAsJSONValue(r)])
-            : errorResult(r.hint ?? r.error ?? "foundation_models_generate failed",
-                          ["ok": .bool(false), "result": encodeAsJSONValue(r)])
-    }
 
     func callListAppIntents() async -> ToolCallResult {
         let r = await appleNative.listAppIntents()
