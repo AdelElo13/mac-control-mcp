@@ -91,7 +91,26 @@ extension ToolRegistry {
 extension ToolRegistry {
     func callBrowserListTabs(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         let browserKind = BrowserController.Browser.detect(arguments["browser"]?.stringValue)
-        let tabs = await browser.listTabs(browser: browserKind)
+        let fetch = await browser.listTabs(browser: browserKind)
+
+        // BUG-FIX (fix/browser-errors): a failed osascript call (Automation
+        // permission missing, browser not running, timeout, ...) previously
+        // came back as an empty tab list indistinguishable from "genuinely
+        // zero tabs" — the tool then reported success with a misleading
+        // multi_process_hint. Surface the classified failure instead.
+        if let c = fetch.classification {
+            var payload: [String: JSONValue] = [
+                "ok": .bool(false),
+                "browser": .string(browserKind.rawValue),
+                "error_code": .string(c.errorCode),
+                "error": .string(c.error)
+            ]
+            if let hint = c.hint { payload["hint"] = .string(hint) }
+            if let pane = c.pane { payload["pane"] = .string(pane) }
+            return errorResult("browser_list_tabs failed: \(c.error)", payload)
+        }
+
+        let tabs = fetch.tabs
         var payload: [String: JSONValue] = [
             "ok": .bool(true),
             "browser": .string(browserKind.rawValue),
@@ -105,12 +124,16 @@ extension ToolRegistry {
         // return zero tabs even with windows clearly on screen. Check the
         // running-app table as a sanity signal and surface a concrete
         // fallback pointer so callers don't conclude the browser is empty.
+        //
+        // This hint is now ONLY reachable when the script actually
+        // succeeded and returned zero tabs (classification == nil above) —
+        // it no longer masks permission/automation failures.
         if tabs.isEmpty {
             let bundleId = browserKind == .chrome ? "com.google.Chrome" : "com.apple.Safari"
             let procCount = NSWorkspace.shared.runningApplications
                 .filter { $0.bundleIdentifier == bundleId }
                 .count
-            if procCount > 0 {
+            if procCount > 1 {
                 payload["multi_process_hint"] = .string(
                     "AppleScript returned 0 tabs but \(procCount) process(es) with bundle \(bundleId) are running. "
                     + "This is a known limitation: `tell application` only scripts the primary instance. "
@@ -123,10 +146,28 @@ extension ToolRegistry {
 
     func callBrowserActiveTab(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         let browserKind = BrowserController.Browser.detect(arguments["browser"]?.stringValue)
-        guard let tab = await browser.activeTab(browser: browserKind) else {
+        let fetch = await browser.activeTab(browser: browserKind)
+
+        if let c = fetch.classification {
+            var payload: [String: JSONValue] = [
+                "ok": .bool(false),
+                "browser": .string(browserKind.rawValue),
+                "error_code": .string(c.errorCode),
+                "error": .string(c.error)
+            ]
+            if let hint = c.hint { payload["hint"] = .string(hint) }
+            if let pane = c.pane { payload["pane"] = .string(pane) }
+            return errorResult("browser_get_active_tab failed: \(c.error)", payload)
+        }
+
+        guard let tab = fetch.tab else {
             return errorResult(
                 "No active tab found (is \(browserKind.rawValue) running with a window open?)",
-                ["ok": .bool(false), "browser": .string(browserKind.rawValue)]
+                [
+                    "ok": .bool(false),
+                    "browser": .string(browserKind.rawValue),
+                    "error_code": .string("no_active_tab")
+                ]
             )
         }
         return successResult(
@@ -148,18 +189,23 @@ extension ToolRegistry {
         let tabIndex = arguments["tab_index"]?.intValue
 
         let ok = await browser.navigate(browser: browserKind, url: url, windowIndex: windowIndex, tabIndex: tabIndex)
-        let err = await browser.lastError
-        let payload: [String: JSONValue] = [
+        let classification = ok ? nil : await browser.classifiedError(browser: browserKind)
+        var payload: [String: JSONValue] = [
             "ok": .bool(ok),
             "browser": .string(browserKind.rawValue),
             "url": .string(url),
             "window_index": .number(Double(windowIndex)),
             "tab_index": tabIndex.map { .number(Double($0)) } ?? .null,
-            "error": err.map(JSONValue.string) ?? .null
+            "error": classification.map { JSONValue.string($0.error) } ?? .null
         ]
+        if let c = classification {
+            payload["error_code"] = .string(c.errorCode)
+            if let hint = c.hint { payload["hint"] = .string(hint) }
+            if let pane = c.pane { payload["pane"] = .string(pane) }
+        }
         return ok
             ? successResult("Navigation issued.", payload)
-            : errorResult("browser_navigate failed: \(err ?? "is the browser running?")", payload)
+            : errorResult("browser_navigate failed: \(classification?.error ?? "is the browser running?")", payload)
     }
 
     func callBrowserEvalJS(_ arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -171,12 +217,15 @@ extension ToolRegistry {
         let tabIndex = arguments["tab_index"]?.intValue
 
         let result = await browser.evalJS(browser: browserKind, code: code, windowIndex: windowIndex, tabIndex: tabIndex)
-        let payload: [String: JSONValue] = [
+        var payload: [String: JSONValue] = [
             "ok": .bool(result.success),
             "browser": .string(browserKind.rawValue),
             "value": result.value.map(JSONValue.string) ?? .null,
             "error": result.error.map(JSONValue.string) ?? .null
         ]
+        if let errorCode = result.errorCode { payload["error_code"] = .string(errorCode) }
+        if let hint = result.hint { payload["hint"] = .string(hint) }
+        if let pane = result.pane { payload["pane"] = .string(pane) }
         return result.success
             ? successResult("JavaScript evaluated.", payload)
             : errorResult(result.error ?? "Evaluation failed", payload)

@@ -33,11 +33,51 @@ actor BrowserController {
         let success: Bool
         let value: String?
         let error: String?
+        /// Structured classification of `error`, when it came from a
+        /// failed osascript invocation / AppleScript `on error`. Nil for
+        /// success and for JS-level exceptions that aren't
+        /// permission/automation related.
+        let errorCode: String?
+        let hint: String?
+        let pane: String?
     }
+
+    /// Result of a tab-listing attempt. Distinguishes "the script failed"
+    /// (`classification != nil`, `tabs` empty) from "the browser genuinely
+    /// has zero tabs right now" (`classification == nil`, `tabs` empty).
+    struct TabsFetchResult: Sendable {
+        let tabs: [TabInfo]
+        let classification: BrowserErrorClassifier.Classification?
+    }
+
+    /// Result of an active-tab lookup. Same success/failure distinction
+    /// as `TabsFetchResult`: `tab == nil && classification == nil` means
+    /// the script ran fine but there is genuinely no active tab (e.g. no
+    /// window open).
+    struct ActiveTabFetchResult: Sendable {
+        let tab: TabInfo?
+        let classification: BrowserErrorClassifier.Classification?
+    }
+
+    // Field/record separators for AppleScript output. Tab (`\t`) and
+    // linefeed were used previously, but page titles routinely contain
+    // literal tab characters and newlines, which silently corrupted
+    // parsing (fields shifted, tabs dropped). ASCII 30 (record separator)
+    // and 31 (unit separator) are control characters that never appear in
+    // real page titles/URLs.
+    private static let recordSeparator = String(UnicodeScalar(30))
+    private static let unitSeparator = String(UnicodeScalar(31))
 
     // MARK: - Tabs
 
-    func listTabs(browser: Browser) -> [TabInfo] {
+    /// Fetch all tabs. Returns `.classification` (never both tabs and a
+    /// classification) when the underlying osascript call failed — e.g.
+    /// Apple Events permission not granted (-1743). Previously this
+    /// swallowed such failures into a bare `[]`, which `browser_list_tabs`
+    /// then reported as a misleading "0 tabs, maybe multi-process" success.
+    func listTabs(browser: Browser) -> TabsFetchResult {
+        let us = Self.unitSeparator
+        let rs = Self.recordSeparator
         let script: String
         switch browser {
         case .safari:
@@ -51,7 +91,7 @@ actor BrowserController {
                 repeat with w from 1 to (count of windows)
                     repeat with t from 1 to (count of tabs of window w)
                         set theTab to tab t of window w
-                        set output to output & (w as string) & "\\t" & (t as string) & "\\t" & (name of theTab) & "\\t" & (URL of theTab) & "\\t" & ((w = 1 and t = activeTabIndex) as string) & "\\n"
+                        set output to output & (w as string) & "\(us)" & (t as string) & "\(us)" & (name of theTab) & "\(us)" & (URL of theTab) & "\(us)" & ((w = 1 and t = activeTabIndex) as string) & "\(rs)"
                     end repeat
                 end repeat
                 return output
@@ -68,7 +108,7 @@ actor BrowserController {
                 repeat with w from 1 to (count of windows)
                     repeat with t from 1 to (count of tabs of window w)
                         set theTab to tab t of window w
-                        set output to output & (w as string) & tab & (t as string) & tab & (title of theTab) & tab & (URL of theTab) & tab & ((w = 1 and t = activeIndex) as string) & linefeed
+                        set output to output & (w as string) & "\(us)" & (t as string) & "\(us)" & (title of theTab) & "\(us)" & (URL of theTab) & "\(us)" & ((w = 1 and t = activeIndex) as string) & "\(rs)"
                     end repeat
                 end repeat
                 return output
@@ -76,13 +116,68 @@ actor BrowserController {
             """
         }
 
-        guard let raw = runOsascript(script: script) else { return [] }
-        return parseTabs(browser: browser.rawValue, raw: raw)
+        guard let raw = runOsascript(script: script) else {
+            return TabsFetchResult(tabs: [], classification: classifiedError(browser: browser))
+        }
+        return TabsFetchResult(tabs: parseTabs(browser: browser.rawValue, raw: raw), classification: nil)
     }
 
-    func activeTab(browser: Browser) -> TabInfo? {
-        let tabs = listTabs(browser: browser)
-        return tabs.first { $0.active }
+    /// Fetch the active tab by querying `active tab of front window`
+    /// (Chrome) / `current tab of front window` (Safari) directly, rather
+    /// than filtering `listTabs()`'s output. BUG-FIX: filtering the full
+    /// tab list inherited every failure mode of `listTabs` (permission
+    /// errors -> [] -> "no active tab") and could also mis-rank ordering
+    /// across windows. Querying the front window's active tab directly is
+    /// both cheaper and correct regardless of window ordering.
+    func activeTab(browser: Browser) -> ActiveTabFetchResult {
+        let us = Self.unitSeparator
+        let script: String
+        switch browser {
+        case .safari:
+            script = """
+            tell application "Safari"
+                set win to front window
+                set idx to index of current tab of win
+                set theTab to current tab of win
+                return "1\(us)" & (idx as string) & "\(us)" & (name of theTab) & "\(us)" & (URL of theTab)
+            end tell
+            """
+        case .chrome:
+            script = """
+            tell application "Google Chrome"
+                set win to front window
+                set idx to active tab index of win
+                set theTab to active tab of win
+                return "1\(us)" & (idx as string) & "\(us)" & (title of theTab) & "\(us)" & (URL of theTab)
+            end tell
+            """
+        }
+
+        guard let raw = runOsascript(script: script) else {
+            return ActiveTabFetchResult(tab: nil, classification: classifiedError(browser: browser))
+        }
+        let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: us)
+        guard parts.count >= 4, let w = Int(parts[0]), let t = Int(parts[1]) else {
+            return ActiveTabFetchResult(
+                tab: nil,
+                classification: BrowserErrorClassifier.Classification(
+                    errorCode: "failed",
+                    error: "Unexpected response from \(browser.rawValue): \(raw)",
+                    hint: nil,
+                    pane: nil
+                )
+            )
+        }
+        let tab = TabInfo(
+            browser: browser.rawValue,
+            windowIndex: w,
+            tabIndex: t,
+            title: parts[2],
+            url: parts[3],
+            active: true
+        )
+        return ActiveTabFetchResult(tab: tab, classification: nil)
     }
 
     /// Set a tab's URL. Creates a window if none exists (same reasoning
@@ -117,7 +212,11 @@ actor BrowserController {
     /// system locale, not `"2,0"` on nl-NL.
     ///
     /// Requires "Allow JavaScript from Apple Events" enabled in the
-    /// browser's Develop menu.
+    /// browser's Develop menu. Any osascript/AppleScript-level failure
+    /// (Automation permission missing, that developer setting disabled,
+    /// browser not running, timeout) is run through
+    /// `BrowserErrorClassifier` so the caller gets a structured
+    /// error_code/hint/pane instead of a generic message.
     func evalJS(browser: Browser, code: String, windowIndex: Int = 1, tabIndex: Int? = nil) -> EvalResult {
         // Wrap user code so the result is always a well-formed JS string
         // before AppleScript ever touches it.
@@ -188,26 +287,40 @@ actor BrowserController {
         }
 
         guard let raw = runOsascript(script: command) else {
-            return EvalResult(success: false, value: nil, error: "osascript invocation failed")
+            // Real stderr (e.g. -1743 Automation denial) lives in
+            // `lastError` — previously this branch discarded it in favor
+            // of a generic "osascript invocation failed" string, which is
+            // exactly the silent-swallow bug being fixed here.
+            return evalFailure(lastError ?? "osascript invocation failed", browser: browser)
         }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.hasPrefix("ERR\t") {
-            return EvalResult(success: false, value: nil, error: String(trimmed.dropFirst(4)))
+            // AppleScript's own `on error errMsg` catches OS-level errors
+            // (Automation denial, "isn't running", timeouts) as well as
+            // browser-side policy errors (JS from Apple Events disabled)
+            // — classify uniformly.
+            return evalFailure(String(trimmed.dropFirst(4)), browser: browser)
         }
         guard trimmed.hasPrefix("OK\t") else {
-            return EvalResult(success: false, value: nil, error: "Unexpected response: \(trimmed)")
+            return evalFailure("Unexpected response: \(trimmed)", browser: browser)
         }
         // The wrapper ALWAYS returns a JSON envelope — parse it.
         let envelope = String(trimmed.dropFirst(3))
         guard let data = envelope.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             // Old-format compatibility: treat raw string as value.
-            return EvalResult(success: true, value: envelope, error: nil)
+            return EvalResult(success: true, value: envelope, error: nil, errorCode: nil, hint: nil, pane: nil)
         }
         if let ok = json["ok"] as? Bool, ok {
-            return EvalResult(success: true, value: (json["v"] as? String) ?? "", error: nil)
+            return EvalResult(success: true, value: (json["v"] as? String) ?? "", error: nil, errorCode: nil, hint: nil, pane: nil)
         }
-        return EvalResult(success: false, value: nil, error: (json["err"] as? String) ?? "unknown JS error")
+        // Genuine JS-level exception — not an Automation/policy failure,
+        // so no classification (errorCode nil), just the raw JS message.
+        return EvalResult(
+            success: false, value: nil,
+            error: (json["err"] as? String) ?? "unknown JS error",
+            errorCode: nil, hint: nil, pane: nil
+        )
     }
 
     /// Open a new tab. If the browser has no window, creates one first
@@ -284,6 +397,20 @@ actor BrowserController {
         return nil
     }
 
+    /// Classify `lastError` (if any) for the given browser. Exposed so
+    /// callers that drive `navigate`/`newTab`/`closeTab` (which return a
+    /// plain `Bool`) can turn a failure into a structured error_code/hint
+    /// without duplicating the classification logic.
+    func classifiedError(browser: Browser) -> BrowserErrorClassifier.Classification? {
+        guard let err = lastError else { return nil }
+        return BrowserErrorClassifier.classify(stderr: err, browser: browser)
+    }
+
+    private func evalFailure(_ message: String, browser: Browser) -> EvalResult {
+        let c = BrowserErrorClassifier.classify(stderr: message, browser: browser)
+        return EvalResult(success: false, value: nil, error: c.error, errorCode: c.errorCode, hint: c.hint, pane: c.pane)
+    }
+
     private func escape(_ s: String) -> String {
         s.replacingOccurrences(of: "\\", with: "\\\\")
          .replacingOccurrences(of: "\"", with: "\\\"")
@@ -304,10 +431,18 @@ actor BrowserController {
         return literal
     }
 
-    private func parseTabs(browser: String, raw: String) -> [TabInfo] {
+    /// Parses AppleScript tab output. Records are separated by ASCII 30
+    /// (record separator), fields within a record by ASCII 31 (unit
+    /// separator) — control characters that never occur in real page
+    /// titles/URLs, unlike the previous tab/linefeed delimiters which a
+    /// title containing a literal tab character or newline would corrupt
+    /// (fields shift, or a title gets split into two bogus records).
+    /// Internal (not private) so it is directly unit-testable.
+    func parseTabs(browser: String, raw: String) -> [TabInfo] {
         var out: [TabInfo] = []
-        for line in raw.split(separator: "\n") {
-            let parts = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
+        for record in raw.components(separatedBy: Self.recordSeparator) {
+            guard !record.isEmpty else { continue }
+            let parts = record.components(separatedBy: Self.unitSeparator)
             guard parts.count >= 5,
                   let w = Int(parts[0]),
                   let t = Int(parts[1]) else { continue }
