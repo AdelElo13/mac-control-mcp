@@ -171,8 +171,17 @@ extension ToolRegistry {
 
         // 3. Store exactly the drawn elements, in draw order, so
         //    `elements[i].element_id` is the box labelled i+1.
-        let drawnElements = capture.drawnIndices.map { nodes[$0].element }
-        let ids = await elementCache.storeMany(drawnElements, pid: pid)
+        //
+        //    The AX path from the walk goes with them, so the id is the
+        //    content-addressed one from v0.9 C-5: `capture_annotated`
+        //    returns the SAME `element_id` that find_elements /
+        //    get_ui_tree / element_at_point return for that element, and
+        //    the handle can be repaired by re-walking the path if the
+        //    cached AXUIElement goes dead.
+        let ids = await elementCache.storeMany(
+            withPaths: capture.drawnIndices.map { (nodes[$0].element, nodes[$0].path) },
+            pid: pid
+        )
 
         // 4. Artifact.
         guard let artifact = await artifactStore.storeEncoded(
