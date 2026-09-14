@@ -94,13 +94,30 @@ extension ToolRegistry {
         case .failure(let box): return box.result
         }
 
-        let ok = await windows.moveWindow(pid: handle.pid, index: handle.index, to: CGPoint(x: x, y: y))
+        // Act on the CONCRETE element resolved from window_id (v0.9.0,
+        // Codex r1 #1) — re-reading the AX window array by index here is
+        // what let a reorder retarget the move.
+        let ok = await {
+            if let element = handle.element {
+                return await windows.moveWindow(element: element, to: CGPoint(x: x, y: y))
+            }
+            return await windows.moveWindow(pid: handle.pid, index: handle.index, to: CGPoint(x: x, y: y))
+        }()
         var payload: [String: JSONValue] = [
             "ok": .bool(ok),
             "x": .number(x),
             "y": .number(y)
         ]
         payload.merge(handle.payload) { existing, _ in existing }
+        let verification = await verifyWindowIdentity(handle)
+        payload.merge(verification.payload) { _, new in new }
+        if let reason = verification.mismatch {
+            payload["ok"] = .bool(false)
+            return errorResult(
+                "move_window acted on a window that no longer matches the requested window_id (\(reason)).",
+                payload
+            )
+        }
         return ok
             ? successResult("Window moved.", payload)
             : errorResult("Failed to move window.", payload)
@@ -119,13 +136,28 @@ extension ToolRegistry {
         case .failure(let box): return box.result
         }
 
-        let ok = await windows.resizeWindow(pid: handle.pid, index: handle.index, to: CGSize(width: w, height: h))
+        let ok = await {
+            if let element = handle.element {
+                return await windows.resizeWindow(element: element, to: CGSize(width: w, height: h))
+            }
+            return await windows.resizeWindow(pid: handle.pid, index: handle.index,
+                                              to: CGSize(width: w, height: h))
+        }()
         var payload: [String: JSONValue] = [
             "ok": .bool(ok),
             "width": .number(w),
             "height": .number(h)
         ]
         payload.merge(handle.payload) { existing, _ in existing }
+        let verification = await verifyWindowIdentity(handle)
+        payload.merge(verification.payload) { _, new in new }
+        if let reason = verification.mismatch {
+            payload["ok"] = .bool(false)
+            return errorResult(
+                "resize_window acted on a window that no longer matches the requested window_id (\(reason)).",
+                payload
+            )
+        }
         return ok
             ? successResult("Window resized.", payload)
             : errorResult("Failed to resize window.", payload)
@@ -141,12 +173,26 @@ extension ToolRegistry {
         case .failure(let box): return box.result
         }
 
-        let ok = await windows.setState(pid: handle.pid, index: handle.index, state: state)
+        let ok = await {
+            if let element = handle.element {
+                return await windows.setState(element: element, state: state)
+            }
+            return await windows.setState(pid: handle.pid, index: handle.index, state: state)
+        }()
         var payload: [String: JSONValue] = [
             "ok": .bool(ok),
             "state": .string(state)
         ]
         payload.merge(handle.payload) { existing, _ in existing }
+        let verification = await verifyWindowIdentity(handle)
+        payload.merge(verification.payload) { _, new in new }
+        if let reason = verification.mismatch {
+            payload["ok"] = .bool(false)
+            return errorResult(
+                "set_window_state acted on a window that no longer matches the requested window_id (\(reason)).",
+                payload
+            )
+        }
         if ok {
             return successResult("Window state applied.", payload)
         }

@@ -604,9 +604,25 @@ extension ToolRegistry {
         case .success(let resolved): handle = resolved
         case .failure(let box): return box.result
         }
-        let success = await windows.focusWindow(pid: handle.pid, index: handle.index)
+        // v0.9.0 (Codex r1 #1): focus the CONCRETE element the window_id
+        // resolved to, not `axWindows(pid)[index]` re-read after the fact.
+        let success = await {
+            if let element = handle.element {
+                return await windows.focusWindow(element: element, pid: handle.pid)
+            }
+            return await windows.focusWindow(pid: handle.pid, index: handle.index)
+        }()
         var payload: [String: JSONValue] = ["ok": .bool(success)]
         payload.merge(handle.payload) { existing, _ in existing }
+        let verification = await verifyWindowIdentity(handle)
+        payload.merge(verification.payload) { _, new in new }
+        if let reason = verification.mismatch {
+            payload["ok"] = .bool(false)
+            return errorResult(
+                "focus_window acted on a window that no longer matches the requested window_id (\(reason)).",
+                payload
+            )
+        }
         return success
             ? successResult("Window focused.", payload)
             : errorResult("Failed to focus window (invalid pid or index).", payload)
