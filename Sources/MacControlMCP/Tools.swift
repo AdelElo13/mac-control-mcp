@@ -154,7 +154,10 @@ final class ToolRegistry: @unchecked Sendable {
     // MARK: - Tool dispatch
     //
     // MAINTAINABILITY NOTE (Codex v1 LOW):
-    // This single switch statement now dispatches 63 tools. Splitting it
+    // This single switch statement now dispatches every tool in
+    // `toolDefinitions` (see docs/TOOLS.md for the current count — this
+    // comment intentionally doesn't hardcode a number that would drift).
+    // Splitting it
     // into a `[String: @Sendable (Arguments) -> ToolCallResult]` table per
     // phase file would reduce surface area and make tool registration
     // self-contained. The split is intentionally deferred until we add
