@@ -302,4 +302,235 @@ struct BatchToolTests {
         }
         #expect(second["name"]?.stringValue == "focused_app")
     }
+
+    // MARK: - Review fix: a REAL sub-call timeout always stops the batch
+
+    @Test("a real sub-call timeout (AsyncTimeout expiry) always stops the batch, even with stop_on_error:false")
+    func realSubCallTimeoutAlwaysStopsBatch() async {
+        let registry = ToolRegistry(accessibility: AccessibilityController())
+        // wait_for_app polls for up to timeout_seconds:5 looking for a
+        // bundle id that will never appear — it is still running when the
+        // test-only forced per-call limit (0.05s) expires, so
+        // AsyncTimeout.run genuinely discards its late result. This is
+        // the real timeout path (`finished == nil` in callBatch), not
+        // wait_for_app's own internal deadline returning an ordinary
+        // "not found" result.
+        let calls: JSONValue = .array([
+            .object([
+                "name": .string("wait_for_app"),
+                "arguments": .object([
+                    "bundle_id": .string("com.mac-control-mcp.does-not-exist.\(UUID().uuidString)"),
+                    "timeout_seconds": .number(5)
+                ])
+            ]),
+            .object(["name": .string("focused_app")])
+        ])
+
+        let result = await registry.callTool(
+            name: "batch",
+            arguments: [
+                "calls": calls,
+                // stop_on_error:false to prove the timeout halts the batch
+                // unconditionally — not because an ordinary failure did.
+                "stop_on_error": .bool(false),
+                "__test_override_call_timeout_seconds": .number(0.05)
+            ]
+        )
+
+        #expect(result.isError == true)
+        guard case .object(let payload) = result.structuredContent,
+              case .array(let results)? = payload["results"] else {
+            Issue.record("batch did not return a results array")
+            return
+        }
+        // The second call (focused_app) never ran.
+        #expect(results.count == 1)
+        #expect(payload["completed"]?.doubleValue == 1)
+        #expect(payload["stopped_at"]?.doubleValue == 0)
+
+        guard case .object(let first)? = results.first else {
+            Issue.record("missing first result")
+            return
+        }
+        #expect(first["ok"]?.boolValue == false)
+        #expect(first["error_code"]?.stringValue == "timeout")
+        #expect(first["aborted_reason"]?.stringValue == "sub_call_timeout_not_cancellable")
+    }
+
+    // MARK: - Review fix: hard cap on calls.count
+
+    @Test("more than 50 calls is rejected up front with invalid_argument")
+    func maxCallsEnforced() async {
+        let registry = ToolRegistry(accessibility: AccessibilityController())
+        let calls: JSONValue = .array(
+            (0..<51).map { _ in .object(["name": .string("focused_app")]) }
+        )
+        let result = await registry.callTool(name: "batch", arguments: ["calls": calls])
+        #expect(result.isError == true)
+        guard case .object(let payload) = result.structuredContent else {
+            Issue.record("batch did not return an object payload")
+            return
+        }
+        #expect(payload["error_code"]?.stringValue == "invalid_argument")
+        #expect(payload["results"] == nil)
+    }
+
+    @Test("exactly 50 calls is accepted")
+    func exactlyMaxCallsAccepted() async {
+        let registry = ToolRegistry(accessibility: AccessibilityController())
+        let calls: JSONValue = .array(
+            (0..<50).map { _ in .object(["name": .string("focused_app")]) }
+        )
+        // 50 calls at the real 90s-default limit each would blow the 300s
+        // budget cap on their own — force a tiny per-call limit via the
+        // test hook so this test isolates the *count* cap (<=50) from the
+        // *budget* cap (<=300s), which has its own tests below.
+        let result = await registry.callTool(
+            name: "batch",
+            arguments: ["calls": calls, "__test_override_call_timeout_seconds": .number(1)]
+        )
+        #expect(result.isError == false)
+        guard case .object(let payload) = result.structuredContent else {
+            Issue.record("batch did not return an object payload")
+            return
+        }
+        #expect(payload["completed"]?.doubleValue == 50)
+    }
+
+    // MARK: - Review fix: reject rather than silently truncate an over-budget batch
+
+    @Test("a batch whose summed per-call timeout budget exceeds 300s is rejected up front, not truncated")
+    func overBudgetBatchRejected() async {
+        let registry = ToolRegistry(accessibility: AccessibilityController())
+        // Each call's own ToolTimeouts.limit = max(90, timeout_seconds + 15).
+        // Two calls at timeout_seconds:200 → 215s each → 430s summed,
+        // comfortably over the 300s cap.
+        let overBudgetCall: JSONValue = .object([
+            "name": .string("wait_for_app"),
+            "arguments": .object([
+                "bundle_id": .string("com.mac-control-mcp.does-not-exist"),
+                "timeout_seconds": .number(200)
+            ])
+        ])
+        let calls: JSONValue = .array([overBudgetCall, overBudgetCall])
+
+        let result = await registry.callTool(name: "batch", arguments: ["calls": calls])
+        #expect(result.isError == true)
+        guard case .object(let payload) = result.structuredContent else {
+            Issue.record("batch did not return an object payload")
+            return
+        }
+        #expect(payload["error_code"]?.stringValue == "invalid_argument")
+        // Rejected before anything ran.
+        #expect(payload["results"] == nil)
+    }
+
+    @Test("delay_ms overhead counts toward the 300s budget check")
+    func delayOverheadCountsTowardBudget() async {
+        let registry = ToolRegistry(accessibility: AccessibilityController())
+        // 4 cheap calls (90s default limit each is irrelevant here since
+        // we force a tiny per-call limit via the test hook) but a 5000ms
+        // delay between each of the 4 calls (3 gaps) plus a forced
+        // per-call limit chosen so only the delay overhead pushes the
+        // total over budget.
+        let calls: JSONValue = .array(
+            (0..<4).map { _ in .object(["name": .string("focused_app")]) }
+        )
+        let result = await registry.callTool(
+            name: "batch",
+            arguments: [
+                "calls": calls,
+                "delay_ms": .number(5000),
+                "__test_override_call_timeout_seconds": .number(99)
+            ]
+        )
+        // 4 * 99s + 3 * 5s delay = 411s > 300s cap.
+        #expect(result.isError == true)
+        guard case .object(let payload) = result.structuredContent else {
+            Issue.record("batch did not return an object payload")
+            return
+        }
+        #expect(payload["error_code"]?.stringValue == "invalid_argument")
+    }
+
+    // MARK: - Review fix: MEDIUM validation
+
+    @Test("a non-object arguments field is rejected, naming the offending index")
+    func nonObjectArgumentsRejected() async {
+        let registry = ToolRegistry(accessibility: AccessibilityController())
+        let calls: JSONValue = .array([
+            .object(["name": .string("focused_app")]),
+            .object(["name": .string("list_apps"), "arguments": .array([.string("oops")])])
+        ])
+        let result = await registry.callTool(name: "batch", arguments: ["calls": calls])
+        #expect(result.isError == true)
+        guard case .object(let payload) = result.structuredContent,
+              let message = payload["error"]?.stringValue else {
+            Issue.record("batch did not return an error payload")
+            return
+        }
+        #expect(payload["error_code"]?.stringValue == "invalid_argument")
+        #expect(message.contains("calls[1]"))
+        #expect(payload["results"] == nil)
+    }
+
+    @Test("an id that is not a string or integer is rejected")
+    func nonStringOrIntegerIDRejected() async {
+        let registry = ToolRegistry(accessibility: AccessibilityController())
+        for badID: JSONValue in [.bool(true), .array([]), .object([:]), .null, .number(1.5)] {
+            let calls: JSONValue = .array([
+                .object(["name": .string("focused_app"), "id": badID])
+            ])
+            let result = await registry.callTool(name: "batch", arguments: ["calls": calls])
+            #expect(result.isError == true, "expected rejection for id \(badID)")
+            guard case .object(let payload) = result.structuredContent else {
+                Issue.record("batch did not return an object payload for id \(badID)")
+                continue
+            }
+            #expect(payload["error_code"]?.stringValue == "invalid_argument")
+        }
+    }
+
+    @Test("an integer id (whole-number JSON number) is accepted")
+    func integerNumberIDAccepted() async {
+        let registry = ToolRegistry(accessibility: AccessibilityController())
+        let calls: JSONValue = .array([
+            .object(["name": .string("focused_app"), "id": .number(7)])
+        ])
+        let result = await registry.callTool(name: "batch", arguments: ["calls": calls])
+        #expect(result.isError == false)
+    }
+
+    @Test("duplicate ids (explicit, and explicit colliding with a default index) are rejected")
+    func duplicateIDsRejected() async {
+        let registry = ToolRegistry(accessibility: AccessibilityController())
+
+        let explicitDuplicate: JSONValue = .array([
+            .object(["name": .string("focused_app"), "id": .string("dup")]),
+            .object(["name": .string("list_apps"), "id": .string("dup")])
+        ])
+        let r1 = await registry.callTool(name: "batch", arguments: ["calls": explicitDuplicate])
+        #expect(r1.isError == true)
+        guard case .object(let payload1) = r1.structuredContent else {
+            Issue.record("batch did not return an object payload")
+            return
+        }
+        #expect(payload1["error_code"]?.stringValue == "invalid_argument")
+        #expect(payload1["results"] == nil)
+
+        // The second call's default id (index 0) collides with the
+        // first call's explicit id.
+        let defaultCollision: JSONValue = .array([
+            .object(["name": .string("focused_app"), "id": .number(1)]),
+            .object(["name": .string("list_apps")]),
+            .object(["name": .string("permissions_status")])
+        ])
+        let r2 = await registry.callTool(name: "batch", arguments: ["calls": defaultCollision])
+        #expect(r2.isError == true)
+        guard case .object(let payload2) = r2.structuredContent else {
+            Issue.record("batch did not return an object payload")
+            return
+        }
+        #expect(payload2["error_code"]?.stringValue == "invalid_argument")
+    }
 }
