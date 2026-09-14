@@ -69,111 +69,27 @@ if [ -f "$ICON_SRC" ]; then
     cp "$ICON_SRC" "${APP_PATH}/Contents/Resources/AppIcon.icns"
 fi
 
-# Info.plist — minimum fields TCC needs to identify the app stably.
-#   - CFBundleIdentifier: stable identity across rebuilds so TCC grants
-#     persist. The TCC database keys off this + code signing identity.
-#   - CFBundleExecutable: matches the binary we just copied.
-#   - LSBackgroundOnly: it's a CLI / MCP server; no Dock icon, no menu.
-#   - NSPrincipalClass + LSUIElement keep it quiet.
-cat > "${APP_PATH}/Contents/Info.plist" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>en</string>
-    <key>CFBundleExecutable</key>
-    <string>${APP_NAME}</string>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
-    <key>CFBundleIdentifier</key>
-    <string>${BUNDLE_ID}</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-    <key>CFBundleName</key>
-    <string>${APP_NAME}</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>${VERSION:-0.8.0}</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>LSUIElement</key>
-    <true/>
-    <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
-    <key>NSHumanReadableCopyright</key>
-    <string>mac-control-mcp</string>
-    <key>NSPrincipalClass</key>
-    <string>NSApplication</string>
-    <!--
-    These usage-description strings are MANDATORY for TCC prompts. Without
-    them, CGRequestScreenCaptureAccess / AXIsProcessTrustedWithOptions
-    silently deny rather than showing the consent dialog. The strings
-    appear in the system prompt and in System Settings → Privacy entries.
-    -->
-    <key>NSScreenCaptureUsageDescription</key>
-    <string>mac-control-mcp captures windows and the screen on behalf of the MCP client (Claude Code, etc) to let an AI agent see and analyse on-screen content.</string>
-    <key>NSAppleEventsUsageDescription</key>
-    <string>mac-control-mcp automates other apps (menus, browser JS, volume, dark mode) via AppleScript.</string>
-    <key>NSAccessibilityUsageDescription</key>
-    <string>mac-control-mcp reads and controls UI elements across all apps to let an AI agent drive macOS.</string>
-    <!--
-    Desktop / Documents / Downloads Folder keys — required for
-    spotlight_search to return files the user actually cares about.
-    Without these, metadatad silently filters hits under ~/Desktop,
-    ~/Documents, and ~/Downloads from our mdfind subprocess because
-    the parent binary lacks the protected-directory TCC scope. See
-    SpotlightController.primeFilesystemAccess().
-    -->
-    <key>NSDesktopFolderUsageDescription</key>
-    <string>mac-control-mcp searches your Desktop via Spotlight to help the AI agent find files you've just saved there.</string>
-    <key>NSDocumentsFolderUsageDescription</key>
-    <string>mac-control-mcp searches your Documents folder via Spotlight so the AI agent can locate files you've stored there.</string>
-    <key>NSDownloadsFolderUsageDescription</key>
-    <string>mac-control-mcp searches your Downloads folder via Spotlight so the AI agent can locate files you've just downloaded.</string>
-    <!--
-    v0.8.0: EventKit + Contacts + Location access. Without these TCC keys,
-    EKEventStore.requestFullAccessToEvents silently returns "denied" and
-    CNContactStore.requestAccess does the same. The strings appear in
-    the macOS prompt and in System Settings → Privacy entries.
-    -->
-    <key>NSCalendarsUsageDescription</key>
-    <string>mac-control-mcp reads and creates Calendar events on your behalf so the AI agent can answer "what's on my schedule" and schedule new meetings.</string>
-    <key>NSCalendarsFullAccessUsageDescription</key>
-    <string>mac-control-mcp reads and creates Calendar events on your behalf so the AI agent can answer "what's on my schedule" and schedule new meetings.</string>
-    <key>NSRemindersUsageDescription</key>
-    <string>mac-control-mcp reads and creates reminders so the AI agent can capture tasks on your behalf.</string>
-    <key>NSRemindersFullAccessUsageDescription</key>
-    <string>mac-control-mcp reads and creates reminders so the AI agent can capture tasks on your behalf.</string>
-    <key>NSContactsUsageDescription</key>
-    <string>mac-control-mcp looks up phone numbers and emails from Contacts so the AI agent can send messages or emails to people you know.</string>
-    <key>NSLocationWhenInUseUsageDescription</key>
-    <string>mac-control-mcp reads Location to include Wi-Fi SSIDs in wifi_scan results — macOS requires Location Services to reveal SSIDs since Ventura.</string>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>mac-control-mcp records audio for speech-to-text and audio capture tools.</string>
-    <key>NSSpeechRecognitionUsageDescription</key>
-    <string>mac-control-mcp transcribes recorded audio to text via Apple Speech.</string>
-</dict>
-</plist>
-EOF
+# Info.plist + entitlements live in scripts/bundle/ (checked in) so tests
+# and CI can verify them without running this script. See the comments in
+# those files for why each key exists.
+BUNDLE_SRC="${PROJECT_ROOT}/scripts/bundle"
+sed "s/__VERSION__/${VERSION:-0.8.3}/" "${BUNDLE_SRC}/Info.plist" > "${APP_PATH}/Contents/Info.plist"
+plutil -lint "${APP_PATH}/Contents/Info.plist" >/dev/null
+# Hardened-runtime resource entitlements. Under `--options runtime` TCC
+# denies a resource WITHOUT prompting when the responsible process lacks
+# the entitlement. With Claude Desktop (`disclaimer`) MacControlMCP.app is
+# the responsible process, so these decide; with ChatGPT.app the client's
+# own entitlements apply — which is why v0.8.2 worked there and not here.
+#   apple-events          AppleScript: browser, Reminders, Mail, Messages, menus
+#   device.audio-input    audio_record (AVAudioRecorder), speech_to_text
+#   calendars             calendar_list_events / calendar_create_event (EventKit)
+#   addressbook           contacts_search (CNContactStore)
+#   location              wifi_scan SSIDs (CoreWLAN gates SSIDs on Location)
+# NO XML comments in that file: AMFI's entitlement parser rejects them
+# ("AMFIUnserializeXML: syntax error") and the app ends up with none.
+ENT="${BUNDLE_SRC}/MacControlMCP.entitlements"
+plutil -lint "$ENT" >/dev/null
 
-# Entitlements — make intent explicit. Codesign will embed these.
-ENT="${PROJECT_ROOT}/.build/macmcp.entitlements"
-cat > "$ENT" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>com.apple.security.automation.apple-events</key>
-    <true/>
-    <key>com.apple.security.device.audio-input</key>
-    <false/>
-    <key>com.apple.security.device.camera</key>
-    <false/>
-</dict>
-</plist>
-EOF
 
 # Codesigning strategy: prefer Developer ID Application (enables
 # persistent TCC grants + Gatekeeper accepts the binary on other Macs +
@@ -198,6 +114,12 @@ fi
 echo "[build-bundle] codesigning: $SIGN_LABEL ..."
 codesign --force --deep --options runtime --timestamp \
     --sign "$SIGN_WITH" --entitlements "$ENT" "${APP_PATH}"
+
+# Refuse to ship a bundle whose signed entitlements don't cover its usage
+# descriptions — v0.8.2 shipped without calendars/addressbook/audio-input
+# and TCC denied those silently whenever the .app was the responsible process.
+echo "[build-bundle] verifying signed entitlements vs Info.plist..."
+"${PROJECT_ROOT}/scripts/check-entitlements.sh" "${APP_PATH}"
 
 # Notarise + staple if a Developer ID was used AND a notarytool profile
 # was passed. Skip silently on ad-hoc so local dev stays fast.

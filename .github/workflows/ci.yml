@@ -38,6 +38,21 @@ jobs:
       - name: swift build (debug)
         run: swift build
 
+      - name: Entitlements cover every Info.plist usage description
+        # Signs a throwaway hardened-runtime bundle with the checked-in
+        # Info.plist + entitlements and verifies via `codesign -d
+        # --entitlements -` — the v0.8.2 calendar/contacts/mic regression.
+        run: |
+          scripts/check-entitlements.sh --info-plist scripts/bundle/Info.plist \
+            --entitlements scripts/bundle/MacControlMCP.entitlements
+          APP="$RUNNER_TEMP/MacControlMCP.app"
+          mkdir -p "$APP/Contents/MacOS"
+          cp .build/debug/mac-control-mcp "$APP/Contents/MacOS/MacControlMCP"
+          sed "s/__VERSION__/0.0.0-ci/" scripts/bundle/Info.plist > "$APP/Contents/Info.plist"
+          codesign --force --options runtime --sign - \
+            --entitlements scripts/bundle/MacControlMCP.entitlements "$APP"
+          scripts/check-entitlements.sh "$APP"
+
       - name: swift test
         # `swift test` on macos-15 returns non-zero when a subprocess
         # hits SIGPIPE during shutdown — a known SPM issue that fires
