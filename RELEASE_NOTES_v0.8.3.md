@@ -37,6 +37,10 @@ With `title_contains`, the largest visible matching window wins, not a tiny help
 
 Input tools accept optional `expected_app` / `expected_window`. If another app came to the front, nothing is sent and the tool returns `focus_mismatch`. AX actions (`perform_element_action`, `set_element_attribute`) remain the focus-independent option.
 
+## wifi_scan shows real network names (#17)
+
+`wifi_scan` never asked for Location access, which macOS requires before revealing SSIDs, so every network came back as "(hidden)". It now requests Location without blocking the scan. Until access is granted, `ssid` is `null` with `ssids_redacted: true`, `location_status`, `location_prompt_requested` and a hint naming the app to enable. `hidden: true` only appears for genuinely hidden networks. `permissions_status.location` reports the per-app status, and `request_permissions` accepts `location`.
+
 ## Faster (measured, release builds, back-to-back, median)
 
 | tool | v0.8.2 | v0.8.3 |
@@ -63,5 +67,6 @@ Input tools accept optional `expected_app` / `expected_window`. If another app c
 ## Upgrade notes
 
 - After installing, macOS may ask again for Calendar, Contacts and Microphone. That is expected: those prompts could not appear before.
+- `wifi_scan`: `ssid` can now be `null` (redacted) instead of the string "(hidden)".
 - `request_permissions` returns immediately. Call `permissions_status` after answering the dialogs.
 - Responses to concurrent requests can arrive out of order; they are matched by JSON-RPC id, as the spec requires.
