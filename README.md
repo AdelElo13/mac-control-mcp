@@ -6,7 +6,7 @@
 [![Notarized](https://img.shields.io/badge/signed-Developer%20ID%20%2B%20Notarized-success.svg)](#install)
 [![MCP Registry](https://img.shields.io/badge/MCP%20Registry-io.github.AdelElo13%2Fmac--control--mcp-7B68EE.svg)](https://registry.modelcontextprotocol.io/)
 
-Native Swift MCP server for full macOS automation. 63 tools in one signed `.app` bundle — no Python, no Node runtime, no Electron.
+Native Swift MCP server for full macOS automation. <!-- tool-count -->143<!-- /tool-count --> tools in one signed `.app` bundle — no Python, no Node runtime, no Electron. Full list with parameters: [docs/TOOLS.md](docs/TOOLS.md).
 
 <p align="center">
   <img src="docs/demo.gif" width="720" alt="mac-control-mcp driving Safari: open tab, type query, capture window, OCR, Spotlight search — all via MCP stdio">
@@ -33,7 +33,7 @@ Requires macOS 14.0+. Three options, in order of simplicity:
 
 The server is published as an [MCP Bundle](https://github.com/anthropics/mcpb) — a zip with a `manifest.json` that Claude Desktop reads directly:
 
-1. Download [**mac-control-mcp-v0.2.6.mcpb**](https://github.com/AdelElo13/mac-control-mcp/releases/download/v0.2.6/mac-control-mcp-v0.2.6.mcpb) from the release page.
+1. Download **mac-control-mcp-v\<version\>.mcpb** from the [latest release](https://github.com/AdelElo13/mac-control-mcp/releases/latest).
 2. Double-click the `.mcpb` file. Claude Desktop opens an install dialog.
 3. Click Install. The server is registered under the name `mac-control-mcp` and available immediately in new chats.
 4. First tool call triggers the macOS TCC consent prompts (Screen Recording, Accessibility, Apple Events). Grant all three once — the bundle is Developer-ID signed and notarized, so grants persist across updates.
@@ -44,7 +44,7 @@ It's also listed on the [official MCP Registry](https://registry.modelcontextpro
 
 If you don't use Claude Desktop or want manual control:
 
-1. Download [**MacControlMCP-v0.2.6-macos-universal.tar.gz**](https://github.com/AdelElo13/mac-control-mcp/releases/download/v0.2.6/MacControlMCP-v0.2.6-macos-universal.tar.gz).
+1. Download **MacControlMCP-v\<version\>-macos-universal.tar.gz** from the [latest release](https://github.com/AdelElo13/mac-control-mcp/releases/latest).
 2. Extract and move `MacControlMCP.app` to `~/Applications/`.
 3. Point your MCP client at the binary inside:
 
@@ -64,8 +64,8 @@ Add that block to `~/Library/Application Support/Claude/claude_desktop_config.js
 Verify the download with the published SHA-256:
 
 ```bash
-shasum -a 256 MacControlMCP-v0.2.6-macos-universal.tar.gz
-# should match MacControlMCP-v0.2.6-macos-universal.sha256 on the release
+shasum -a 256 MacControlMCP-v<version>-macos-universal.tar.gz
+# should match MacControlMCP-v<version>-macos-universal.sha256 on the release
 ```
 
 ### 3. Build from source
@@ -93,22 +93,50 @@ NOTARIZE_PROFILE=mac-control-mcp ./scripts/build-bundle.sh
 
 ## Tool surface
 
+Selected categories — this table is a curated subset, not the full list.
+For the complete, auto-generated tool reference (every tool, its
+description, and its required/optional parameters, regenerated straight
+from the tool registry so it can't drift), see **[docs/TOOLS.md](docs/TOOLS.md)**.
+
 | Category | Tools |
 |---|---|
 | Permissions | `permissions_status`, `request_permissions` |
-| Accessibility | `find_element(s)`, `query_elements`, `list_elements`, `get_ui_tree`, `get_element_attributes`, `set_element_attribute`, `read_value`, `perform_element_action`, `wait_for_element`, `scroll_to_element` |
+| Accessibility | `find_element(s)`, `query_elements`, `list_elements`, `get_ui_tree`, `ax_tree_augmented`, `get_element_attributes`, `set_element_attribute`, `read_value`, `perform_element_action`, `wait_for_element`, `scroll_to_element` |
 | App lifecycle | `list_apps`, `launch_app`, `activate_app`, `quit_app`, `force_quit_app`, `wait_for_app`, `focused_app` |
 | Windows | `list_windows`, `focus_window`, `move_window`, `resize_window`, `set_window_state`, `wait_for_window`, `move_window_to_display` |
 | Input | `click`, `mouse_event`, `drag_and_drop`, `scroll`, `type_text`, `press_key`, `press_key_sequence`, `key_down`, `key_up`, `convert_coordinates` |
 | Menus | `click_menu_path`, `list_menu_paths`, `list_menu_titles` |
-| Browser | `browser_list_tabs`, `browser_get_active_tab`, `browser_navigate`, `browser_new_tab`, `browser_close_tab`, `browser_eval_js` |
-| Screen | `capture_screen`, `capture_window`, `capture_display`, `ocr_screen` |
+| Browser | `browser_list_tabs`, `browser_get_active_tab`, `browser_navigate`, `browser_new_tab`, `browser_close_tab`, `browser_eval_js`, `browser_dom_tree`, `browser_visible_text`, `browser_iframes` |
+| Screen | `capture_screen`, `capture_screen_v2`, `capture_window`, `capture_display`, `ocr_screen` |
 | Clipboard | `clipboard_read`, `clipboard_write`, `clipboard_clear` |
 | Spotlight | `spotlight_search`, `spotlight_open_result` |
 | System | `set_volume`, `set_dark_mode`, `list_displays` |
 | File dialogs | `file_dialog_set_path`, `file_dialog_select_item`, `file_dialog_confirm`, `file_dialog_cancel`, `wait_for_file_dialog` |
+| Apple apps | `mail_send`, `imessage_send`, `imessage_list_recent`, `calendar_create_event`, `calendar_list_events`, `reminders_create`, `reminders_list`, `contacts_search` |
+| Voice & recording | `speech_to_text`, `text_to_speech`, `audio_record`, `record_screen` |
+| Undo | `undo_last_action`, `undo_peek` |
 
-Total: **63 tools**.
+<!-- tool-count -->143<!-- /tool-count --> tools total — see [docs/TOOLS.md](docs/TOOLS.md) for the complete, generated list.
+
+### Which tool when
+
+Several tools overlap in purpose. Based on their actual implementations:
+
+**Screen capture — `capture_screen` vs `capture_screen_v2` vs `capture_window` vs `capture_display`**
+
+- `capture_screen` — main display (or a rectangular region within it) to a PNG file, returns the file path + width/height. Simple, synchronous, no size limits applied.
+- `capture_screen_v2` — main display only, but stores the PNG as a content-addressed artifact under `~/.mac-control-mcp/artifacts/<sha256>.png` and returns `{content_ref, bytes, sha256}`. Defaults to `inline=false` and downscales to `max_dimension`/`max_bytes` (4000px / 4MB by default) specifically to avoid blowing up an MCP client's context window with a huge inline image (referenced in its own description as a fix for claude-code issues #13383/#45785). Prefer this one when the image is going back through an LLM context rather than straight to disk.
+- `capture_window` — screenshots one specific window by PID (optionally filtered by `title_contains`), not the whole display.
+- `capture_display` — screenshots one specific physical display by its index from `list_displays`, for multi-monitor setups.
+
+**Accessibility tree / element lookup — `find_element` vs `find_elements` vs `query_elements` vs `list_elements` vs `get_ui_tree` vs `ax_tree_augmented`**
+
+- `list_elements` — lists actionable elements for a PID (a flat, practical "what can I click" view).
+- `find_element` — returns the *first* element matching a role/title filter for a PID.
+- `find_elements` — same matching as `find_element`, but returns *all* matches, not just the first.
+- `query_elements` — regex search over role/title/value (falls back to case-insensitive substring on invalid regex); use when a plain role/title filter isn't precise enough.
+- `get_ui_tree` — walks the *full* accessibility tree of a process, including containers, and assigns stable element IDs for follow-up calls. Heavier than `list_elements`/`find_element(s)`, but the only one that gives you structure/hierarchy.
+- `ax_tree_augmented` — like `get_ui_tree`, but does one OCR pass and geometrically joins OCR-derived labels onto AX nodes that have no native label. Use it specifically for Electron/Chromium/Canvas apps where the native AX tree is sparse and unlabeled; it's the expensive option (an OCR pass), so reach for `get_ui_tree` first and fall back to this when nodes come back unlabeled.
 
 ## Security model
 
@@ -120,13 +148,13 @@ Total: **63 tools**.
 
 | Scope | State |
 |---|---|
-| Unit / integration test suite | 63 tests in 11 suites, all green locally and on CI (macos-15) |
-| Live tool probe | 43 of the 63 tools exercised end-to-end via real MCP stdio against the running binary, all pass |
+| Unit / integration test suite | `swift test`, all green locally and on CI (macos-15) — see [ci.yml](.github/workflows/ci.yml) |
+| Live tool probe | A subset of tools exercised end-to-end via real MCP stdio against the running binary, all pass |
 | Destructive tools (volume, dark mode, force_quit_app, drag_and_drop, file_dialog_*) | Verified live in a reversible way |
 | Code signing | Developer ID Application (A3W973JZ49) with hardened runtime |
 | Apple notarization | Accepted by Apple Notary Service, ticket stapled, `spctl` reports `source=Notarized Developer ID` |
 | Gatekeeper flow | Extracted + launched with the `com.apple.quarantine` xattr set; no right-click-open needed |
-| MCP Registry | Published as `io.github.AdelElo13/mac-control-mcp` v0.2.6 — distributed as an `.mcpb` bundle for one-click install |
+| MCP Registry | Published as `io.github.AdelElo13/mac-control-mcp` (see `server.json` for the current version) — distributed as an `.mcpb` bundle for one-click install |
 | Architectures | Universal binary (arm64 + x86_64). Intel slice compiles cleanly but has not been runtime-verified on actual Intel hardware |
 | `move_window_to_display` | Skipped — requires a 2+ display setup |
 
@@ -140,7 +168,7 @@ If you run into an untested path, please open an issue with the reproduction —
 ## Development
 
 ```bash
-# Run the test suite (63 tests in 11 suites)
+# Run the test suite
 swift test
 
 # Build without packaging
