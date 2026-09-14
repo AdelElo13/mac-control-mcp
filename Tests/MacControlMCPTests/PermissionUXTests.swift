@@ -56,6 +56,42 @@ struct PermissionUXTests {
         #expect(PermissionContext.classify(granted: nil, statusAfter: "not_determined") == .promptTimeout)
         #expect(PermissionContext.classify(granted: false, statusAfter: "denied") == .deniedByUser)
         #expect(PermissionContext.classify(granted: false, statusAfter: "restricted") == .restricted)
+        #expect(PermissionContext.classify(granted: false, statusAfter: "write_only") == .writeOnly)
+        #expect(PermissionContext.classify(granted: nil, statusAfter: "write_only") == .writeOnly)
+        #expect(PermissionContext.classify(granted: false, statusAfter: "info_plist_missing") == .deniedWithoutPrompt)
+    }
+
+    @Test("write-only calendar access is reported as missing, not ready")
+    func writeOnlyIsNotGranted() {
+        #expect(!ToolRegistry.isGrantedPermissionStatus("write_only"))
+        #expect(ToolRegistry.isGrantedPermissionStatus("granted"))
+        let e = PermissionContext.permissionError(
+            service: "Calendar", pane: "calendar",
+            entitlement: "com.apple.security.personal-information.calendars",
+            outcome: .writeOnly, statusAfter: "write_only",
+            snapshot: Self.snapshot(responsibleIsSelf: false),
+            entitlementLookup: { _ in true }
+        )
+        #expect(e.payload["error_code"] == .string("permission_missing"))
+        #expect(e.message.contains("Full Access"))
+        #expect(e.message.contains("'Claude'"))
+    }
+
+    @Test("an unanswered prompt names the responsible app and gets context enrichment")
+    func promptTimeoutNamesApp() {
+        let snap = Self.snapshot(responsibleIsSelf: false)
+        let e = PermissionContext.permissionError(
+            service: "Contacts", pane: "contacts",
+            entitlement: "com.apple.security.personal-information.addressbook",
+            outcome: .promptTimeout, statusAfter: "not_determined",
+            snapshot: snap, entitlementLookup: { _ in true }
+        )
+        #expect(e.payload["error_code"] == .string("timeout"))
+        #expect(e.message.contains("'Claude'"))
+        let enriched = ToolCallResult(text: e.message, structuredContent: .object(e.payload), isError: true)
+            .withPermissionContext(snap)
+        guard case .object(let payload) = enriched.structuredContent else { return }
+        #expect(payload["responsible_app"] != nil)
     }
 
     @Test("refusal without prompt is not reported as a user denial")

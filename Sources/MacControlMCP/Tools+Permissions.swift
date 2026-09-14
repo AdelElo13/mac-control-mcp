@@ -63,8 +63,10 @@ extension ToolRegistry {
     }
 
     static func isGrantedPermissionStatus(_ status: String) -> Bool {
+        // `write_only` is NOT granted: calendar_list_events needs full access,
+        // so reporting it as ready contradicted the next call's failure.
         let granted: Set<String> = ["granted", "granted_when_in_use", "granted_always", "granted_legacy",
-                                    "write_only", "authorized_legacy", "limited"]
+                                    "authorized_legacy", "limited"]
         // `location` can only report the system-wide services state.
         return granted.contains(status) || status.hasPrefix("granted") || status.hasPrefix("system_enabled")
     }

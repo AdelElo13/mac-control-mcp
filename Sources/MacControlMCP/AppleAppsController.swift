@@ -338,7 +338,8 @@ actor AppleAppsController {
         let before = ToolRegistry.calendarPermissionStatusString()
         switch before {
         case "granted": return (.granted, before)
-        case "denied", "write_only": return (.deniedByUser, before)
+        case "denied": return (.deniedByUser, before)
+        case "write_only": return (.writeOnly, before)
         case "restricted": return (.restricted, before)
         case "info_plist_missing": return (.deniedWithoutPrompt, before)
         default: break

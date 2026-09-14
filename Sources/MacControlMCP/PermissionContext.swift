@@ -167,6 +167,8 @@ enum PermissionContext {
         case deniedWithoutPrompt = "denied_without_prompt"
         case restricted
         case promptTimeout = "prompt_timeout"
+        /// Calendar granted "Add Events Only": writes work, reads don't.
+        case writeOnly = "write_only"
     }
 
     /// `statusAfter` uses the strings produced by the *PermissionStatusString
@@ -174,6 +176,8 @@ enum PermissionContext {
     static func classify(granted: Bool?, statusAfter: String) -> AuthOutcome {
         switch (granted, statusAfter) {
         case (true, _): return .granted
+        case (_, "write_only"): return .writeOnly
+        case (_, "info_plist_missing"): return .deniedWithoutPrompt
         case (nil, "not_determined"): return .promptTimeout
         case (_, "not_determined"): return .deniedWithoutPrompt
         case (_, "restricted"): return .restricted
@@ -214,7 +218,10 @@ enum PermissionContext {
             message = "\(service) access is restricted by MDM or Screen Time policy for this user; an administrator must allow it."
         case .promptTimeout:
             code = "timeout"
-            message = "A \(service) permission prompt is waiting for an answer. Answer the macOS dialog (it may be behind other windows), then retry."
+            message = "A \(service) permission prompt attributed to '\(target.name)' got no answer. Answer the macOS dialog (it may be behind other windows), then retry. If no dialog is visible, '\(target.name)' cannot present it — enable it via open_permission_pane pane=\(pane)."
+        case .writeOnly:
+            code = "permission_missing"
+            message = "\(service) access for '\(target.name)' is write-only ('Add Events Only'). Reading requires Full Access: open_permission_pane pane=\(pane), set '\(target.name)' to Full Access, then restart the MCP client."
         case .granted:
             code = "failed"
             message = "\(service) access is granted but the operation still failed."
@@ -295,7 +302,10 @@ extension ToolCallResult {
         guard isError,
               case .object(var dict) = structuredContent,
               let code = dict["error_code"]?.stringValue,
-              code.hasPrefix("permission_"),
+              // Permission errors, plus timeouts/failures of a privacy
+              // service request (they carry "service") — an unanswered
+              // prompt is exactly when the user needs to know which app.
+              code.hasPrefix("permission_") || dict["service"] != nil,
               dict["responsible_app"] == nil else { return self }
         for (key, value) in PermissionContext.contextPayload(snapshot) where dict[key] == nil {
             dict[key] = value
