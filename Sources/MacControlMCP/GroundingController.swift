@@ -92,6 +92,37 @@ actor GroundingController {
         return "capture_failed"
     }
 
+    /// v0.9 (C-2/C-3): one window, named by its `CGWindowID`, as the
+    /// scope of a grounding call. When present, AX candidates are limited
+    /// to elements inside the window's frame and the OCR pass captures
+    /// exactly this window (never the app's "largest" window, never the
+    /// display).
+    struct WindowScope: Sendable {
+        let windowID: CGWindowID
+        let pid: pid_t
+        let ownerName: String
+        let title: String
+        let bounds: CGRect
+        let isOnscreen: Bool
+
+        /// Identity echo for the tool response — which window the id
+        /// actually resolved to (ids are recycled after a window closes).
+        var payload: [String: JSONValue] {
+            [
+                "window_id": .number(Double(windowID)),
+                "owner_pid": .number(Double(pid)),
+                "owner_name": .string(ownerName),
+                "title": .string(title)
+            ]
+        }
+
+        var selected: ScreenController.SelectedWindowInfo {
+            ScreenController.SelectedWindowInfo(
+                windowID: windowID, title: title, bounds: bounds, isOnscreen: isOnscreen
+            )
+        }
+    }
+
     private let accessibility: AccessibilityController
     private let screen: ScreenController
     private let elementCache: ElementCache?
@@ -109,10 +140,12 @@ actor GroundingController {
     ///           to OCR for disambiguation.
     func ground(
         target: String,
-        pid: pid_t,
+        pid rawPID: pid_t,
         strategy: Strategy = .auto,
-        maxDepth: Int? = nil
+        maxDepth: Int? = nil,
+        window: WindowScope? = nil
     ) async -> GroundResult {
+        let pid = window?.pid ?? rawPID
         let wantsAX = strategy == .ax || strategy == .auto
         let wantsOCR = strategy == .ocr || strategy == .auto
         let depth = Self.resolveMaxDepth(maxDepth)
@@ -128,11 +161,24 @@ actor GroundingController {
                 maxDepth: depth,
                 limit: 20
             )
-            // v0.7.1 fix (BUG 5): pull main display bounds to filter
-            // off-screen AX candidates. macOS parks hidden menu items at
-            // (0, screen_height) with size (0,0) — those are technically
-            // "AX-matched" but cannot be clicked.
-            let mainBounds = CGDisplayBounds(CGMainDisplayID())
+            // v0.7.1 fix (BUG 5): filter off-screen AX candidates. macOS
+            // parks hidden menu items at (0, screen_height) with size
+            // (0,0) — those are technically "AX-matched" but cannot be
+            // clicked.
+            //
+            // v0.9 (C-14): the visible universe is the UNION of every
+            // attached display, not the main display. The old filter
+            // dropped any candidate with `x > mainWidth * 2`, i.e. most of
+            // a third display and all of a large secondary one, and
+            // measured the parked-menu-item signature against the main
+            // display's height only. `parkedHeights` keeps that signature
+            // check per display.
+            let displayList = WindowIdentity.displayBounds()
+            let visibleBounds = WindowIdentity.unionBounds(of: displayList)
+                ?? CGDisplayBounds(CGMainDisplayID())
+            let parkedHeights: [Double] = displayList.isEmpty
+                ? [Double(CGDisplayBounds(CGMainDisplayID()).height)]
+                : WindowIdentity.bottomEdges(of: displayList)
             var survivors: [AccessibilityController.Match] = []
             for match in results {
                 let info = match.info
@@ -145,19 +191,24 @@ actor GroundingController {
                 // Filter: zero-size elements are off-screen / hidden.
                 if size.width < 1 || size.height < 1 { continue }
 
-                // Filter: parked-off-screen default (x≈0, y≈screen_height).
-                // This is the classic "hidden menu item position" signature.
-                if abs(pos.x) < 1 && abs(pos.y - Double(mainBounds.height)) < 1 {
+                // Filter: parked-off-screen default (x≈0, y≈bottom edge of
+                // some display). The classic "hidden menu item" signature.
+                if abs(pos.x) < 1, parkedHeights.contains(where: { abs(pos.y - $0) < 1 }) {
                     continue
                 }
 
-                // Filter: outside visible display entirely (multi-monitor
-                // agents may still want these, but for the common case we
-                // drop them; caller can pass strategy=ocr to bypass).
-                if pos.x + size.width < 0 || pos.y + size.height < 0 ||
-                   pos.x > Double(mainBounds.width) * 2 {
-                    continue
-                }
+                let frame = CGRect(x: pos.x, y: pos.y, width: size.width, height: size.height)
+
+                // Filter: not on ANY display (C-14 — was: not on the main
+                // display, which discarded every element of a window on a
+                // secondary monitor).
+                guard frame.intersects(visibleBounds) else { continue }
+
+                // v0.9 (C-2): when a window_id scopes the call, only
+                // elements inside that window's frame count. Without this a
+                // pid-wide AX search would still return a match from the
+                // app's OTHER window.
+                if let window, !WindowIdentity.rect(frame, isWithin: window.bounds) { continue }
 
                 survivors.append(match)
             }
@@ -226,7 +277,7 @@ actor GroundingController {
         var ocrFailure: (message: String, code: String)?
         if wantsOCR {
             do {
-                ocrCandidates = try await ocrLookup(target: target, pid: pid)
+                ocrCandidates = try await ocrLookup(target: target, pid: pid, window: window)
             } catch {
                 ocrFailure = (
                     "OCR capture of pid \(pid)'s window failed: \(error)",
@@ -341,8 +392,12 @@ actor GroundingController {
     /// purpose: OCR'ing the main display for an occluded window returns
     /// the text of whatever is on top of it, which is how A-1 produced
     /// confident labels belonging to a different application.
-    private func ocrLookup(target: String, pid: pid_t) async throws -> [Candidate] {
-        let (capture, result) = try await screen.ocrWindow(ownerPID: pid)
+    private func ocrLookup(target: String, pid: pid_t, window: WindowScope? = nil) async throws -> [Candidate] {
+        // With a window_id the exact window is captured; without one the
+        // app's best window is picked by the existing heuristic.
+        let (capture, result) = window == nil
+            ? try await screen.ocrWindow(ownerPID: pid)
+            : try await screen.ocrWindow(selected: window!.selected)
         guard let windowBounds = capture.pointBounds, windowBounds.width > 0, windowBounds.height > 0 else {
             throw ScreenController.ScreenError.captureFailed
         }
@@ -415,13 +470,25 @@ actor GroundingController {
     /// The cap trims child arrays after the top-N elements in
     /// breadth-first order, preserving structural integrity of the tree
     /// rather than chopping the serialization mid-way.
-    func axTreeAugmented(pid: pid_t, maxDepth: Int = 12, maxNodes: Int = 300) async -> AugmentedTreeResult {
+    func axTreeAugmented(
+        pid rawPID: pid_t,
+        maxDepth: Int = 12,
+        maxNodes: Int = 300,
+        window: WindowScope? = nil
+    ) async -> AugmentedTreeResult {
         let start = Date()
+        let pid = window?.pid ?? rawPID
 
         // 1. Walk the AX tree, collect nodes with frames
         let root = AXUIElementCreateApplication(pid)
         var axBoxes: [(node: AugmentedNode, rect: CGRect)] = []
         walk(element: root, depth: 0, maxDepth: maxDepth, into: &axBoxes)
+        // v0.9 (C-2): a window_id scopes the tree to that window's frame —
+        // nodes belonging to the app's other windows are not this window's
+        // UI and would be joined against OCR text they cannot contain.
+        if let window {
+            axBoxes = axBoxes.filter { WindowIdentity.rect($0.rect, isWithin: window.bounds) }
+        }
 
         if axBoxes.isEmpty {
             let ms = Int(Date().timeIntervalSince(start) * 1000)
@@ -448,7 +515,9 @@ actor GroundingController {
         let capture: ScreenController.CaptureResult
         let ocrBlocks: [ScreenController.OCRBlock]
         do {
-            let (cap, result) = try await screen.ocrWindow(ownerPID: pid)
+            let (cap, result) = window == nil
+                ? try await screen.ocrWindow(ownerPID: pid)
+                : try await screen.ocrWindow(selected: window!.selected)
             capture = cap
             ocrBlocks = result.blocks
         } catch {

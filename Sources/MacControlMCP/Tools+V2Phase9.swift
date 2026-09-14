@@ -33,9 +33,13 @@ extension ToolRegistry {
                 are covered by other windows), 'auto' (AX first, OCR fallback). \
                 Returns (x,y) plus the match's bounds, element_id and \
                 max_depth_used, with confidence 0..1 + candidate list.
+                Pass window_id (from list_windows) to scope BOTH strategies \
+                to one window: AX candidates outside that window's frame are \
+                dropped and the OCR pass captures exactly that window. \
+                window_id takes precedence — pid is then ignored.
                 """,
             inputSchema: schema(
-                properties: [
+                properties: withWindowIDProperty([
                     "target": .object(["type": .string("string")]),
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "strategy": .object([
@@ -46,8 +50,8 @@ extension ToolRegistry {
                         "type": .array([.string("integer"), .string("string")]),
                         "description": .string("AX search depth. Default 32 (same as find_elements), clamped 1-64.")
                     ])
-                ],
-                required: ["target", "pid"]
+                ]),
+                required: ["target"]
             )
         ),
         MCPToolDefinition(
@@ -60,17 +64,19 @@ extension ToolRegistry {
                 Useful for Electron/Chromium/Canvas apps where native AX is sparse. \
                 Trimmed to max_nodes (default 300, range 50-1000) with labelled \
                 elements preferred over unlabelled when truncating.
+                Pass window_id (from list_windows) to scope the tree AND the OCR \
+                pass to ONE window — required to get sane labels from an app \
+                with several windows. window_id takes precedence over pid.
                 """,
             inputSchema: schema(
-                properties: [
+                properties: withWindowIDProperty([
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "max_depth": .object(["type": .array([.string("integer"), .string("string")])]),
                     "max_nodes": .object([
                         "type": .array([.string("integer"), .string("string")]),
                         "description": .string("Output cap. Default 300, clamped 50-1000.")
                     ])
-                ],
-                required: ["pid"]
+                ])
             )
         ),
         MCPToolDefinition(
@@ -229,8 +235,18 @@ extension ToolRegistry {
         guard let target = arguments["target"]?.stringValue, !target.isEmpty else {
             return invalidArgument("ground requires 'target'.")
         }
-        guard let pid = parsePID(arguments["pid"]) else {
-            return invalidArgument("ground requires a positive integer 'pid'.")
+        let scope: GroundingController.WindowScope?
+        switch await windowScope(arguments, tool: "ground") {
+        case .success(let resolved): scope = resolved
+        case .failure(let box): return box.result
+        }
+        let pid: pid_t
+        if let scope {
+            pid = scope.pid
+        } else if let parsed = parsePID(arguments["pid"]) {
+            pid = parsed
+        } else {
+            return invalidArgument("ground requires a positive integer 'pid', or a window_id from list_windows.")
         }
         let stratRaw = arguments["strategy"]?.stringValue?.lowercased() ?? "auto"
         let strategy: GroundingController.Strategy
@@ -240,14 +256,17 @@ extension ToolRegistry {
         default:     strategy = .auto
         }
         let r = await grounding.ground(target: target, pid: pid, strategy: strategy,
-                                       maxDepth: arguments["max_depth"]?.intValue)
+                                       maxDepth: arguments["max_depth"]?.intValue,
+                                       window: scope)
         var payload: [String: JSONValue] = [
             "ok": .bool(r.ok),
             "result": encodeAsJSONValue(r),
+            "pid": .number(Double(pid)),
             // Snake-case echoes alongside the nested camelCase result, so a
             // caller does not have to know both spellings (A-2 / A-14 / D-4).
             "max_depth_used": .number(Double(r.maxDepthUsed))
         ]
+        if let scope { payload.merge(scope.payload) { existing, _ in existing } }
         if let id = r.elementId { payload["element_id"] = .string(id) }
         if let b = r.bounds { payload["bounds"] = encodeAsJSONValue(b) }
         if let c = r.errorCode { payload["error_code"] = .string(c) }
@@ -258,18 +277,31 @@ extension ToolRegistry {
     }
 
     func callAXTreeAugmented(_ arguments: [String: JSONValue]) async -> ToolCallResult {
-        guard let pid = parsePID(arguments["pid"]) else {
-            return invalidArgument("ax_tree_augmented requires a positive integer 'pid'.")
+        let scope: GroundingController.WindowScope?
+        switch await windowScope(arguments, tool: "ax_tree_augmented") {
+        case .success(let resolved): scope = resolved
+        case .failure(let box): return box.result
+        }
+        let pid: pid_t
+        if let scope {
+            pid = scope.pid
+        } else if let parsed = parsePID(arguments["pid"]) {
+            pid = parsed
+        } else {
+            return invalidArgument(
+                "ax_tree_augmented requires a positive integer 'pid', or a window_id from list_windows."
+            )
         }
         let maxDepth = max(1, min(arguments["max_depth"]?.intValue ?? 12, 32))
         // v0.7.1: expose the maxNodes cap to callers; clamp 50..1000.
         let maxNodes = max(50, min(arguments["max_nodes"]?.intValue ?? 300, 1000))
-        let r = await grounding.axTreeAugmented(pid: pid, maxDepth: maxDepth, maxNodes: maxNodes)
+        let r = await grounding.axTreeAugmented(pid: pid, maxDepth: maxDepth, maxNodes: maxNodes, window: scope)
         var payload: [String: JSONValue] = [
             "ok": .bool(r.ok),
             "result": encodeAsJSONValue(r),
             "max_depth_used": .number(Double(r.maxDepthUsed))
         ]
+        if let scope { payload.merge(scope.payload) { existing, _ in existing } }
         if let c = r.errorCode { payload["error_code"] = .string(c) }
         return r.ok
             ? successResult("augmented tree: \(r.nodeCount) nodes, \(r.inferredCount) inferred in \(r.elapsedMs)ms",

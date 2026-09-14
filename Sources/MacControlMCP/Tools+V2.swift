@@ -150,7 +150,9 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "list_windows",
-            description: "List all windows of all running regular apps (or one app if pid is provided).",
+            description: "List all windows of all running regular apps (or one app if pid is provided). "
+                + "Every entry carries `window_id` (the window server's CGWindowID) — the PREFERRED way to target a window in capture_window, focus_window, move_window, resize_window, set_window_state, move_window_to_display, ground, ax_tree_augmented and ocr_screen, because pid+index is only valid within one list_windows response and pid+title_contains cannot tell two same-titled or untitled windows apart. "
+                + "Also returns `display_index` (which display shows it, by window center), `z_order` (0 = frontmost among normal app windows on screen; null when minimized or off-Space), `is_focused` (the frontmost on-screen window, i.e. the one receiving keystrokes) and `title` (always present, \"\" when the window has none).",
             inputSchema: schema(
                 properties: [
                     "pid": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Optional — restrict to this app.")])
@@ -159,13 +161,13 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "focus_window",
-            description: "Bring a window to the front by pid + window index (from list_windows).",
+            description: "Bring a window to the front by window_id, or by pid + window index (both from list_windows). "
+                + ToolRegistry.windowIDPrecedenceNote,
             inputSchema: schema(
-                properties: [
+                properties: withWindowIDProperty([
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "index": .object(["type": .array([.string("integer"), .string("string")])])
-                ],
-                required: ["pid", "index"]
+                ])
             )
         ),
         MCPToolDefinition(
@@ -597,18 +599,14 @@ extension ToolRegistry {
     }
 
     func callFocusWindow(_ arguments: [String: JSONValue]) async -> ToolCallResult {
-        guard let pid = parsePID(arguments["pid"]) else {
-            return invalidArgument("focus_window requires a positive integer pid.")
+        let handle: WindowHandle
+        switch await windowHandle(arguments, tool: "focus_window") {
+        case .success(let resolved): handle = resolved
+        case .failure(let box): return box.result
         }
-        guard let index = arguments["index"]?.intValue, index >= 0 else {
-            return invalidArgument("focus_window requires a non-negative index.")
-        }
-        let success = await windows.focusWindow(pid: pid, index: index)
-        let payload: [String: JSONValue] = [
-            "ok": .bool(success),
-            "pid": .number(Double(pid)),
-            "index": .number(Double(index))
-        ]
+        let success = await windows.focusWindow(pid: handle.pid, index: handle.index)
+        var payload: [String: JSONValue] = ["ok": .bool(success)]
+        payload.merge(handle.payload) { existing, _ in existing }
         return success
             ? successResult("Window focused.", payload)
             : errorResult("Failed to focus window (invalid pid or index).", payload)

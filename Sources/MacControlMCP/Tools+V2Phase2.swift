@@ -70,10 +70,13 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "ocr_screen",
-            description: "Capture the screen (or a region) and run OCR. Returns joined text plus per-block coordinates and confidence. Coordinates are in IMAGE PIXELS matching image_width/image_height (i.e. backing resolution — 2x point size on Retina), for annotating/cropping the returned image. For click-ready screen points, use the `ground` tool with strategy 'ocr' instead. "
-                + "Speed/size knobs (defaults = most accurate): level=fast (~10x faster than accurate, weaker on small or low-contrast text); language_correction=false (~2x faster at accurate level; raw glyphs, no dictionary fix-ups — good for code, IDs, URLs); include_blocks=false returns only `text` (much smaller response); max_blocks caps the blocks array.",
+            description: "Capture the screen (or a region, or ONE window via window_id) and run OCR. Returns joined text plus per-block coordinates and confidence. Coordinates are in IMAGE PIXELS matching image_width/image_height (i.e. backing resolution — 2x point size on Retina), for annotating/cropping the returned image. For click-ready screen points, use the `ground` tool with strategy 'ocr' instead. "
+                + "Speed/size knobs (defaults = most accurate): level=fast (~10x faster than accurate, weaker on small or low-contrast text); language_correction=false (~2x faster at accurate level; raw glyphs, no dictionary fix-ups — good for code, IDs, URLs); include_blocks=false returns only `text` (much smaller response); max_blocks caps the blocks array. "
+                + "window_id (from list_windows) OCRs THAT window through the same per-window ScreenCaptureKit capture `ground` uses, so a covered or off-Space window reads its OWN text instead of whatever is on top of it. window_id takes precedence: x/y/width/height are ignored when it is present. "
+                + "Every response says what the block coordinates mean: coordinate_space is window_image_pixels (window_id), region_image_pixels (x/y/width/height) or screen_image_pixels (whole main display), and `origin` is that image's top-left in global screen points. "
+                + "Map a block with screen_point = origin + block_px / pixels_per_point.",
             inputSchema: schema(
-                properties: [
+                properties: withWindowIDProperty([
                     "x": .object(["type": .array([.string("integer"), .string("string")])]),
                     "y": .object(["type": .array([.string("integer"), .string("string")])]),
                     "width": .object(["type": .array([.string("integer"), .string("string")])]),
@@ -101,7 +104,7 @@ extension ToolRegistry {
                         "type": .array([.string("integer"), .string("string")]),
                         "description": .string("Return at most this many blocks (in Vision's reading order). block_count and text still cover all blocks; blocks_truncated=true when capped.")
                     ])
-                ]
+                ])
             )
         )
     ]
@@ -339,20 +342,38 @@ extension ToolRegistry {
             maxBlocks = n
         }
 
+        // v0.9 (C-3): window_id OCRs that ONE window (per-window SCK
+        // capture), so an occluded window reads its own text. It takes
+        // precedence over the x/y/width/height region.
+        let resolved: WindowController.ResolvedWindow?
+        switch await resolveWindowTarget(arguments, tool: "ocr_screen") {
+        case .success(let target): resolved = target
+        case .failure(let box): return box.result
+        }
+
         do {
             // Optional region. Captured and OCR'd in memory; a PNG is only
             // written when keep_image is set (ScreenController.ocrScreen).
             var region: ScreenController.CaptureRegion?
-            if let x = arguments["x"]?.intValue,
+            if resolved == nil,
+               let x = arguments["x"]?.intValue,
                let y = arguments["y"]?.intValue,
                let w = arguments["width"]?.intValue,
                let h = arguments["height"]?.intValue {
                 region = ScreenController.CaptureRegion(x: x, y: y, width: w, height: h)
             }
 
-            let (capture, ocrResult) = try await screen.ocrScreen(
-                region: region, keepImage: keepImage, options: ocrOptions
-            )
+            let capture: ScreenController.CaptureResult
+            let ocrResult: ScreenController.OCRResult
+            if let resolved {
+                (capture, ocrResult) = try await screen.ocrWindow(
+                    selected: Self.selectedWindow(resolved), keepImage: keepImage, options: ocrOptions
+                )
+            } else {
+                (capture, ocrResult) = try await screen.ocrScreen(
+                    region: region, keepImage: keepImage, options: ocrOptions
+                )
+            }
 
             var payload: [String: JSONValue] = [
                 "ok": .bool(true),
@@ -364,6 +385,23 @@ extension ToolRegistry {
                 "level": .string(ocrOptions.fast ? "fast" : "accurate"),
                 "language_correction": .bool(ocrOptions.languageCorrection)
             ]
+            // What the block coordinates are relative to, and where that
+            // image's top-left is in global points:
+            //   screen_point = origin + block_px / pixels_per_point
+            let space = Self.ocrCoordinateSpace(
+                region: region,
+                windowBounds: resolved?.bounds,
+                displayBounds: CGDisplayBounds(CGMainDisplayID())
+            )
+            payload["coordinate_space"] = .string(space.space)
+            payload["origin"] = .object([
+                "x": .number(Double(space.origin.x)),
+                "y": .number(Double(space.origin.y))
+            ])
+            payload.merge(Self.captureMetadata(capture)) { existing, _ in existing }
+            if let resolved {
+                payload.merge(resolved.payload) { existing, _ in existing }
+            }
             if includeBlocks {
                 let shown = maxBlocks.map { Array(ocrResult.blocks.prefix($0)) } ?? ocrResult.blocks
                 payload["blocks"] = Self.encodeOCRBlocks(shown)
@@ -374,10 +412,19 @@ extension ToolRegistry {
 
             return successResult("OCR extracted \(ocrResult.blocks.count) block(s).", payload)
         } catch {
-            return errorResult(
-                "OCR failed: \(error).",
-                ["ok": .bool(false), "error": .string(String(describing: error))]
-            )
+            var payload: [String: JSONValue] = [
+                "ok": .bool(false),
+                "error": .string(String(describing: error))
+            ]
+            if let resolved {
+                payload["window_id"] = .number(Double(resolved.windowID))
+                payload["error_code"] = .string(GroundingController.errorCode(for: error))
+                payload["hint"] = .string(
+                    "Per-window OCR needs Screen Recording permission for mac-control-mcp; "
+                    + "if the window was just closed, call list_windows for a fresh window_id."
+                )
+            }
+            return errorResult("OCR failed: \(error).", payload)
         }
     }
 }
