@@ -173,6 +173,8 @@ final class ToolRegistry: @unchecked Sendable {
     // controllers.
     func callTool(name: String, arguments: [String: JSONValue]) async -> ToolCallResult {
         switch name {
+        case "wait_for": return await callWaitFor(arguments)
+        case "act": return await callAct(arguments)
         case "list_elements":
             return await callListElements(arguments)
         case "find_element":

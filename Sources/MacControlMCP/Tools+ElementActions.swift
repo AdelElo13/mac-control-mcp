@@ -169,7 +169,7 @@ extension ToolRegistry {
         for target in [source, destination].compactMap({ $0 }) {
             if let mismatch = await checkActionOwner(target, arguments: arguments) { return mismatch }
         }
-        if name == "click", let source,
+        if ["click", "press"].contains(name), let source,
            await accessibility.actionNames(element: source.element).contains("AXPress") {
             let outcome = await accessibility.pressElementViaAX(element: source.element)
             let ok: Bool
@@ -178,6 +178,7 @@ extension ToolRegistry {
             payload["strategy"] = .string("AXPress")
             return ok ? successResult("Element pressed.", payload) : errorResult("AXPress failed.", payload)
         }
+        if name == "press" { return actionFailure("not_supported", "Element does not support AXPress.") }
         func coordinate(_ x: String, _ y: String) -> CGPoint? {
             guard let x = arguments[x]?.doubleValue, let y = arguments[y]?.doubleValue, x.isFinite, y.isFinite else { return nil }
             return CGPoint(x: x, y: y)
