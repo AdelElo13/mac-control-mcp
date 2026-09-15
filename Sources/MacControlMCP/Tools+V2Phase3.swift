@@ -202,6 +202,7 @@ extension ToolRegistry {
     }
 
     func callDragAndDrop(_ arguments: [String: JSONValue]) async -> ToolCallResult {
+        if arguments["element_id"] != nil || arguments["source_element_id"] != nil || arguments["target_element_id"] != nil { return await callElementMouse("drag_and_drop", arguments) }
         guard let x1 = arguments["x1"]?.doubleValue,
               let y1 = arguments["y1"]?.doubleValue,
               let x2 = arguments["x2"]?.doubleValue,
@@ -235,6 +236,7 @@ extension ToolRegistry {
     }
 
     func callScroll(_ arguments: [String: JSONValue]) async -> ToolCallResult {
+        if arguments["element_id"] != nil { return await callElementMouse("scroll", arguments) }
         let dx = arguments["delta_x"]?.intValue ?? 0
         let dy = arguments["delta_y"]?.intValue ?? 0
         if dx == 0 && dy == 0 {

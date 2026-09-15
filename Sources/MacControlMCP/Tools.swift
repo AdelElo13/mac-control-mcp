@@ -628,6 +628,7 @@ final class ToolRegistry: @unchecked Sendable {
     }
 
     private func callClick(_ arguments: [String: JSONValue]) async -> ToolCallResult {
+        if arguments["element_id"] != nil { return await callElementMouse("click", arguments) }
         let pid = parsePID(arguments["pid"])
 
         if let x = arguments["x"]?.doubleValue, let y = arguments["y"]?.doubleValue {
@@ -728,6 +729,7 @@ final class ToolRegistry: @unchecked Sendable {
     }
 
     private func callTypeText(_ arguments: [String: JSONValue]) async -> ToolCallResult {
+        if arguments["element_id"] != nil { return await callTargetedType(arguments) }
         guard let text = arguments["text"]?.stringValue else {
             return invalidArgument("type_text requires text.")
         }

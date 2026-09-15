@@ -9,6 +9,17 @@ import Foundation
 @Suite("Batch tool", .serialized)
 struct BatchToolTests {
 
+    // v0.10 A3: cheap reads must fit without the test-only timeout override.
+    @Test("ten cheap calls fit the real batch budget")
+    func tenCheapCallsAccepted() async {
+        let registry = ToolRegistry(accessibility: AccessibilityController())
+        let result = await registry.callTool(name: "batch", arguments: [
+            "calls": .array((0..<10).map { _ in .object(["name": .string("list_apps")]) })
+        ])
+        #expect(!result.isError)
+        #expect(result.structuredContent.objectValue?["completed"] == .number(10))
+    }
+
     // MARK: - Registration
 
     @Test("batch is registered")
@@ -29,13 +40,15 @@ struct BatchToolTests {
         #expect(empty.isError == true)
     }
 
+    // v0.10 A3: list_apps succeeds without a foreground session; these tests
+    // exercise batching, not the host desktop focus.
     // MARK: - Sequential order
 
     @Test("calls execute in order and results correlate by id/index")
     func sequentialOrder() async {
         let registry = ToolRegistry(accessibility: AccessibilityController())
         let calls: JSONValue = .array([
-            .object(["name": .string("focused_app"), "id": .string("a")]),
+            .object(["name": .string("list_apps"), "id": .string("a")]),
             .object(["name": .string("list_apps"), "id": .string("b")]),
             .object(["name": .string("permissions_status"), "id": .string("c")])
         ])
@@ -57,7 +70,7 @@ struct BatchToolTests {
             guard case .object(let dict) = entry else { return nil }
             return dict["name"]?.stringValue
         }
-        #expect(names == ["focused_app", "list_apps", "permissions_status"])
+        #expect(names == ["list_apps", "list_apps", "permissions_status"])
 
         let ids = results.compactMap { entry -> String? in
             guard case .object(let dict) = entry else { return nil }
@@ -78,7 +91,7 @@ struct BatchToolTests {
     func defaultIdIsIndex() async {
         let registry = ToolRegistry(accessibility: AccessibilityController())
         let calls: JSONValue = .array([
-            .object(["name": .string("focused_app")]),
+            .object(["name": .string("list_apps")]),
             .object(["name": .string("list_apps")])
         ])
         let result = await registry.callTool(name: "batch", arguments: ["calls": calls])
@@ -100,7 +113,7 @@ struct BatchToolTests {
     func perCallMsPresent() async {
         let registry = ToolRegistry(accessibility: AccessibilityController())
         let calls: JSONValue = .array([
-            .object(["name": .string("focused_app")]),
+            .object(["name": .string("list_apps")]),
             .object(["name": .string("list_apps")])
         ])
         let result = await registry.callTool(name: "batch", arguments: ["calls": calls])
@@ -154,7 +167,7 @@ struct BatchToolTests {
     func stopOnErrorTrueHalts() async {
         let registry = ToolRegistry(accessibility: AccessibilityController())
         let calls: JSONValue = .array([
-            .object(["name": .string("focused_app")]),
+            .object(["name": .string("list_apps")]),
             .object(["name": .string("nonexistent_tool_one")]),
             .object(["name": .string("list_apps")])
         ])
@@ -175,7 +188,7 @@ struct BatchToolTests {
     func stopOnErrorFalseRunsAll() async {
         let registry = ToolRegistry(accessibility: AccessibilityController())
         let calls: JSONValue = .array([
-            .object(["name": .string("focused_app")]),
+            .object(["name": .string("list_apps")]),
             .object(["name": .string("nonexistent_tool_one")]),
             .object(["name": .string("list_apps")])
         ])
@@ -208,7 +221,7 @@ struct BatchToolTests {
     func nestedBatchRejected() async {
         let registry = ToolRegistry(accessibility: AccessibilityController())
         let calls: JSONValue = .array([
-            .object(["name": .string("focused_app")]),
+            .object(["name": .string("list_apps")]),
             .object(["name": .string("batch"), "arguments": .object(["calls": .array([])])])
         ])
         let result = await registry.callTool(name: "batch", arguments: ["calls": calls])
@@ -229,9 +242,9 @@ struct BatchToolTests {
     func delayHonoured() async {
         let registry = ToolRegistry(accessibility: AccessibilityController())
         let calls: JSONValue = .array([
-            .object(["name": .string("focused_app")]),
-            .object(["name": .string("focused_app")]),
-            .object(["name": .string("focused_app")])
+            .object(["name": .string("list_apps")]),
+            .object(["name": .string("list_apps")]),
+            .object(["name": .string("list_apps")])
         ])
         let delayMs = 200.0
         let start = Date()
@@ -250,7 +263,7 @@ struct BatchToolTests {
     func delayClampedToMax() async {
         let registry = ToolRegistry(accessibility: AccessibilityController())
         let calls: JSONValue = .array([
-            .object(["name": .string("focused_app")])
+            .object(["name": .string("list_apps")])
         ])
         // A single call has no inter-call gap, so this just verifies the
         // batch still runs (doesn't reject) with an out-of-range delay_ms.
@@ -274,7 +287,7 @@ struct BatchToolTests {
                     "timeout_seconds": .number(1)
                 ])
             ]),
-            .object(["name": .string("focused_app")])
+            .object(["name": .string("list_apps")])
         ])
 
         let start = Date()
@@ -300,7 +313,7 @@ struct BatchToolTests {
             Issue.record("missing second result")
             return
         }
-        #expect(second["name"]?.stringValue == "focused_app")
+        #expect(second["name"]?.stringValue == "list_apps")
     }
 
     // MARK: - Review fix: a REAL sub-call timeout always stops the batch
@@ -323,7 +336,7 @@ struct BatchToolTests {
                     "timeout_seconds": .number(5)
                 ])
             ]),
-            .object(["name": .string("focused_app")])
+            .object(["name": .string("list_apps")])
         ])
 
         let result = await registry.callTool(
@@ -363,7 +376,7 @@ struct BatchToolTests {
     func maxCallsEnforced() async {
         let registry = ToolRegistry(accessibility: AccessibilityController())
         let calls: JSONValue = .array(
-            (0..<51).map { _ in .object(["name": .string("focused_app")]) }
+            (0..<51).map { _ in .object(["name": .string("list_apps")]) }
         )
         let result = await registry.callTool(name: "batch", arguments: ["calls": calls])
         #expect(result.isError == true)
@@ -379,9 +392,9 @@ struct BatchToolTests {
     func exactlyMaxCallsAccepted() async {
         let registry = ToolRegistry(accessibility: AccessibilityController())
         let calls: JSONValue = .array(
-            (0..<50).map { _ in .object(["name": .string("focused_app")]) }
+            (0..<50).map { _ in .object(["name": .string("list_apps")]) }
         )
-        // 50 calls at the real 90s-default limit each would blow the 300s
+        // v0.10 A3: 50 calls at the real 10s read limit each would blow the 300s
         // budget cap on their own — force a tiny per-call limit via the
         // test hook so this test isolates the *count* cap (<=50) from the
         // *budget* cap (<=300s), which has its own tests below.
@@ -434,7 +447,7 @@ struct BatchToolTests {
         // per-call limit chosen so only the delay overhead pushes the
         // total over budget.
         let calls: JSONValue = .array(
-            (0..<4).map { _ in .object(["name": .string("focused_app")]) }
+            (0..<4).map { _ in .object(["name": .string("list_apps")]) }
         )
         let result = await registry.callTool(
             name: "batch",
@@ -459,7 +472,7 @@ struct BatchToolTests {
     func nonObjectArgumentsRejected() async {
         let registry = ToolRegistry(accessibility: AccessibilityController())
         let calls: JSONValue = .array([
-            .object(["name": .string("focused_app")]),
+            .object(["name": .string("list_apps")]),
             .object(["name": .string("list_apps"), "arguments": .array([.string("oops")])])
         ])
         let result = await registry.callTool(name: "batch", arguments: ["calls": calls])
@@ -479,7 +492,7 @@ struct BatchToolTests {
         let registry = ToolRegistry(accessibility: AccessibilityController())
         for badID: JSONValue in [.bool(true), .array([]), .object([:]), .null, .number(1.5)] {
             let calls: JSONValue = .array([
-                .object(["name": .string("focused_app"), "id": badID])
+                .object(["name": .string("list_apps"), "id": badID])
             ])
             let result = await registry.callTool(name: "batch", arguments: ["calls": calls])
             #expect(result.isError == true, "expected rejection for id \(badID)")
@@ -495,7 +508,7 @@ struct BatchToolTests {
     func integerNumberIDAccepted() async {
         let registry = ToolRegistry(accessibility: AccessibilityController())
         let calls: JSONValue = .array([
-            .object(["name": .string("focused_app"), "id": .number(7)])
+            .object(["name": .string("list_apps"), "id": .number(7)])
         ])
         let result = await registry.callTool(name: "batch", arguments: ["calls": calls])
         #expect(result.isError == false)
@@ -506,7 +519,7 @@ struct BatchToolTests {
         let registry = ToolRegistry(accessibility: AccessibilityController())
 
         let explicitDuplicate: JSONValue = .array([
-            .object(["name": .string("focused_app"), "id": .string("dup")]),
+            .object(["name": .string("list_apps"), "id": .string("dup")]),
             .object(["name": .string("list_apps"), "id": .string("dup")])
         ])
         let r1 = await registry.callTool(name: "batch", arguments: ["calls": explicitDuplicate])
@@ -521,7 +534,7 @@ struct BatchToolTests {
         // The second call's default id (index 0) collides with the
         // first call's explicit id.
         let defaultCollision: JSONValue = .array([
-            .object(["name": .string("focused_app"), "id": .number(1)]),
+            .object(["name": .string("list_apps"), "id": .number(1)]),
             .object(["name": .string("list_apps")]),
             .object(["name": .string("permissions_status")])
         ])

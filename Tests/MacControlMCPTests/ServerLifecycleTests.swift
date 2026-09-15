@@ -16,13 +16,13 @@ struct ServerLifecycleTests {
 
     @Test("tool timeout honours defaults, per-tool limits, requested durations and the env override")
     func toolTimeoutLimits() {
-        #expect(ToolTimeouts.limit(for: "list_windows", arguments: [:], environment: [:]) == ToolTimeouts.defaultLimit)
+        #expect(ToolTimeouts.limit(for: "list_windows", arguments: [:], environment: [:]) == 10)
         #expect(ToolTimeouts.limit(for: "record_screen", arguments: ["seconds": .number(120)], environment: [:]) == 135)
-        #expect(ToolTimeouts.limit(for: "wait_for_app", arguments: ["timeout_seconds": .number(5)], environment: [:]) == ToolTimeouts.defaultLimit)
+        #expect(ToolTimeouts.limit(for: "wait_for_app", arguments: ["timeout_seconds": .number(5)], environment: [:]) == 20)
         let env = [ToolTimeouts.environmentKey: "30"]
         #expect(ToolTimeouts.limit(for: "list_windows", arguments: [:], environment: env) == 30)
         #expect(ToolTimeouts.limit(for: "wait_for_app", arguments: ["timeout_seconds": .number(40)], environment: env) == 55)
-        #expect(ToolTimeouts.limit(for: "list_windows", arguments: [:], environment: [ToolTimeouts.environmentKey: "nonsense"]) == ToolTimeouts.defaultLimit)
+        #expect(ToolTimeouts.limit(for: "list_windows", arguments: [:], environment: [ToolTimeouts.environmentKey: "nonsense"]) == 10)
     }
 
     // MARK: - v0.9 review follow-up (MEDIUM, #8): batch outer/inner timeout race
@@ -30,7 +30,7 @@ struct ServerLifecycleTests {
     @Test("the outer batch timeout always exceeds the summed inner per-call budgets")
     func batchOuterTimeoutExceedsInnerSum() {
         let calls: JSONValue = .array([
-            .object(["name": .string("focused_app")]),
+            .object(["name": .string("list_apps")]),
             .object(["name": .string("list_windows")]),
             .object(["name": .string("wait_for_app"), "arguments": .object(["timeout_seconds": .number(40)])])
         ])
@@ -58,7 +58,7 @@ struct ServerLifecycleTests {
         let effectiveCap = ToolTimeouts.batchCap - ToolTimeouts.batchHandlerSlack
         let perCall = effectiveCap / 5
         let registry = ToolRegistry(accessibility: AccessibilityController())
-        let calls: JSONValue = .array((0..<5).map { _ in .object(["name": .string("focused_app")]) })
+        let calls: JSONValue = .array((0..<5).map { _ in .object(["name": .string("list_apps")]) })
 
         let result = await registry.callTool(
             name: "batch",
@@ -83,7 +83,7 @@ struct ServerLifecycleTests {
         let effectiveCap = ToolTimeouts.batchCap - ToolTimeouts.batchHandlerSlack
         let perCall = (effectiveCap / 5) + 1
         let registry = ToolRegistry(accessibility: AccessibilityController())
-        let calls: JSONValue = .array((0..<5).map { _ in .object(["name": .string("focused_app")]) })
+        let calls: JSONValue = .array((0..<5).map { _ in .object(["name": .string("list_apps")]) })
 
         let result = await registry.callTool(
             name: "batch",

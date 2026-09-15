@@ -4,6 +4,13 @@ import CoreGraphics
 /// Low-level mouse input via CGEvent. Positions are in the global Quartz
 /// coordinate space (origin top-left, matches AX position attributes).
 actor MouseController {
+    // v0.10 C1: clip each display separately so a monitor gap is never a click point.
+    nonisolated static func visibleCenter(frame: CGRect, window: CGRect, displays: [CGRect]) -> CGPoint? {
+        let visible = displays.compactMap { ScreenAnnotator.visibleRect(of: frame, clippedTo: [window, $0]) }
+            .max { $0.width * $0.height < $1.width * $1.height }
+        return visible.map { CGPoint(x: $0.midX, y: $0.midY) }
+    }
+
     enum Button: String, Sendable {
         case left, right, center
 

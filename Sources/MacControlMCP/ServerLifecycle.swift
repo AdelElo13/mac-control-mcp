@@ -119,6 +119,27 @@ enum ToolTimeouts {
     /// `timeout_seconds`) so the tool can report its own result first.
     static let slack: TimeInterval = 15
     static let environmentKey = "MAC_CONTROL_MCP_TOOL_TIMEOUT"
+    // v0.10 A3: known bounded tools must not reserve the user-prompt budget.
+    // Explicit names keep a new, possibly interactive tool conservative.
+    static let cheapTools: Set<String> = [
+        "list_apps", "focused_app", "list_windows", "list_displays", "convert_coordinates",
+        "permissions_status", "mcp_server_info", "list_elements", "find_element", "find_elements",
+        "query_elements", "get_ui_tree", "probe_ax_tree", "get_element_attributes",
+        "read_value", "get_menu", "list_menu_titles", "get_window_info", "element_at_point",
+        "text_get_value", "text_get_selection", "text_get_caret", "get_clipboard",
+        "click", "double_click", "right_click", "mouse_event", "drag_and_drop", "scroll",
+        "press_key", "type_text", "set_element_attribute", "perform_element_action",
+        "text_insert_at_caret", "text_replace_range", "text_set_selection", "scroll_to_element"
+    ]
+    static let captureTools: Set<String> = [
+        "capture_screen", "capture_window", "capture_region", "capture_annotated", "ocr_screen"
+    ]
+    static let waitDefaults: [String: TimeInterval] = [
+        "wait_for": 5, "wait_for_element": 5, "wait_for_window": 5, "wait_for_app": 5,
+        "wait_for_file_dialog": 5, "wait_for_ax_notification": 5, "wait_for_window_state_change": 5
+    ]
+    static let maxWait: TimeInterval = 60
+
     /// Tools whose normal runtime can exceed the default.
     static let perToolLimit: [String: TimeInterval] = [
         "speech_to_text": 180
@@ -161,8 +182,17 @@ enum ToolTimeouts {
         if name == "batch" {
             return batchLimit(arguments: arguments, environment: environment)
         }
-        var base = perToolLimit[name] ?? defaultLimit
-        if let raw = environment[environmentKey], let value = Double(raw), value > 0 {
+        if name == "act" {
+            let verification = arguments["verify"]?.objectValue ?? [:]
+            return 10 + limit(for: "wait_for", arguments: verification, environment: environment)
+                + batchHandlerSlack
+        }
+        var base = perToolLimit[name] ?? (cheapTools.contains(name) ? 10 : captureTools.contains(name) ? 30 : defaultLimit)
+        if let waitDefault = waitDefaults[name] {
+            let requested = arguments["timeout_seconds"]?.doubleValue ?? waitDefault
+            base = (requested.isFinite && requested > 0 ? requested : waitDefault) + slack
+        }
+        if let raw = environment[environmentKey], let value = Double(raw), value.isFinite, value > 0 {
             base = value
         }
         let requested = ["seconds", "timeout_seconds"]

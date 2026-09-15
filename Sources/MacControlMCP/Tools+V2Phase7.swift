@@ -602,6 +602,7 @@ extension ToolRegistry {
     // MARK: Ergonomic click wrappers
 
     func callRightClick(_ arguments: [String: JSONValue]) async -> ToolCallResult {
+        if arguments["element_id"] != nil { return await callElementMouse("right_click", arguments) }
         guard let x = arguments["x"]?.doubleValue, let y = arguments["y"]?.doubleValue else {
             return invalidArgument("right_click requires numeric x and y.")
         }
@@ -616,6 +617,7 @@ extension ToolRegistry {
     }
 
     func callDoubleClick(_ arguments: [String: JSONValue]) async -> ToolCallResult {
+        if arguments["element_id"] != nil { return await callElementMouse("double_click", arguments) }
         guard let x = arguments["x"]?.doubleValue, let y = arguments["y"]?.doubleValue else {
             return invalidArgument("double_click requires numeric x and y.")
         }
