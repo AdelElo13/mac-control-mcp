@@ -234,11 +234,10 @@ extension ToolRegistry {
 
         MCPToolDefinition(
             name: "right_click",
-            description: "Right-click (secondary button) at coordinates. Ergonomic wrapper around mouse_event. "
-                + "Always lands on the frontmost app — pass expected_app/expected_window to abort "
-                + "instead of clicking the wrong window if focus changed.",
+            description: "right_click by element_id or coordinates. Element IDs resolve live; stale identities fail with stale_element. Plain click uses AXPress when supported; other mouse input uses the center clipped to the owning window and a display, or fails with not_visible. Element targets automatically guard their owning app/window as well as expected_app/expected_window. Returns verified true/false/null with a reason; an unchanged surviving element does not prove the action had an effect.",
             inputSchema: schema(
                 properties: [
+                    "element_id": .object(["type": .string("string"), "description": .string("Live element ID; automatically guards its owning app/window. Returns tri-state verified with reason.")]),
                     "x": .object(["type": .string("number")]),
                     "y": .object(["type": .string("number")]),
                     "expected_app": .object([
@@ -249,17 +248,15 @@ extension ToolRegistry {
                         "type": .string("string"),
                         "description": .string("Case-insensitive substring expected in the focused window title. On mismatch, nothing is clicked.")
                     ])
-                ],
-                required: ["x", "y"]
+                ]
             )
         ),
         MCPToolDefinition(
             name: "double_click",
-            description: "Double-click at coordinates. Ergonomic wrapper around mouse_event with action='double_click'. "
-                + "Always lands on the frontmost app — pass expected_app/expected_window to abort "
-                + "instead of clicking the wrong window if focus changed.",
+            description: "double_click by element_id or coordinates. Element IDs resolve live; stale identities fail with stale_element. Plain click uses AXPress when supported; other mouse input uses the center clipped to the owning window and a display, or fails with not_visible. Element targets automatically guard their owning app/window as well as expected_app/expected_window. Returns verified true/false/null with a reason; an unchanged surviving element does not prove the action had an effect.",
             inputSchema: schema(
                 properties: [
+                    "element_id": .object(["type": .string("string"), "description": .string("Live element ID; automatically guards its owning app/window. Returns tri-state verified with reason.")]),
                     "x": .object(["type": .string("number")]),
                     "y": .object(["type": .string("number")]),
                     "button": .object(["type": .string("string")]),
@@ -271,8 +268,7 @@ extension ToolRegistry {
                         "type": .string("string"),
                         "description": .string("Case-insensitive substring expected in the focused window title. On mismatch, nothing is clicked.")
                     ])
-                ],
-                required: ["x", "y"]
+                ]
             )
         )
     ]
@@ -602,6 +598,7 @@ extension ToolRegistry {
     // MARK: Ergonomic click wrappers
 
     func callRightClick(_ arguments: [String: JSONValue]) async -> ToolCallResult {
+        if arguments["element_id"] != nil { return await callElementMouse("right_click", arguments) }
         guard let x = arguments["x"]?.doubleValue, let y = arguments["y"]?.doubleValue else {
             return invalidArgument("right_click requires numeric x and y.")
         }
@@ -616,6 +613,7 @@ extension ToolRegistry {
     }
 
     func callDoubleClick(_ arguments: [String: JSONValue]) async -> ToolCallResult {
+        if arguments["element_id"] != nil { return await callElementMouse("double_click", arguments) }
         guard let x = arguments["x"]?.doubleValue, let y = arguments["y"]?.doubleValue else {
             return invalidArgument("double_click requires numeric x and y.")
         }

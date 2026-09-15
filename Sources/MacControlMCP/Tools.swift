@@ -154,7 +154,7 @@ final class ToolRegistry: @unchecked Sendable {
             Self.definitionsV2Phase6 + Self.definitionsV2Phase7 + Self.definitionsV2Phase8 +
             Self.definitionsV2Phase9 + Self.definitionsV2Phase10 + Self.definitionsV2Phase11 +
             Self.definitionsBatch + Self.definitionsV0_9AXCore + Self.definitionsAnnotate +
-            Self.definitionsTextEditing
+            Self.definitionsTextEditing + Self.definitionsActions
     }
 
     // MARK: - Tool dispatch
@@ -173,6 +173,8 @@ final class ToolRegistry: @unchecked Sendable {
     // controllers.
     func callTool(name: String, arguments: [String: JSONValue]) async -> ToolCallResult {
         switch name {
+        case "wait_for": return await callWaitFor(arguments)
+        case "act": return await callAct(arguments)
         case "list_elements":
             return await callListElements(arguments)
         case "find_element":
@@ -628,6 +630,7 @@ final class ToolRegistry: @unchecked Sendable {
     }
 
     private func callClick(_ arguments: [String: JSONValue]) async -> ToolCallResult {
+        if arguments["element_id"] != nil { return await callElementMouse("click", arguments) }
         let pid = parsePID(arguments["pid"])
 
         if let x = arguments["x"]?.doubleValue, let y = arguments["y"]?.doubleValue {
@@ -728,6 +731,7 @@ final class ToolRegistry: @unchecked Sendable {
     }
 
     private func callTypeText(_ arguments: [String: JSONValue]) async -> ToolCallResult {
+        if arguments["element_id"] != nil { return await callTargetedType(arguments) }
         guard let text = arguments["text"]?.stringValue else {
             return invalidArgument("type_text requires text.")
         }
@@ -940,7 +944,7 @@ final class ToolRegistry: @unchecked Sendable {
     /// Parse a JSON modifiers array. Delegates name→flag mapping to the
     /// shared `ModifierMap` (see Tools+V2Phase5.swift) so key_down/key_up/
     /// press_key_sequence and press_key all use the exact same parsing.
-    private func parseModifiers(_ rawValue: JSONValue?) -> Result<[CGEventFlags], ToolInputError> {
+    func parseModifiers(_ rawValue: JSONValue?) -> Result<[CGEventFlags], ToolInputError> {
         guard let rawValue else { return .success([]) }
         guard let values = rawValue.arrayValue else {
             return .failure(ToolInputError(description: "modifiers must be an array of strings."))
@@ -993,11 +997,13 @@ final class ToolRegistry: @unchecked Sendable {
     /// `expected_window` (the guard is opt-in and existing behaviour is
     /// unchanged), or when the actual focus matches. Returns a
     /// `focus_mismatch` error result — inject nothing — on mismatch.
-    func checkFocusGuard(_ arguments: [String: JSONValue]) async -> ToolCallResult? {
+    func checkFocusGuard(_ arguments: [String: JSONValue], actual suppliedFocus: FocusGuard.ActualFocus? = nil) async -> ToolCallResult? {
         let expectedApp = arguments["expected_app"]?.stringValue
         let expectedWindow = arguments["expected_window"]?.stringValue
 
-        let actual = await FocusGuard.currentFocus()
+        let actual: FocusGuard.ActualFocus
+        if let suppliedFocus { actual = suppliedFocus }
+        else { actual = await FocusGuard.currentFocus() }
         let outcome = FocusGuard.evaluate(
             expectedApp: expectedApp,
             expectedWindow: expectedWindow,
@@ -1138,16 +1144,10 @@ final class ToolRegistry: @unchecked Sendable {
         ),
         MCPToolDefinition(
             name: "click",
-            description: "Click an element by role/title or click absolute coordinates. "
-                + "Coordinate clicks post a synthetic CGEvent that always lands on the "
-                + "frontmost app — pass expected_app/expected_window to abort instead of "
-                + "clicking the wrong window if focus changed. Role/title clicks try AXPress "
-                + "first (focus-independent) and only fall back to a coordinate CGEvent click "
-                + "when AXPress is unsupported on that element — expected_app/expected_window "
-                + "is checked only if/when that fallback fires. Prefer perform_element_action "
-                + "(AXPress) directly when you already have an element handle.",
+            description: "click by element_id or coordinates. Element IDs resolve live; stale identities fail with stale_element. Plain click uses AXPress when supported; other mouse input uses the center clipped to the owning window and a display, or fails with not_visible. Element targets automatically guard their owning app/window as well as expected_app/expected_window. Returns verified true/false/null with a reason; an unchanged surviving element does not prove the action had an effect. pid plus role/title selectors remain supported.",
             inputSchema: schema(
                 properties: [
+                    "element_id": .object(["type": .string("string"), "description": .string("Live element ID; automatically guards its owning app/window. Returns tri-state verified with reason.")]),
                     "pid": .object([
                         "type": .array([.string("integer"), .string("string")]),
                         "description": .string("Target process ID when clicking by selector.")
@@ -1177,15 +1177,10 @@ final class ToolRegistry: @unchecked Sendable {
         ),
         MCPToolDefinition(
             name: "type_text",
-            description: "Type text into the currently focused field. "
-                + "Strategies: auto (clipboard → keys → ax, default; best for React/Angular SPAs), "
-                + "clipboard (paste events), keys (CGEvent unicode), ax (AX set_value last-resort). "
-                + "auto/clipboard/keys post synthetic events and are checked against "
-                + "expected_app/expected_window before typing; strategy=ax sets the value "
-                + "directly and is not checked, since it does not depend on focus. Prefer "
-                + "set_element_attribute (AXValue) directly when you already have an element handle.",
+            description: "Type text into the focused field or an element_id. With element_id, refuse secure fields, set AXFocused through set_element_attribute and verify focus before typing; guard the owning app/window automatically. Strategies: auto (clipboard → keys → ax), clipboard, keys, ax. Without an ID, existing focused-field behavior is retained. Targeted results include verified (true/false/null) and a verification reason; focus change alone does not prove the text was accepted.",
             inputSchema: schema(
                 properties: [
+                    "element_id": .object(["type": .string("string"), "description": .string("Live element ID; automatically guards its owning app/window. Returns tri-state verified with reason.")]),
                     "text": .object([
                         "type": .string("string")
                     ]),
