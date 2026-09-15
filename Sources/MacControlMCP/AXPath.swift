@@ -34,7 +34,9 @@ struct AXFingerprint: Sendable, Hashable {
     /// review's HIGH finding: inserting a sibling silently shifted a
     /// stale id onto a different control.
     func matches(_ component: AXPathComponent) -> Bool {
-        guard role == component.role else { return false }
+        // v0.10 A1: two failed reads are not matching identities. This also
+        // makes path repair refuse unreadable intermediate components.
+        guard role != "AXUnknown", role == component.role else { return false }
         if let wanted = component.identifier {
             return identifier == wanted
         }
@@ -264,7 +266,7 @@ enum AXPath {
     /// One batched round trip per element (role, title, identifier and
     /// subrole all come back together).
     static func fingerprint(of element: AXUIElement) -> AXFingerprint {
-        let attrs = AXAttributeBatch.fetch(element, includeChildren: false)
+        let attrs = AXAttributeBatch.fetch(element, includeChildren: false, fallbackOnFailure: false)
         return AXFingerprint(
             role: attrs.role,
             identifier: attrs.identifier,
@@ -304,39 +306,35 @@ enum AXPath {
         return chain
     }
 
-    /// Reconstruct the path of an element we only hold a handle to (the
-    /// `element_at_point` case) by walking up to the application root and
-    /// recording each ordinal — and fingerprint — on the way back down.
+    /// v0.10 A8: hit-test aliases and Chromium virtual nodes may require a
+    /// bounded root-down search to recover the same path as a normal walk.
     static func upwardPath(of element: AXUIElement, limit: Int = 32) -> [AXPathComponent]? {
-        let chain = ancestors(of: element, limit: limit)
-        guard let root = chain.last, copyString(root, "AXRole") == (kAXApplicationRole as String) else {
-            // Without a reachable application root the ordinals would be
-            // relative to an unknown anchor — refuse rather than mint an
-            // id that cannot be resolved later.
-            return nil
+        reconstruct(element: element, limit: limit).path
+    }
+
+    static func reconstruct(element: AXUIElement, limit: Int = 32) -> Reconstruction {
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(element, &pid) == .success, pid > 0 else {
+            return Reconstruction(path: nil, strategy: nil, steps: [], reason: "no_owning_pid")
         }
-        // chain is [parent, grandparent, ..., application]. Pair each
-        // element with its parent, from the root downwards.
-        let descending = ([element] + chain).reversed()  // [application, ..., element]
-        var path: [AXPathComponent] = []
-        var iterator = Array(descending).makeIterator()
-        guard var parent = iterator.next() else { return nil }
-        while let child = iterator.next() {
-            let siblings = childElements(of: parent)
-            guard let index = siblings.firstIndex(where: { CFEqual($0, child) }) else { return nil }
-            let attrs = AXAttributeBatch.fetch(child, includeChildren: false)
-            path.append(
-                AXPathComponent(
-                    role: attrs.role,
-                    index: index,
-                    identifier: attrs.identifier,
-                    title: attrs.title,
-                    subrole: attrs.subrole
-                )
-            )
-            parent = child
-        }
-        return path
+        let tree = AXPathTree<AXKey>(
+            root: AXKey(element: AXUIElementCreateApplication(pid)),
+            parent: { copyElement($0.element, "AXParent").map { AXKey(element: $0) } },
+            read: { key in
+                let attrs = AXAttributeBatch.fetch(key.element, includeChildren: true, fallbackOnFailure: false)
+                let frame: CGRect?
+                if let position = attrs.position, let size = attrs.size {
+                    frame = CGRect(origin: position, size: size)
+                } else {
+                    frame = nil
+                }
+                return AXPathTree<AXKey>.Snapshot(
+                    fingerprint: AXFingerprint(role: attrs.role, identifier: attrs.identifier,
+                        title: attrs.title, subrole: attrs.subrole),
+                    frame: frame, children: attrs.children.map { AXKey(element: $0) })
+            }
+        )
+        return reconstruct(element: AXKey(element: element), tree: tree, limit: limit)
     }
 
     // MARK: - Small AX accessors (kept local so this file has no actor hop)

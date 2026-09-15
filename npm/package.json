@@ -1,8 +1,8 @@
 {
   "name": "mac-control-mcp",
   "mcpName": "io.github.AdelElo13/mac-control-mcp",
-  "version": "0.9.0",
-  "description": "Native Swift macOS automation over MCP — 151 tools: Accessibility tree, screen capture, OCR, browser DOM, EventKit, voice, undo. Ships a Developer ID signed, notarized .app.",
+  "version": "0.10.0",
+  "description": "Native Swift macOS automation over MCP — 153 tools: Accessibility tree, screen capture, OCR, browser DOM, EventKit, voice, undo. Ships a Developer ID signed, notarized .app.",
   "keywords": [
     "mcp",
     "model-context-protocol",

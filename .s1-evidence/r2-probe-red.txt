@@ -1,0 +1,35 @@
+test_persistent_probe_accepts_static_text_child_after_warmup (__main__.ChromeProbeTests.test_persistent_probe_accepts_static_text_child_after_warmup) ... ERROR
+test_persistent_probe_rejects_unrelated_child_id (__main__.ChromeProbeTests.test_persistent_probe_rejects_unrelated_child_id) ... ok
+test_stock_probe_accepts_static_text_children_after_warmup (__main__.ChromeProbeTests.test_stock_probe_accepts_static_text_children_after_warmup) ... ERROR
+test_stock_probe_rejects_unrelated_child_id (__main__.ChromeProbeTests.test_stock_probe_rejects_unrelated_child_id) ... ok
+test_stock_probe_rejects_unstable_child (__main__.ChromeProbeTests.test_stock_probe_rejects_unstable_child) ... ok
+
+======================================================================
+ERROR: test_persistent_probe_accepts_static_text_child_after_warmup (__main__.ChromeProbeTests.test_persistent_probe_accepts_static_text_child_after_warmup)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/.s1-evidence/r2-probe-tests.py", line 94, in test_persistent_probe_accepts_static_text_child_after_warmup
+    identifier, _ = legacy_check(ChromeFixture())
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/.s1-evidence/r2-probe-tests.py", line 79, in legacy_check
+    return namespace['check_chrome'](42)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "session.py", line 179, in check_chrome
+RuntimeError: INCONCLUSIVE A8: no visible Chrome link returned a matching AXLink hit; do not navigate or click a user tab
+
+======================================================================
+ERROR: test_stock_probe_accepts_static_text_children_after_warmup (__main__.ChromeProbeTests.test_stock_probe_accepts_static_text_children_after_warmup)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/.s1-evidence/r2-probe-tests.py", line 98, in test_stock_probe_accepts_static_text_children_after_warmup
+    section8_check(ChromeFixture())
+  File "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/.s1-evidence/r2-probe-tests.py", line 89, in section8_check
+    exec(compile(source, 'LIVE-CHECKS.md/check.py', 'exec'), {'__name__': '__main__'})
+  File "LIVE-CHECKS.md/check.py", line 126, in <module>
+  File "LIVE-CHECKS.md/check.py", line 17, in require
+RuntimeError: INCONCLUSIVE: page changed or point hit a different/covered target; inspect full outputs
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.013s
+
+FAILED (errors=2)

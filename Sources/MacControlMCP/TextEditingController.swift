@@ -112,7 +112,7 @@ actor TextEditingController {
             case .permissionMissing:
                 return "Grant Accessibility in System Settings → Privacy & Security → Accessibility, then retry. open_permission_pane(pane=\"accessibility\") deep-links there."
             case .notFound:
-                return "Re-resolve the element with find_elements/query_elements (ids expire after 5 minutes), or pass pid to target the app's currently focused element."
+                return "Re-resolve the element with find_elements/query_elements, or pass pid to target the app's currently focused element."
             case .notSupported(_, let reason):
                 switch reason {
                 case "secure_field":
@@ -141,6 +141,7 @@ actor TextEditingController {
         let numberOfCharacters: Int?
         let visibleRange: TextRange?
         let insertionPointLine: Int?
+        let bounds: Bounds?
     }
 
     struct Caret: Sendable {
@@ -375,14 +376,26 @@ actor TextEditingController {
     func selection(of element: AXUIElement) throws(Failure) -> Selection {
         try requireTrust()
         try requireTextCapable(element)
+        // v0.10 C7: AX can retain the pre-edit visible range. Read it anew
+        // and intersect with the current document, never a cached count.
+        let selected = ax.rangeAttribute(element, kAXSelectedTextRangeAttribute as String)
+        let count = ax.stringAttribute(element, kAXValueAttribute as String)?.utf16.count
+            ?? ax.intAttribute(element, kAXNumberOfCharactersAttribute as String)
+        let visible = ax.rangeAttribute(element, kAXVisibleCharacterRangeAttribute as String)
         return Selection(
             text: ax.stringAttribute(element, kAXSelectedTextAttribute as String),
-            range: ax.rangeAttribute(element, kAXSelectedTextRangeAttribute as String),
-            numberOfCharacters: ax.intAttribute(element, kAXNumberOfCharactersAttribute as String),
-            visibleRange: ax.rangeAttribute(element, kAXVisibleCharacterRangeAttribute as String),
+            range: selected,
+            numberOfCharacters: count,
+            visibleRange: visible.map { range in
+                guard let count, count >= 0 else { return range }
+                let start = min(max(0, range.location), count)
+                return TextRange(location: start, length: min(max(0, range.length), count - start))
+            },
             insertionPointLine: Self.sanitizeLineNumber(
                 ax.intAttribute(element, kAXInsertionPointLineNumberAttribute as String)
-            )
+            ),
+            // v0.10 C7: selection geometry uses its full UTF-16 range.
+            bounds: selected.flatMap { ax.boundsForRange(element, location: $0.location, length: $0.length) }
         )
     }
 

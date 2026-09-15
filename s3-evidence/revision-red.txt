@@ -1,0 +1,149 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ground': failed storing manifest for 'wt10-ground' in cache: attempt to write a readonly database
+warning: 'wt10-ground': found 1 file(s) which are unhandled; explicitly declare them as resources or exclude from the target
+    /private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/Resources/well-known-mcp.json
+[0/1] Planning build
+Building for debugging...
+[0/6] Write sources
+[2/6] Write swift-version--58304C5D6DBC2206.txt
+[4/9] Compiling MacControlMCP GroundingController.swift
+[5/9] Compiling MacControlMCP GroundingPolicy.swift
+[6/9] Emitting module MacControlMCP
+[7/13] Compiling MacControlMCP ScreenController.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/ScreenController.swift:658:24: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+656 |         // When this works it gives us the window even if occluded. Returns
+657 |         // nil on macOS 15+ in many cases — that's why SCK is Strategy 1.
+658 |         if let image = CGWindowListCreateImage(
+    |                        `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+659 |             .null,
+660 |             .optionIncludingWindow,
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/ScreenController.swift:679:27: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+677 |         }
+678 | 
+679 |         guard let image = CGWindowListCreateImage(
+    |                           `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+680 |             bounds,
+681 |             .optionOnScreenOnly,
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/ScreenController.swift:805:27: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+803 |     private func regionImage(_ region: CaptureRegion) throws -> CGImage {
+804 |         let rect = CGRect(x: region.x, y: region.y, width: region.width, height: region.height)
+805 |         guard let image = CGWindowListCreateImage(
+    |                           `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+806 |             rect,
+807 |             .optionOnScreenOnly,
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[8/13] Compiling MacControlMCP Tools+V2Phase5.swift
+[9/13] Compiling MacControlMCP Tools+V2.swift
+[10/13] Compiling MacControlMCP AccessibilityController.swift
+[10/15] Write Objects.LinkFileList
+[11/15] Linking mac-control-mcp
+[12/15] Applying mac-control-mcp
+[14/20] Compiling MacControlMCPTests BrowserDOMFailureTests.swift
+[15/20] Compiling MacControlMCPTests GeometricHitTestTests.swift
+[16/20] Compiling MacControlMCPTests GroundingPrecisionTests.swift
+[17/20] Compiling MacControlMCPTests GroundingOCRPassTests.swift
+[18/20] Emitting module MacControlMCPTests
+[18/20] Write Objects.LinkFileList
+[19/20] Linking mac-control-mcpPackageTests
+Build complete! (5.01s)
+Test Suite 'Selected tests' started at 2026-09-15 19:40:31.185.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 19:40:31.190.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 19:40:31.190.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 19:40:31.190.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.005) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Browser DOM failures" started.
+◇ Test evaluationFailuresAlwaysHaveRecoveryHints() started.
+✔ Test evaluationFailuresAlwaysHaveRecoveryHints() passed after 0.001 seconds.
+◇ Test pageScriptFailureDoesNotSuggestEnablingAppleEvents() started.
+✘ Test pageScriptFailureDoesNotSuggestEnablingAppleEvents() recorded an issue at BrowserDOMFailureTests.swift:26:9: Expectation failed: (failure.hint?.contains("Content Security Policy") → false) == true
+✘ Test pageScriptFailureDoesNotSuggestEnablingAppleEvents() recorded an issue at BrowserDOMFailureTests.swift:27:9: Expectation failed: (failure.hint?.contains("Allow JavaScript from Apple Events") → true) == false
+✘ Test pageScriptFailureDoesNotSuggestEnablingAppleEvents() failed after 0.001 seconds with 2 issues.
+◇ Test missingSafariResultHasCodeAndSetting() started.
+✔ Test missingSafariResultHasCodeAndSetting() passed after 0.001 seconds.
+◇ Test nullDOMAndMalformedResultAreExplicit() started.
+✔ Test nullDOMAndMalformedResultAreExplicit() passed after 0.001 seconds.
+◇ Test browserPolicyAndMissingTabs() started.
+✔ Test browserPolicyAndMissingTabs() passed after 0.001 seconds.
+✘ Suite "Browser DOM failures" failed after 0.001 seconds with 2 issues.
+↳ /// v0.10 A7: Safari's empty result and browser policy denials need actionable codes.
+◇ Suite "Geometric hit test" started.
+◇ Test smallestInteractiveDescendantWins() started.
+✔ Test smallestInteractiveDescendantWins() passed after 0.001 seconds.
+◇ Test refinementStaysInHitSubtreeAndReportsQuality() started.
+✔ Test refinementStaysInHitSubtreeAndReportsQuality() passed after 0.001 seconds.
+◇ Test outlineLeafCellWinsAndPlainCellsStayExcluded() started.
+✘ Test outlineLeafCellWinsAndPlainCellsStayExcluded() recorded an issue at GeometricHitTestTests.swift:46:9: Expectation failed: (hit.element → 0) == 2
+✘ Test outlineLeafCellWinsAndPlainCellsStayExcluded() recorded an issue at GeometricHitTestTests.swift:47:9: Expectation failed: (hit.quality → "direct") == "geometric"
+✘ Test outlineLeafCellWinsAndPlainCellsStayExcluded() failed after 0.001 seconds with 2 issues.
+◇ Test coarseCellHitDescendsToItsButton() started.
+✘ Test coarseCellHitDescendsToItsButton() recorded an issue at GeometricHitTestTests.swift:56:9: Expectation failed: (GeometricHitTest.refine(hit: 0, window: nil, point: CGPoint(x: 10, y: 10), read: { tree[$0]! }).element → 0) == 1
+✘ Test coarseCellHitDescendsToItsButton() failed after 0.001 seconds with 1 issue.
+◇ Test deeperControlWinsWithinTenPercentOfSmallestArea() started.
+✘ Test deeperControlWinsWithinTenPercentOfSmallestArea() recorded an issue at GeometricHitTestTests.swift:65:13: Expectation failed: (GeometricHitTest.search(root: 0, point: CGPoint(x: 10, y: 10), read: { tree[$0]! }) → 1) == (expected → 2)
+✘ Test deeperControlWinsWithinTenPercentOfSmallestArea() failed after 0.001 seconds with 1 issue.
+◇ Test boundsDepthCyclesAndBudget() started.
+✔ Test boundsDepthCyclesAndBudget() passed after 0.001 seconds.
+✘ Suite "Geometric hit test" failed after 0.001 seconds with 4 issues.
+↳ /// v0.10 C2: a fake tree reproduces window-sized SwiftUI hits without IPC.
+◇ Suite "Grounding OCR passes" started.
+◇ Test strongFastMatchSkipsAccurate() started.
+✔ Test strongFastMatchSkipsAccurate() passed after 0.001 seconds.
+◇ Test lowConfidenceFastExactMatchSkipsAccurate(confidence:) started.
+◇ Test case passing 1 argument confidence → 0.0 to lowConfidenceFastExactMatchSkipsAccurate(confidence:) started.
+✘ Test lowConfidenceFastExactMatchSkipsAccurate(confidence:) recorded an issue with 1 argument confidence → 0.0 at GroundingOCRPassTests.swift:33:9: Expectation failed: (passes → [true, false]) == [true]
+± inserted [false]
+◇ Test case passing 1 argument confidence → 0.4 to lowConfidenceFastExactMatchSkipsAccurate(confidence:) started.
+✘ Test lowConfidenceFastExactMatchSkipsAccurate(confidence:) recorded an issue with 1 argument confidence → 0.4 at GroundingOCRPassTests.swift:33:9: Expectation failed: (passes → [true, false]) == [true]
+± inserted [false]
+◇ Test case passing 1 argument confidence → 0.72 to lowConfidenceFastExactMatchSkipsAccurate(confidence:) started.
+✘ Test lowConfidenceFastExactMatchSkipsAccurate(confidence:) recorded an issue with 1 argument confidence → 0.72 at GroundingOCRPassTests.swift:33:9: Expectation failed: (passes → [true, false]) == [true]
+± inserted [false]
+✘ Test lowConfidenceFastExactMatchSkipsAccurate(confidence:) with 3 test cases failed after 0.001 seconds with 3 issues.
+◇ Test fastSubstringIsAHitWithoutInflatingConfidence() started.
+✘ Test fastSubstringIsAHitWithoutInflatingConfidence() recorded an issue at GroundingOCRPassTests.swift:45:9: Expectation failed: (passes → [true, false]) == [true]
+± inserted [false]
+✘ Test fastSubstringIsAHitWithoutInflatingConfidence() failed after 0.001 seconds with 1 issue.
+◇ Test missingFastTargetFallsBackToAccurate() started.
+✔ Test missingFastTargetFallsBackToAccurate() passed after 0.001 seconds.
+◇ Test weakAXCannotDisableOCRDistancePenalty() started.
+✔ Test weakAXCannotDisableOCRDistancePenalty() passed after 0.001 seconds.
+◇ Test tinyFastBoxCannotSuppressAccurate() started.
+✔ Test tinyFastBoxCannotSuppressAccurate() passed after 0.001 seconds.
+✘ Suite "Grounding OCR passes" failed after 0.001 seconds with 4 issues.
+↳ /// v0.10 B5: exercise the actual pass coordinator with deterministic OCR results.
+◇ Suite "Grounding precision" started.
+◇ Test containersAndHiddenLinksCannotBeTargets() started.
+✔ Test containersAndHiddenLinksCannotBeTargets() passed after 0.001 seconds.
+◇ Test valueAndDescriptionBeatPartialImageTitle() started.
+✔ Test valueAndDescriptionBeatPartialImageTitle() passed after 0.001 seconds.
+◇ Test unicodeAndEllipsisAreEquivalent() started.
+✔ Test unicodeAndEllipsisAreEquivalent() passed after 0.001 seconds.
+◇ Test exactTiesPreferSmallestArea() started.
+✔ Test exactTiesPreferSmallestArea() passed after 0.001 seconds.
+◇ Test repeatedOCRPassesDoNotInventAlternatives() started.
+✔ Test repeatedOCRPassesDoNotInventAlternatives() passed after 0.001 seconds.
+◇ Test autoUsesRankedAXWinner(scores:expected:) started.
+◇ Test case passing 2 arguments scores → [], expected → false to autoUsesRankedAXWinner(scores:expected:) started.
+◇ Test case passing 2 arguments scores → [1.0, 1.0], expected → true to autoUsesRankedAXWinner(scores:expected:) started.
+✘ Test autoUsesRankedAXWinner(scores:expected:) recorded an issue with 2 arguments scores → [1.0, 1.0], expected → true at GroundingPrecisionTests.swift:70:9: Expectation failed: (GroundingPolicy.prefersAX(candidates) → false) == (expected → true)
+◇ Test case passing 2 arguments scores → [1.0, 0.6], expected → true to autoUsesRankedAXWinner(scores:expected:) started.
+✘ Test autoUsesRankedAXWinner(scores:expected:) recorded an issue with 2 arguments scores → [1.0, 0.6], expected → true at GroundingPrecisionTests.swift:70:9: Expectation failed: (GroundingPolicy.prefersAX(candidates) → false) == (expected → true)
+◇ Test case passing 2 arguments scores → [0.6, 0.4], expected → true to autoUsesRankedAXWinner(scores:expected:) started.
+✘ Test autoUsesRankedAXWinner(scores:expected:) recorded an issue with 2 arguments scores → [0.6, 0.4], expected → true at GroundingPrecisionTests.swift:70:9: Expectation failed: (GroundingPolicy.prefersAX(candidates) → false) == (expected → true)
+◇ Test case passing 2 arguments scores → [0.6, 0.6], expected → false to autoUsesRankedAXWinner(scores:expected:) started.
+◇ Test case passing 2 arguments scores → [0.6], expected → true to autoUsesRankedAXWinner(scores:expected:) started.
+✘ Test autoUsesRankedAXWinner(scores:expected:) with 6 test cases failed after 0.001 seconds with 3 issues.
+◇ Test distantOCRIsWeakerAndFastFallbackPreservesRecall() started.
+✔ Test distantOCRIsWeakerAndFastFallbackPreservesRecall() passed after 0.001 seconds.
+✘ Suite "Grounding precision" failed after 0.001 seconds with 3 issues.
+↳ /// v0.10 A5/B5: synthetic AX labels isolate ranking from desktop state.
+✘ Test run with 24 tests in 4 suites failed after 0.003 seconds with 13 issues.

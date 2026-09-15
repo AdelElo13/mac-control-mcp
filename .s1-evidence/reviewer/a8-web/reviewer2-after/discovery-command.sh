@@ -1,0 +1,1 @@
+PROBE_MAX=300000 python3 /private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/probe.py .build/debug/mac-control-mcp '[["list_apps", {}], ["list_windows", {}]]'

@@ -1,0 +1,45 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ids': failed storing manifest for 'wt10-ids' in cache: attempt to write a readonly database
+Building for debugging...
+[0/4] Write swift-version--58304C5D6DBC2206.txt
+Build complete! (0.09s)
+Test Suite 'Selected tests' started at 2026-09-15 19:38:54.502.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 19:38:54.507.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 19:38:54.507.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 19:38:54.507.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.005) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "AX payload budget (C-9)" started.
+◇ Test "omitted fields means every field" started.
+✔ Test "omitted fields means every field" passed after 0.001 seconds.
+◇ Test "fields keeps only the requested keys and reports typos" started.
+✔ Test "fields keeps only the requested keys and reports typos" passed after 0.001 seconds.
+◇ Test "an empty fields array is treated as 'all', never as 'nothing'" started.
+✔ Test "an empty fields array is treated as 'all', never as 'nothing'" passed after 0.001 seconds.
+◇ Test "interactive filter matches the list_elements whitelist" started.
+✔ Test "interactive filter matches the list_elements whitelist" passed after 0.001 seconds.
+◇ Test "interactive_only keeps actionable nodes AND their ancestors" started.
+✔ Test "interactive_only keeps actionable nodes AND their ancestors" passed after 0.001 seconds.
+◇ Test "no filters means no shaping at all" started.
+✔ Test "no filters means no shaping at all" passed after 0.001 seconds.
+◇ Test "viewport filter keeps on-screen frames and drops parked ones" started.
+✔ Test "viewport filter keeps on-screen frames and drops parked ones" passed after 0.001 seconds.
+◇ Test "viewport_only keeps an off-screen container that holds an on-screen control" started.
+✔ Test "viewport_only keeps an off-screen container that holds an on-screen control" passed after 0.001 seconds.
+◇ Test "max_bytes stops emission and flags truncation" started.
+✔ Test "max_bytes stops emission and flags truncation" passed after 0.001 seconds.
+◇ Test "max_bytes <= 0 means no cap, not an empty response" started.
+✔ Test "max_bytes <= 0 means no cap, not an empty response" passed after 0.001 seconds.
+◇ Test "encodedSize is the real JSON byte count" started.
+✔ Test "encodedSize is the real JSON byte count" passed after 0.001 seconds.
+◇ Test "flag parses bools and the string forms clients send" started.
+✔ Test "flag parses bools and the string forms clients send" passed after 0.001 seconds.
+◇ Test "get_ui_tree reports the budget fields and honours interactive_only" started.
+✔ Test "get_ui_tree reports the budget fields and honours interactive_only" passed after 0.001 seconds.
+✔ Suite "AX payload budget (C-9)" passed after 0.002 seconds.
+✔ Test run with 13 tests in 1 suite passed after 0.002 seconds.

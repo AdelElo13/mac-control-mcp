@@ -1,0 +1,139 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ground': failed storing manifest for 'wt10-ground' in cache: attempt to write a readonly database
+warning: 'wt10-ground': found 1 file(s) which are unhandled; explicitly declare them as resources or exclude from the target
+    /private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/Resources/well-known-mcp.json
+[0/1] Planning build
+Building for debugging...
+[0/7] Write sources
+[2/7] Write swift-version--58304C5D6DBC2206.txt
+[4/11] Compiling MacControlMCP GroundingController.swift
+[5/11] Emitting module MacControlMCP
+[6/11] Compiling MacControlMCP GroundingPolicy.swift
+[7/11] Compiling MacControlMCP ScreenController.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/ScreenController.swift:652:24: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+650 |         // When this works it gives us the window even if occluded. Returns
+651 |         // nil on macOS 15+ in many cases — that's why SCK is Strategy 1.
+652 |         if let image = CGWindowListCreateImage(
+    |                        `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+653 |             .null,
+654 |             .optionIncludingWindow,
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/ScreenController.swift:673:27: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+671 |         }
+672 | 
+673 |         guard let image = CGWindowListCreateImage(
+    |                           `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+674 |             bounds,
+675 |             .optionOnScreenOnly,
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/ScreenController.swift:799:27: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+797 |     private func regionImage(_ region: CaptureRegion) throws -> CGImage {
+798 |         let rect = CGRect(x: region.x, y: region.y, width: region.width, height: region.height)
+799 |         guard let image = CGWindowListCreateImage(
+    |                           `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+800 |             rect,
+801 |             .optionOnScreenOnly,
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[8/33] Compiling MacControlMCP Tools+WindowTarget.swift
+[9/34] Compiling MacControlMCP Tools+V2Phase6.swift
+[10/35] Compiling MacControlMCP Tools+V2Phase8.swift
+[11/35] Compiling MacControlMCP Tools+V2Phase7.swift
+[12/35] Compiling MacControlMCP main.swift
+[13/35] Compiling MacControlMCP Tools+V2Phase9.swift
+[14/35] Compiling MacControlMCP Tools+V2Phase11.swift
+[15/35] Compiling MacControlMCP Tools+V2Phase2.swift
+[16/35] Compiling MacControlMCP Tools.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/Tools.swift:848:27: warning: no 'async' operations occur within 'await' expression
+ 846 |             }
+ 847 | 
+ 848 |             let pressed = await accessibility.pressKey(keyCode: keyCode, modifiers: modifiers)
+     |                           `- warning: no 'async' operations occur within 'await' expression
+ 849 |             if pressed {
+ 850 |                 return successResult(
+[17/35] Compiling MacControlMCP Tools+ImageOutput.swift
+[18/35] Compiling MacControlMCP Tools+V2Phase3.swift
+[19/35] Compiling MacControlMCP Tools+V2Phase4.swift
+[20/35] Compiling MacControlMCP Tools+V2Phase5.swift
+[21/35] Compiling MacControlMCP Tools+TextEditing.swift
+[22/35] Compiling MacControlMCP Tools+V0_9AXCore.swift
+[23/35] Compiling MacControlMCP Tools+V2.swift
+[24/35] Compiling MacControlMCP Tools+V2Phase10.swift
+[25/35] Compiling MacControlMCP ImageEncoding.swift
+[26/35] Compiling MacControlMCP SystemInfoController.swift
+[27/35] Compiling MacControlMCP Tools+Annotate.swift
+[28/35] Compiling MacControlMCP Tools+Batch.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/Tools+Permissions.swift:227:19: warning: consider using asynchronous alternative function
+225 |             let store = CNContactStore()
+226 |             let keeper = ObjectKeeper(store)
+227 |             store.requestAccess(for: .contacts) { _, _ in keeper.release() }
+    |                   `- warning: consider using asynchronous alternative function
+228 |             return .triggered
+229 |             #else
+
+Contacts.CNContactStore.requestAccess:2:11: note: 'requestAccess(for:)' declared here
+1 | class CNContactStore {
+2 | open func requestAccess(for entityType: CNEntityType) async throws -> Bool}
+  |           `- note: 'requestAccess(for:)' declared here
+3 | 
+[29/35] Compiling MacControlMCP Tools+Permissions.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/Tools+Permissions.swift:227:19: warning: consider using asynchronous alternative function
+225 |             let store = CNContactStore()
+226 |             let keeper = ObjectKeeper(store)
+227 |             store.requestAccess(for: .contacts) { _, _ in keeper.release() }
+    |                   `- warning: consider using asynchronous alternative function
+228 |             return .triggered
+229 |             #else
+
+Contacts.CNContactStore.requestAccess:2:11: note: 'requestAccess(for:)' declared here
+1 | class CNContactStore {
+2 | open func requestAccess(for entityType: CNEntityType) async throws -> Bool}
+  |           `- note: 'requestAccess(for:)' declared here
+3 | 
+[30/35] Compiling MacControlMCP AppleAppsController.swift
+[31/35] Compiling MacControlMCP HardwareController.swift
+[31/36] Write Objects.LinkFileList
+[32/36] Linking mac-control-mcp
+[33/36] Applying mac-control-mcp
+[35/47] Compiling MacControlMCPTests GroundingWindowScopeTests.swift
+[36/47] Compiling MacControlMCPTests GroundingCoordinateTests.swift
+[37/47] Compiling MacControlMCPTests WindowSelectionTests.swift
+[38/47] Compiling MacControlMCPTests AXScopePolicyTests.swift
+[39/47] Compiling MacControlMCPTests AXDepthTests.swift
+[40/47] Compiling MacControlMCPTests PerfHelpersTests.swift
+[41/47] Compiling MacControlMCPTests WindowIdentityTests.swift
+[42/47] Compiling MacControlMCPTests AXTreeAugmentedScopeTests.swift
+[43/47] Emitting module MacControlMCPTests
+[44/47] Compiling MacControlMCPTests GroundingPrecisionTests.swift
+[45/47] Compiling MacControlMCPTests GroundingOCRPassTests.swift
+[45/47] Write Objects.LinkFileList
+[46/47] Linking mac-control-mcpPackageTests
+Build complete! (6.08s)
+Test Suite 'Selected tests' started at 2026-09-15 17:19:30.283.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 17:19:30.288.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 17:19:30.288.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 17:19:30.288.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.005) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Grounding OCR passes" started.
+◇ Test strongFastMatchSkipsAccurate() started.
+✘ Test strongFastMatchSkipsAccurate() recorded an issue at GroundingOCRPassTests.swift:23:9: Expectation failed: (passes → [MacControlMCP.ScreenController.OCRRequestOptions(languages: [], fast: false, languageCorrection: true)]) == ([.init(fast: true, languageCorrection: false)] → [MacControlMCP.ScreenController.OCRRequestOptions(languages: [], fast: true, languageCorrection: false)])
+± inserted [MacControlMCP.ScreenController.OCRRequestOptions(languages: [], fast: false, languageCorrection: true)], removed [MacControlMCP.ScreenController.OCRRequestOptions(languages: [], fast: true, languageCorrection: false)]
+✘ Test strongFastMatchSkipsAccurate() failed after 0.001 seconds with 1 issue.
+◇ Test weakFastMatchFallsBackAndIsRetained() started.
+✘ Test weakFastMatchFallsBackAndIsRetained() recorded an issue at GroundingOCRPassTests.swift:32:9: Expectation failed: (passes → [false]) == [true, false]
+± removed [true]
+✘ Test weakFastMatchFallsBackAndIsRetained() recorded an issue at GroundingOCRPassTests.swift:33:9: Expectation failed: combined.blocks.contains { $0.text == "Internet Accounts" }
+✘ Test weakFastMatchFallsBackAndIsRetained() failed after 0.001 seconds with 2 issues.
+◇ Test tinyFastBoxCannotSuppressAccurate() started.
+✘ Test tinyFastBoxCannotSuppressAccurate() recorded an issue at GroundingOCRPassTests.swift:42:9: Expectation failed: (passes → [false]) == [true, false]
+± removed [true]
+✘ Test tinyFastBoxCannotSuppressAccurate() failed after 0.001 seconds with 1 issue.
+✘ Suite "Grounding OCR passes" failed after 0.001 seconds with 4 issues.
+↳ /// v0.10 B5: exercise the actual pass coordinator with deterministic OCR results.
+✘ Test run with 3 tests in 1 suite failed after 0.001 seconds with 4 issues.

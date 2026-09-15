@@ -1,0 +1,4 @@
+Reviewer helper Python syntax: PASS
+Synthetic matching web-link/image responses accepted: PASS
+Synthetic unstable-hit responses rejected: PASS
+No desktop, probe process, or real application accessed by this validation.

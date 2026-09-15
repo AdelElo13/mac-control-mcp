@@ -188,23 +188,15 @@ struct FocusGuardTests {
         #expect(payload?["actual_app"] != nil)
     }
 
-    @Test("checkFocusGuard matches when expected_app is the live frontmost app — no input injected")
-    func checkFocusGuardMatchesLiveFrontmostApp() async {
+    // v0.10 C1: a supplied snapshot tests the positive guard without requiring
+    // a logged-in WindowServer session (the sandbox reports no frontmost app).
+    @Test("checkFocusGuard matches a known owning app and window without input")
+    func checkFocusGuardMatchesSnapshot() async {
         let registry = ToolRegistry(accessibility: AccessibilityController())
-
-        // Read the real frontmost app via the no-op `focused_app` tool
-        // rather than injecting any real input, per the review request.
-        let focused = await registry.callTool(name: "focused_app", arguments: [:])
-        guard let bundleID = focused.structuredContent.objectValue?["app"]?.objectValue?["bundleIdentifier"]?.stringValue else {
-            Issue.record("focused_app did not report a bundleIdentifier — cannot verify a positive match live.")
-            return
-        }
-
-        // Exercise `ToolRegistry.checkFocusGuard` directly (not a tool
-        // that injects input) with the live frontmost bundle id: a
-        // matching expected_app must return nil (no mismatch, nothing
-        // to inject or abort).
-        let outcome = await registry.checkFocusGuard(["expected_app": .string(bundleID)])
-        #expect(outcome == nil)
+        let snapshot = FocusGuard.ActualFocus(appName: "TextEdit", bundleIdentifier: "com.apple.TextEdit", pid: 42, windowTitle: "S4 own document")
+        let matched = await registry.checkFocusGuard(["expected_app": .string("com.apple.TextEdit"), "expected_window": .string("S4 own")], actual: snapshot)
+        #expect(matched == nil)
+        let mismatch = await registry.checkFocusGuard(["expected_app": .string("com.apple.TextEdit"), "expected_window": .string("Other document")], actual: snapshot)
+        #expect(mismatch?.structuredContent.objectValue?["error_code"] == .string("focus_mismatch"))
     }
 }

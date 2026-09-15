@@ -1,0 +1,113 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ground': failed storing manifest for 'wt10-ground' in cache: attempt to write a readonly database
+Building for debugging...
+[0/5] Write sources
+[1/5] Write swift-version--58304C5D6DBC2206.txt
+[3/8] Compiling MacControlMCP Tools+V0_9AXCore.swift
+[4/8] Emitting module MacControlMCP
+[5/8] Compiling MacControlMCP GeometricHitTest.swift
+[6/9] Compiling MacControlMCP Tools.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/Tools.swift:848:27: warning: no 'async' operations occur within 'await' expression
+ 846 |             }
+ 847 | 
+ 848 |             let pressed = await accessibility.pressKey(keyCode: keyCode, modifiers: modifiers)
+     |                           `- warning: no 'async' operations occur within 'await' expression
+ 849 |             if pressed {
+ 850 |                 return successResult(
+[6/11] Write Objects.LinkFileList
+[7/11] Linking mac-control-mcp
+[8/11] Applying mac-control-mcp
+[10/12] Emitting module MacControlMCPTests
+[10/12] Write Objects.LinkFileList
+[11/12] Linking mac-control-mcpPackageTests
+Build complete! (4.73s)
+Test Suite 'Selected tests' started at 2026-09-15 20:20:09.461.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 20:20:09.467.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 20:20:09.467.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 20:20:09.467.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.005) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "element_at_point (C-4)" started.
+◇ Test "the tool is registered with x/y required and pid optional" started.
+✔ Test "the tool is registered with x/y required and pid optional" passed after 0.002 seconds.
+◇ Test "missing or non-numeric coordinates are rejected" started.
+✔ Test "missing or non-numeric coordinates are rejected" passed after 0.001 seconds.
+◇ Test "a malformed or dead pid is an explicit error, not a silent system-wide hit-test" started.
+✔ Test "a malformed or dead pid is an explicit error, not a silent system-wide hit-test" passed after 0.004 seconds.
+◇ Test "without Accessibility trust the failure names the permission and the pane" started.
+✔ Test "without Accessibility trust the failure names the permission and the pane" passed after 0.001 seconds.
+◇ Test "an off-screen coordinate reports not_found, not a bare false" started.
+✔ Test "an off-screen coordinate reports not_found, not a bare false" passed after 0.001 seconds.
+◇ Test "hit-testing a real control returns its role, bounds, owner and a stable id" started.
+✔ Test "hit-testing a real control returns its role, bounds, owner and a stable id" passed after 0.001 seconds.
+✔ Suite "element_at_point (C-4)" passed after 0.008 seconds.
+◇ Suite "Geometric hit test" started.
+◇ Test interactiveOutOfFrameHitSearchesWindowForContainingHeader() started.
+✔ Test interactiveOutOfFrameHitSearchesWindowForContainingHeader() passed after 0.001 seconds.
+◇ Test outOfFrameHitWithoutReplacementIsLabelledHonestly() started.
+✔ Test outOfFrameHitWithoutReplacementIsLabelledHonestly() passed after 0.001 seconds.
+◇ Test directHitFrameToleranceIsOnePointAndRequiresUsableGeometry() started.
+✔ Test directHitFrameToleranceIsOnePointAndRequiresUsableGeometry() passed after 0.001 seconds.
+◇ Test smallestInteractiveDescendantWins() started.
+✔ Test smallestInteractiveDescendantWins() passed after 0.001 seconds.
+◇ Test refinementStaysInHitSubtreeAndReportsQuality() started.
+✔ Test refinementStaysInHitSubtreeAndReportsQuality() passed after 0.001 seconds.
+◇ Test outlineLeafCellWinsAndPlainCellsStayExcluded() started.
+✔ Test outlineLeafCellWinsAndPlainCellsStayExcluded() passed after 0.001 seconds.
+◇ Test coarseCellHitDescendsToItsButton() started.
+✔ Test coarseCellHitDescendsToItsButton() passed after 0.001 seconds.
+◇ Test collectionHitCanResolveSiblingScrollbarWithinItsScrollArea() started.
+✔ Test collectionHitCanResolveSiblingScrollbarWithinItsScrollArea() passed after 0.001 seconds.
+◇ Test deeperControlWinsWithinTenPercentOfSmallestArea() started.
+✔ Test deeperControlWinsWithinTenPercentOfSmallestArea() passed after 0.001 seconds.
+◇ Test floatingHeaderWinsOverSmallerDeeperRowCell() started.
+✔ Test floatingHeaderWinsOverSmallerDeeperRowCell() passed after 0.001 seconds.
+◇ Test cappedOutlineNeverReturnsRowInsteadOfLaterHeader() started.
+✔ Test cappedOutlineNeverReturnsRowInsteadOfLaterHeader() passed after 0.001 seconds.
+◇ Test deadlineCannotPromoteAnIncompleteCellMatch() started.
+✔ Test deadlineCannotPromoteAnIncompleteCellMatch() passed after 0.001 seconds.
+◇ Test laterSlowSiblingCannotDiscardAnAlreadyFoundHeader() started.
+✔ Test laterSlowSiblingCannotDiscardAnAlreadyFoundHeader() passed after 0.001 seconds.
+◇ Test containingChildrenAreVisitedFirstWithoutDuplicateReads() started.
+✔ Test containingChildrenAreVisitedFirstWithoutDuplicateReads() passed after 0.001 seconds.
+◇ Test offPointRowsArePrunedButCoarseFramesKeepDescendants() started.
+✔ Test offPointRowsArePrunedButCoarseFramesKeepDescendants() passed after 0.001 seconds.
+◇ Test boundsDepthCyclesAndBudget() started.
+✔ Test boundsDepthCyclesAndBudget() passed after 0.001 seconds.
+✔ Suite "Geometric hit test" passed after 0.001 seconds.
+◇ Suite "Phase 9 tools — reliability + observability substrate" started.
+◇ Test "all 10 phase 9 tools are registered" started.
+✔ Test "all 10 phase 9 tools are registered" passed after 0.001 seconds.
+◇ Test "ground requires target and pid" started.
+✔ Test "ground requires target and pid" passed after 0.001 seconds.
+◇ Test "ax_tree_augmented requires pid" started.
+✔ Test "ax_tree_augmented requires pid" passed after 0.001 seconds.
+◇ Test "ax_snapshot_capture requires pid" started.
+✔ Test "ax_snapshot_capture requires pid" passed after 0.001 seconds.
+◇ Test "ax_snapshot_diff requires from + to ids" started.
+✔ Test "ax_snapshot_diff requires from + to ids" passed after 0.001 seconds.
+◇ Test "audit_log_append requires event" started.
+✔ Test "audit_log_append requires event" passed after 0.001 seconds.
+◇ Test "audit_log_append + audit_log_read round-trip" started.
+✔ Test "audit_log_append + audit_log_read round-trip" passed after 0.007 seconds.
+◇ Test "agent_memory_store requires key + value" started.
+✔ Test "agent_memory_store requires key + value" passed after 0.001 seconds.
+◇ Test "agent_memory store + recall round-trip" started.
+✔ Test "agent_memory store + recall round-trip" passed after 0.002 seconds.
+◇ Test "redact_pii_text blurs email + api key" started.
+✔ Test "redact_pii_text blurs email + api key" passed after 0.001 seconds.
+◇ Test "redact_pii_text Luhn-validates credit cards" started.
+✔ Test "redact_pii_text Luhn-validates credit cards" passed after 0.001 seconds.
+◇ Test "redact_image_regions requires path + regions" started.
+✔ Test "redact_image_regions requires path + regions" passed after 0.001 seconds.
+◇ Test "PermissionGrant has allowSubDelegation with default true" started.
+✔ Test "PermissionGrant has allowSubDelegation with default true" passed after 0.005 seconds.
+◇ Test "tool count >= 127 after phase 9 (Phase 5 tests own the exact count)" started.
+✔ Test "tool count >= 127 after phase 9 (Phase 5 tests own the exact count)" passed after 0.001 seconds.
+✔ Suite "Phase 9 tools — reliability + observability substrate" passed after 0.022 seconds.
+✔ Test run with 36 tests in 3 suites passed after 0.032 seconds.

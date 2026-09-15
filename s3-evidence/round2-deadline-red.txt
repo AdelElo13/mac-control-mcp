@@ -1,0 +1,52 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ground': failed storing manifest for 'wt10-ground' in cache: attempt to write a readonly database
+Building for debugging...
+[0/5] Write sources
+[1/5] Write swift-version--58304C5D6DBC2206.txt
+[3/5] Emitting module MacControlMCPTests
+[4/5] Compiling MacControlMCPTests GeometricHitTestTests.swift
+[4/6] Write Objects.LinkFileList
+[5/6] Linking mac-control-mcpPackageTests
+Build complete! (2.91s)
+Test Suite 'Selected tests' started at 2026-09-15 20:01:40.875.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 20:01:40.880.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 20:01:40.880.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 20:01:40.880.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.006) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Geometric hit test" started.
+◇ Test smallestInteractiveDescendantWins() started.
+✔ Test smallestInteractiveDescendantWins() passed after 0.001 seconds.
+◇ Test refinementStaysInHitSubtreeAndReportsQuality() started.
+✔ Test refinementStaysInHitSubtreeAndReportsQuality() passed after 0.001 seconds.
+◇ Test outlineLeafCellWinsAndPlainCellsStayExcluded() started.
+✔ Test outlineLeafCellWinsAndPlainCellsStayExcluded() passed after 0.001 seconds.
+◇ Test coarseCellHitDescendsToItsButton() started.
+✔ Test coarseCellHitDescendsToItsButton() passed after 0.001 seconds.
+◇ Test collectionHitCanResolveSiblingScrollbarWithinItsScrollArea() started.
+✔ Test collectionHitCanResolveSiblingScrollbarWithinItsScrollArea() passed after 0.001 seconds.
+◇ Test deeperControlWinsWithinTenPercentOfSmallestArea() started.
+✔ Test deeperControlWinsWithinTenPercentOfSmallestArea() passed after 0.001 seconds.
+◇ Test floatingHeaderWinsOverSmallerDeeperRowCell() started.
+✔ Test floatingHeaderWinsOverSmallerDeeperRowCell() passed after 0.001 seconds.
+◇ Test cappedOutlineNeverReturnsRowInsteadOfLaterHeader() started.
+✔ Test cappedOutlineNeverReturnsRowInsteadOfLaterHeader() passed after 0.001 seconds.
+◇ Test deadlineCannotPromoteAnIncompleteCellMatch() started.
+✔ Test deadlineCannotPromoteAnIncompleteCellMatch() passed after 0.001 seconds.
+◇ Test laterSlowSiblingCannotDiscardAnAlreadyFoundHeader() started.
+✘ Test laterSlowSiblingCannotDiscardAnAlreadyFoundHeader() recorded an issue at GeometricHitTestTests.swift:140:9: Expectation failed: (result → nil) == 1
+✘ Test laterSlowSiblingCannotDiscardAnAlreadyFoundHeader() failed after 0.001 seconds with 1 issue.
+◇ Test containingChildrenAreVisitedFirstWithoutDuplicateReads() started.
+✔ Test containingChildrenAreVisitedFirstWithoutDuplicateReads() passed after 0.001 seconds.
+◇ Test offPointRowsArePrunedButCoarseFramesKeepDescendants() started.
+✔ Test offPointRowsArePrunedButCoarseFramesKeepDescendants() passed after 0.001 seconds.
+◇ Test boundsDepthCyclesAndBudget() started.
+✔ Test boundsDepthCyclesAndBudget() passed after 0.001 seconds.
+✘ Suite "Geometric hit test" failed after 0.001 seconds with 1 issue.
+↳ /// v0.10 C2: a fake tree reproduces window-sized SwiftUI hits without IPC.
+✘ Test run with 13 tests in 1 suite failed after 0.001 seconds with 1 issue.

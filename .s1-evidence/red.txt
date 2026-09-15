@@ -1,0 +1,230 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ids': failed storing manifest for 'wt10-ids' in cache: attempt to write a readonly database
+warning: 'wt10-ids': found 1 file(s) which are unhandled; explicitly declare them as resources or exclude from the target
+    /private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/Sources/MacControlMCP/Resources/well-known-mcp.json
+[0/1] Planning build
+Building for debugging...
+[0/5] Write sources
+[0/5] /private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/.build/arm64-apple-macosx/debug/mac-control-mcpPackageTests.derived/runner.swift
+[2/8] Write sources
+[3/8] Write swift-version--58304C5D6DBC2206.txt
+[5/61] Compiling MacControlMCPTests GroundingCoordinateTests.swift
+[6/61] Compiling MacControlMCPTests GroundingWindowScopeTests.swift
+[7/61] Compiling MacControlMCPTests HardeningTests.swift
+[8/61] Compiling MacControlMCPTests HonestFailuresTests.swift
+[9/61] Compiling MacControlMCPTests BlockingWorkPoolTests.swift
+[10/61] Compiling MacControlMCPTests BrowserErrorClassificationTests.swift
+[11/61] Compiling MacControlMCPTests BugFixesV0_2_6Tests.swift
+[12/61] Compiling MacControlMCPTests CaptureAnnotatedToolTests.swift
+[13/64] Compiling MacControlMCPTests ToolRegistryV2Tests.swift
+[14/64] Compiling MacControlMCPTests WindowIdentityTests.swift
+[15/64] Compiling MacControlMCPTests WindowScopedTreeTests.swift
+[16/64] Compiling MacControlMCPTests ElementAtPointTests.swift
+[17/64] Compiling MacControlMCPTests ElementCacheTests.swift
+[18/64] Compiling MacControlMCPTests EntitlementsConsistencyTests.swift
+[19/64] Compiling MacControlMCPTests FocusGuardTests.swift
+[20/64] Emitting module MacControlMCPTests
+[21/64] Compiling MacControlMCPTests Phase5ToolsTests.swift
+[22/64] Compiling MacControlMCPTests Phase6ToolsTests.swift
+[23/64] Compiling MacControlMCPTests Phase7HardeningTests.swift
+[24/64] Compiling MacControlMCPTests Phase7ToolsTests.swift
+[25/64] Compiling MacControlMCPTests Phase10ToolsTests.swift
+[26/64] Compiling MacControlMCPTests Phase2ToolsTests.swift
+[27/64] Compiling MacControlMCPTests Phase3ToolsTests.swift
+[28/64] Compiling MacControlMCPTests Phase4ToolsTests.swift
+[29/64] Compiling MacControlMCPTests Phase8ToolsTests.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/Tests/MacControlMCPTests/RealAppMatrixTests.swift:361:32: warning: immutable value 'treeCount' was never used; consider replacing with '_' or removing it [#no-usage]
+359 |             arguments: #"{"pid":\#(pid),"max_depth":10}"#, timeout: 30
+360 |         ),
+361 |               case .number(let treeCount) = tree["count"] ?? .null else {
+    |                                `- warning: immutable value 'treeCount' was never used; consider replacing with '_' or removing it [#no-usage]
+362 |             Self.expect("find_elements coverage", in: "Finder", .fail("get_ui_tree failed"))
+363 |             return
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/Tests/MacControlMCPTests/RealAppMatrixTests.swift:372:32: warning: immutable value 'foundCount' was never used; consider replacing with '_' or removing it [#no-usage]
+370 |             arguments: #"{"pid":\#(pid),"role":"AXMenuItem","max_depth":10,"limit":500}"#, timeout: 30
+371 |         ),
+372 |               case .number(let foundCount) = findResp["count"] ?? .null else {
+    |                                `- warning: immutable value 'foundCount' was never used; consider replacing with '_' or removing it [#no-usage]
+373 |             Self.expect("find_elements coverage", in: "Finder", .fail("find_elements failed"))
+374 |             return
+[30/64] Compiling MacControlMCPTests Phase9ToolsTests.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/Tests/MacControlMCPTests/RealAppMatrixTests.swift:361:32: warning: immutable value 'treeCount' was never used; consider replacing with '_' or removing it [#no-usage]
+359 |             arguments: #"{"pid":\#(pid),"max_depth":10}"#, timeout: 30
+360 |         ),
+361 |               case .number(let treeCount) = tree["count"] ?? .null else {
+    |                                `- warning: immutable value 'treeCount' was never used; consider replacing with '_' or removing it [#no-usage]
+362 |             Self.expect("find_elements coverage", in: "Finder", .fail("get_ui_tree failed"))
+363 |             return
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/Tests/MacControlMCPTests/RealAppMatrixTests.swift:372:32: warning: immutable value 'foundCount' was never used; consider replacing with '_' or removing it [#no-usage]
+370 |             arguments: #"{"pid":\#(pid),"role":"AXMenuItem","max_depth":10,"limit":500}"#, timeout: 30
+371 |         ),
+372 |               case .number(let foundCount) = findResp["count"] ?? .null else {
+    |                                `- warning: immutable value 'foundCount' was never used; consider replacing with '_' or removing it [#no-usage]
+373 |             Self.expect("find_elements coverage", in: "Finder", .fail("find_elements failed"))
+374 |             return
+[31/64] Compiling MacControlMCPTests RealAppMatrixTests.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/Tests/MacControlMCPTests/RealAppMatrixTests.swift:361:32: warning: immutable value 'treeCount' was never used; consider replacing with '_' or removing it [#no-usage]
+359 |             arguments: #"{"pid":\#(pid),"max_depth":10}"#, timeout: 30
+360 |         ),
+361 |               case .number(let treeCount) = tree["count"] ?? .null else {
+    |                                `- warning: immutable value 'treeCount' was never used; consider replacing with '_' or removing it [#no-usage]
+362 |             Self.expect("find_elements coverage", in: "Finder", .fail("get_ui_tree failed"))
+363 |             return
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/Tests/MacControlMCPTests/RealAppMatrixTests.swift:372:32: warning: immutable value 'foundCount' was never used; consider replacing with '_' or removing it [#no-usage]
+370 |             arguments: #"{"pid":\#(pid),"role":"AXMenuItem","max_depth":10,"limit":500}"#, timeout: 30
+371 |         ),
+372 |               case .number(let foundCount) = findResp["count"] ?? .null else {
+    |                                `- warning: immutable value 'foundCount' was never used; consider replacing with '_' or removing it [#no-usage]
+373 |             Self.expect("find_elements coverage", in: "Finder", .fail("find_elements failed"))
+374 |             return
+[32/64] Compiling MacControlMCPTests ScreenAnnotatorTests.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/Tests/MacControlMCPTests/RealAppMatrixTests.swift:361:32: warning: immutable value 'treeCount' was never used; consider replacing with '_' or removing it [#no-usage]
+359 |             arguments: #"{"pid":\#(pid),"max_depth":10}"#, timeout: 30
+360 |         ),
+361 |               case .number(let treeCount) = tree["count"] ?? .null else {
+    |                                `- warning: immutable value 'treeCount' was never used; consider replacing with '_' or removing it [#no-usage]
+362 |             Self.expect("find_elements coverage", in: "Finder", .fail("get_ui_tree failed"))
+363 |             return
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/Tests/MacControlMCPTests/RealAppMatrixTests.swift:372:32: warning: immutable value 'foundCount' was never used; consider replacing with '_' or removing it [#no-usage]
+370 |             arguments: #"{"pid":\#(pid),"role":"AXMenuItem","max_depth":10,"limit":500}"#, timeout: 30
+371 |         ),
+372 |               case .number(let foundCount) = findResp["count"] ?? .null else {
+    |                                `- warning: immutable value 'foundCount' was never used; consider replacing with '_' or removing it [#no-usage]
+373 |             Self.expect("find_elements coverage", in: "Finder", .fail("find_elements failed"))
+374 |             return
+[33/64] Compiling MacControlMCPTests AXPayloadBudgetTests.swift
+[34/64] Compiling MacControlMCPTests AXScopePolicyTests.swift
+[35/64] Compiling MacControlMCPTests AXSnapshotIdentityTests.swift
+[36/64] Compiling MacControlMCPTests AXTreeAugmentedScopeTests.swift
+[37/64] Compiling MacControlMCPTests AnnotatedElementIdentityTests.swift
+[38/64] Compiling MacControlMCPTests AppleScriptStringTests.swift
+[39/64] Compiling MacControlMCPTests AuditLogFixesTests.swift
+[40/64] Compiling MacControlMCPTests BatchToolTests.swift
+[41/64] Compiling MacControlMCPTests ServerLifecycleTests.swift
+[42/64] Compiling MacControlMCPTests StdioIntegrationTests.swift
+[43/64] Compiling MacControlMCPTests SubprocessTests.swift
+[44/64] Compiling MacControlMCPTests TestSupport.swift
+[45/64] Compiling MacControlMCPTests TextEditingBackendTests.swift
+[46/64] Compiling MacControlMCPTests TextEditingTests.swift
+[47/64] Compiling MacControlMCPTests ToolDocsDriftTests.swift
+[48/64] Compiling MacControlMCPTests LocationWifiScanTests.swift
+[49/64] Compiling MacControlMCPTests NonFiniteNumberRegressionTests.swift
+[50/64] Compiling MacControlMCPTests PerfHelpersTests.swift
+[51/64] Compiling MacControlMCPTests PermissionUXTests.swift
+[52/64] Compiling MacControlMCPTests ClipboardRichTests.swift
+[53/64] Compiling MacControlMCPTests CodexR2RegressionTests.swift
+[54/64] Compiling MacControlMCPTests ControlZooMatrixTests.swift
+[55/64] Compiling MacControlMCPTests CrashRegressionTests.swift
+[56/64] Compiling MacControlMCPTests AXAttributeBatchTests.swift
+[57/64] Compiling MacControlMCPTests AXDepthTests.swift
+[58/64] Compiling MacControlMCPTests AXHandleSafetyTests.swift
+[59/64] Compiling MacControlMCPTests AXPathTests.swift
+[60/64] Compiling MacControlMCPTests WindowSelectionTests.swift
+[61/64] Compiling MacControlMCPTests WindowTargetToolsTests.swift
+[62/64] Compiling MacControlMCPTests WindowTargetingTests.swift
+[63/66] Emitting module mac_control_mcpPackageTests
+[64/66] Compiling mac_control_mcpPackageTests runner.swift
+[64/66] Write Objects.LinkFileList
+[65/66] Linking mac-control-mcpPackageTests
+Build complete! (9.28s)
+Test Suite 'Selected tests' started at 2026-09-15 17:15:24.955.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 17:15:24.961.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 17:15:24.961.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 17:15:24.961.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.007) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "AX path identity (C-5)" started.
+◇ Test "identity string is canonical, length-prefixed, and includes pid, role, ordinal, identifier" started.
+✔ Test "identity string is canonical, length-prefixed, and includes pid, role, ordinal, identifier" passed after 0.001 seconds.
+◇ Test "same (pid, path) always yields the same id" started.
+✔ Test "same (pid, path) always yields the same id" passed after 0.001 seconds.
+◇ Test "a crafted AXIdentifier cannot forge another path's identity" started.
+✔ Test "a crafted AXIdentifier cannot forge another path's identity" passed after 0.001 seconds.
+◇ Test "adjacent numeric fields cannot be run together" started.
+✔ Test "adjacent numeric fields cannot be run together" passed after 0.001 seconds.
+◇ Test "absent identifier is distinguishable from a literal dash" started.
+✔ Test "absent identifier is distinguishable from a literal dash" passed after 0.001 seconds.
+◇ Test "different elements yield different ids" started.
+✔ Test "different elements yield different ids" passed after 0.001 seconds.
+◇ Test "hash is process-independent (not Swift's seeded Hasher)" started.
+✔ Test "hash is process-independent (not Swift's seeded Hasher)" passed after 0.001 seconds.
+◇ Test "empty identifiers are normalised away" started.
+✔ Test "empty identifiers are normalised away" passed after 0.001 seconds.
+◇ Test "appending builds the path a walk would record" started.
+✔ Test "appending builds the path a walk would record" passed after 0.001 seconds.
+◇ Test "the same query twice returns identical element ids, and the cache survives a clear" started.
+✔ Test "the same query twice returns identical element ids, and the cache survives a clear" passed after 0.001 seconds.
+◇ Test "upward path accepts the application root itself" started.
+✘ Test "upward path accepts the application root itself" recorded an issue at AXPathTests.swift:167:9: Expectation failed: (AXPath.upwardPath(of: AXUIElementCreateApplication(getpid())) → nil) == []
+✘ Test "upward path accepts the application root itself" failed after 0.005 seconds with 1 issue.
+↳ // v0.10 A8: the application handle is itself a valid empty path.
+◇ Test "search metadata counts visited nodes instead of matches" started.
+◇ Test case passing 1 argument tool → "find_elements" to "search metadata counts visited nodes instead of matches" started.
+✘ Test "search metadata counts visited nodes instead of matches" recorded an issue with 1 argument tool → "find_elements" at AXPathTests.swift:180:9: Expectation failed: (payload?["nodes_visited"]?.intValue → 0) == 1
+◇ Test case passing 1 argument tool → "query_elements" to "search metadata counts visited nodes instead of matches" started.
+✘ Test "search metadata counts visited nodes instead of matches" recorded an issue with 1 argument tool → "query_elements" at AXPathTests.swift:180:9: Expectation failed: (payload?["nodes_visited"]?.intValue → 0) == 1
+✘ Test "search metadata counts visited nodes instead of matches" with 2 test cases failed after 0.007 seconds with 2 issues.
+↳ // v0.10 A6: a rejected root was visited even when there are no matches.
+✘ Suite "AX path identity (C-5)" failed after 0.016 seconds with 3 issues.
+↳ /// C-5 / B-10 — element handles must be content-addressed: the same
+↳ /// element has to yield the same id on every call and in every session,
+↳ /// and two different elements must never share one.
+◇ Suite "ElementCache" started.
+◇ Test "store returns distinct IDs" started.
+✔ Test "store returns distinct IDs" passed after 0.001 seconds.
+◇ Test "resolve returns the stored element" started.
+✔ Test "resolve returns the stored element" passed after 0.001 seconds.
+◇ Test "resolve returns nil for unknown IDs" started.
+✔ Test "resolve returns nil for unknown IDs" passed after 0.001 seconds.
+◇ Test "ttl expiry drops entries on resolve" started.
+✔ Test "ttl expiry drops entries on resolve" passed after 0.126 seconds.
+◇ Test "maxEntries triggers oldest-first eviction" started.
+✔ Test "maxEntries triggers oldest-first eviction" passed after 0.001 seconds.
+◇ Test "storeMany returns one distinct, resolvable ID per element in order" started.
+✔ Test "storeMany returns one distinct, resolvable ID per element in order" passed after 0.001 seconds.
+◇ Test "storeMany evicts oldest entries first and keeps the whole batch" started.
+✔ Test "storeMany evicts oldest entries first and keeps the whole batch" passed after 0.001 seconds.
+◇ Test "storeMany larger than capacity never exceeds maxEntries and returns no dangling IDs" started.
+✔ Test "storeMany larger than capacity never exceeds maxEntries and returns no dangling IDs" passed after 0.001 seconds.
+◇ Test "a colliding id never silently retargets the existing entry" started.
+[mac-control-mcp] element id collision on el_collision: pid 7 path axpath2:7:1:8:AXWindow:0:- vs pid 7 path axpath2:7:1:8:AXButton:1:-. Both handles quarantined; no element was retargeted.
+✔ Test "a colliding id never silently retargets the existing entry" passed after 0.001 seconds.
+◇ Test "re-storing the same (pid, path) still refreshes in place" started.
+✔ Test "re-storing the same (pid, path) still refreshes in place" passed after 0.001 seconds.
+◇ Test "a colliding id across pids is a collision too" started.
+[mac-control-mcp] element id collision on el_collision: pid 7 path axpath2:7:1:8:AXWindow:0:- vs pid 8 path axpath2:8:1:8:AXWindow:0:-. Both handles quarantined; no element was retargeted.
+✔ Test "a colliding id across pids is a collision too" passed after 0.001 seconds.
+◇ Test "real paths that naively concatenate the same get distinct cache ids" started.
+✔ Test "real paths that naively concatenate the same get distinct cache ids" passed after 0.001 seconds.
+◇ Test "storeMany drops expired entries before inserting" started.
+✔ Test "storeMany drops expired entries before inserting" passed after 0.127 seconds.
+◇ Test "live handle with a different fingerprint is stale" started.
+✘ Test "live handle with a different fingerprint is stale" recorded an issue at ElementCacheTests.swift:190:25: Issue recorded
+↳ v0.10 A1: live handle silently resolved a different control
+✘ Test "live handle with a different fingerprint is stale" failed after 0.001 seconds with 1 issue.
+↳ // v0.10 A1: a live positional handle must not bypass its recorded identity.
+◇ Test "capacity eviction prefers older entries from the incoming pid" started.
+✘ Test "capacity eviction prefers older entries from the incoming pid" recorded an issue at ElementCacheTests.swift:203:9: Expectation failed: await cache.resolve(other) != nil
+✘ Test "capacity eviction prefers older entries from the incoming pid" recorded an issue at ElementCacheTests.swift:204:9: Expectation failed: await cache.resolve(old) == nil
+✘ Test "capacity eviction prefers older entries from the incoming pid" recorded an issue at ElementCacheTests.swift:205:9: Expectation failed: String(describing: await cache.resolveLive(old)).contains("evicted")
+✘ Test "capacity eviction prefers older entries from the incoming pid" failed after 0.001 seconds with 3 issues.
+↳ // v0.10 A2: repeated full trees must not consume another app's working set.
+◇ Test "refreshing stable paths at capacity does not evict other ids" started.
+✘ Test "refreshing stable paths at capacity does not evict other ids" recorded an issue at ElementCacheTests.swift:216:9: Expectation failed: await cache.resolve(other) != nil
+✘ Test "refreshing stable paths at capacity does not evict other ids" recorded an issue at ElementCacheTests.swift:218:9: Expectation failed: await cache.resolve(other) != nil
+✘ Test "refreshing stable paths at capacity does not evict other ids" failed after 0.001 seconds with 2 issues.
+◇ Test "six 2000-node trees fit in the default cache" started.
+✘ Test "six 2000-node trees fit in the default cache" recorded an issue at ElementCacheTests.swift:229:9: Expectation failed: await cache.resolve(first) != nil
+✘ Test "six 2000-node trees fit in the default cache" recorded an issue at ElementCacheTests.swift:230:9: Expectation failed: await cache.count == 12001
+✘ Test "six 2000-node trees fit in the default cache" failed after 0.093 seconds with 2 issues.
+✘ Suite "ElementCache" failed after 0.353 seconds with 8 issues.
+✘ Test run with 29 tests in 2 suites failed after 0.370 seconds with 11 issues.

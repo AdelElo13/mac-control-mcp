@@ -219,7 +219,7 @@ struct AXHandleSafetyTests {
         for cap in [800, 4_000, 20_000] {
             let result = await registry.callTool(
                 name: "get_ui_tree",
-                arguments: ["pid": .number(Double(finder)), "max_bytes": .number(Double(cap))]
+                arguments: ["pid": .number(Double(finder)), "max_bytes": .number(Double(cap)), "include_menus": .bool(true)]
             )
             let payload = result.structuredContent.objectValue ?? [:]
             let nodes = payload["nodes"]?.arrayValue ?? []

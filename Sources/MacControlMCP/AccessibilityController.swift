@@ -25,6 +25,32 @@ struct AXKey: Hashable {
 }
 
 actor AccessibilityController {
+    // v0.10 A4/B7: isolate blocking AX reads from traversal policy so the
+    // same walker can run on a worker queue and deterministic AX fixtures.
+    nonisolated let readAttributes: @Sendable (AXUIElement, Bool) -> AXAttributeBatch.Values
+    /// Same reader with the "inside an AXWebArea" flag the ranked search
+    /// needs for web attributes (url / dom id). An injected fixture reader
+    /// ignores the flag; the default asks AX for the web attributes.
+    nonisolated let readAttributesInWeb: @Sendable (AXUIElement, Bool, Bool) -> AXAttributeBatch.Values
+    private let prepareAccessibility: @Sendable (pid_t) -> Void
+    private let readWindowFrames: (@Sendable (pid_t) -> [CGRect])?
+
+    init(
+        readAttributes: (@Sendable (AXUIElement, Bool) -> AXAttributeBatch.Values)? = nil,
+        prepareAccessibility: @escaping @Sendable (pid_t) -> Void = AccessibilityController.prepareApplication,
+        readWindowFrames: (@Sendable (pid_t) -> [CGRect])? = nil
+    ) {
+        if let readAttributes {
+            self.readAttributes = readAttributes
+            self.readAttributesInWeb = { element, children, _ in readAttributes(element, children) }
+        } else {
+            self.readAttributes = { AXAttributeBatch.fetch($0, includeChildren: $1) }
+            self.readAttributesInWeb = { AXAttributeBatch.fetch($0, includeChildren: $1, insideWebArea: $2) }
+        }
+        self.prepareAccessibility = prepareAccessibility
+        self.readWindowFrames = readWindowFrames
+    }
+
     struct Point: Codable, Sendable {
         let x: Double
         let y: Double
@@ -42,6 +68,7 @@ actor AccessibilityController {
         let position: Point?
         let size: Size?
         let depth: Int?
+        var web: [String: String] = [:]
     }
 
     struct TypeTextResult: Codable, Sendable {
@@ -66,10 +93,11 @@ actor AccessibilityController {
         let position: Point?
         let size: Size?
         let depth: Int
-        let childIndices: [Int]   // indices into the flat array returned by treeWalk
+        var childIndices: [Int]   // indices into the flat array returned by treeWalk
         /// Position in the app's AX tree, from the application root.
         /// Feeds the content-addressed element id (v0.9 C-5).
         let path: [AXPathComponent]
+        var web: [String: String] = [:]
     }
 
     /// Where a tree walk / element search STARTS, when it should not start
@@ -106,6 +134,14 @@ actor AccessibilityController {
         let element: AXUIElement
         let info: ElementInfo
         let path: [AXPathComponent]
+        var matchedField: String = "role"
+        var match: String = "exact"
+        var rankReason: String = ""
+        /// v0.10 A5: set only by the grounding walk (`groundingTarget`).
+        var groundingMatch: GroundingPolicy.Match? = nil
+        /// v0.10 merge: the batched attributes the match was made from, so
+        /// grounding can score title/value/description without a re-read.
+        var attrs: AXAttributeBatch.Values? = nil
     }
 
     /// Result of querying attributes. Missing attrs are omitted.
@@ -126,7 +162,6 @@ actor AccessibilityController {
     // v0.9: single source of truth lives in `AXPayload.interactiveRoles`
     // so `list_elements` and the new `interactive_only` budget filter can
     // never disagree about what "actionable" means.
-    private var actionableRoles: Set<String> { AXPayload.interactiveRoles }
 
     func checkPermission() -> Bool {
         AXIsProcessTrusted()
@@ -136,18 +171,19 @@ actor AccessibilityController {
     /// the `viewport_only` payload filter (v0.9 C-9) as "the app's
     /// on-screen window bounds": a node whose frame intersects none of
     /// these is not visible in any of this app's windows.
-    func windowFrames(pid: pid_t) -> [CGRect] {
-        enableManualAccessibility(pid: pid)
-        let app = AXUIElementCreateApplication(pid)
-        return AXPath.copyElements(app, kAXWindowsAttribute as String).compactMap { window in
-            // A minimized window still publishes a frame, but nothing in
-            // it is on screen — counting it would let viewport_only keep
-            // controls the user cannot see (review fix 4).
-            if let minimized = AXPath.copyString(window, kAXMinimizedAttribute as String),
-               minimized == "1" || minimized.lowercased() == "true" { return nil }
-            let attrs = AXAttributeBatch.fetch(window, includeChildren: false)
-            guard let origin = attrs.position, let size = attrs.size else { return nil }
-            return CGRect(origin: origin, size: size)
+    func windowFrames(pid: pid_t) async -> [CGRect] {
+        let readWindows = readWindowFrames
+        return await withWalkQueue(pid: pid) {
+            if let readWindows { return readWindows(pid) }
+            let app = AXUIElementCreateApplication(pid)
+            return AXPath.copyElements(app, kAXWindowsAttribute as String).compactMap { window in
+                // v0.10 B1: minimized windows cannot make descendants visible.
+                if let minimized = AXPath.copyString(window, kAXMinimizedAttribute as String),
+                   minimized == "1" || minimized.lowercased() == "true" { return nil }
+                let attrs = AXAttributeBatch.fetch(window, includeChildren: false)
+                guard let origin = attrs.position, let size = attrs.size else { return nil }
+                return CGRect(origin: origin, size: size)
+            }
         }
     }
 
@@ -158,13 +194,49 @@ actor AccessibilityController {
     /// whichever app owns that point; a pid restricts the hit-test to
     /// that application, which is what you want when a window is
     /// occluded by another app.
-    func elementAtPoint(x: Double, y: Double, pid: pid_t?) -> AXUIElement? {
-        if let pid { enableManualAccessibility(pid: pid) }
-        let root = pid.map { AXUIElementCreateApplication($0) } ?? AXUIElementCreateSystemWide()
-        var element: AXUIElement?
-        let status = AXUIElementCopyElementAtPosition(root, Float(x), Float(y), &element)
-        guard status == .success else { return nil }
-        return element
+    func elementAtPoint(x: Double, y: Double, pid: pid_t?) async -> AXUIElement? {
+        let read: @Sendable () -> AXUIElement? = {
+            let root = pid.map { AXUIElementCreateApplication($0) } ?? AXUIElementCreateSystemWide()
+            var element: AXUIElement?
+            let status = AXUIElementCopyElementAtPosition(root, Float(x), Float(y), &element)
+            guard status == .success else { return nil }
+            return element
+        }
+        // v0.10 B7: a pid-scoped hit test must wait for that pid's queued
+        // preparation just like a tree walk; queued does not mean ready.
+        if let pid { return await withWalkQueue(pid: pid, work: read) }
+        return read()
+    }
+
+    /// v0.10 C2: SwiftUI/Finder can report a whole container for a precise
+    /// point. Preserve overlay scope while allowing a sidebar hit to resolve its scrollbar.
+    func refinedHit(element: AXUIElement, x: Double, y: Double) -> (element: AXUIElement, quality: String) {
+        func frame(_ values: AXAttributeBatch.Values) -> CGRect? {
+            guard let position = values.position, let size = values.size else { return nil }
+            return CGRect(origin: position, size: size)
+        }
+        let lineage = ([element] + AXPath.ancestors(of: element, limit: 24)).map {
+            (element: $0, role: AXPath.copyString($0, "AXRole"))
+        }
+        let window = lineage.first { $0.role == "AXWindow" }?.element
+        // v0.10 C2 review: a direct cell hit still inherits its outline/table
+        // context even though the bounded search starts below that ancestor.
+        let localAncestors = lineage.prefix { !["AXSheet", "AXPopover", "AXDialog", "AXWindow"].contains($0.role) }
+        let inCollection = localAncestors.contains { $0.role == "AXOutline" || $0.role == "AXTable" }
+        // v0.10 C2 round 3: inconsistent direct hits can need a wider search,
+        // but an enclosing overlay must still exclude background controls.
+        let recoveryRoot = lineage.first { ["AXSheet", "AXPopover", "AXDialog", "AXWindow"].contains($0.role) }?.element
+        // v0.10 C2 review: scrollbar siblings share this scroll area. Never
+        // broaden the scroll scope through a sheet/popover boundary.
+        let scrollContainer = localAncestors.first { $0.role == "AXScrollArea" }?.element
+        let refined = GeometricHitTest.refine(hit: AXKey(element: element),
+            window: window.map { AXKey(element: $0) }, point: CGPoint(x: x, y: y), inCollection: inCollection,
+            scrollContainer: scrollContainer.map { AXKey(element: $0) },
+            recoveryRoot: recoveryRoot.map { AXKey(element: $0) }) { key in
+            let values = AXAttributeBatch.fetch(key.element, includeChildren: true)
+            return .init(role: values.role, frame: frame(values), children: values.children.map { AXKey(element: $0) })
+        }
+        return (refined.element.element, refined.quality)
     }
 
     /// pid that owns an element handle.
@@ -184,6 +256,7 @@ actor AccessibilityController {
         let path: [AXPathComponent]?
         /// Nearest-first (role, title) pairs, capped by the caller.
         let ancestors: [(role: String?, title: String?)]
+        var identity: AXPath.Reconstruction? = nil
     }
 
     func describeHit(element: AXUIElement, ancestorLimit: Int = 8) -> HitTest? {
@@ -194,13 +267,15 @@ actor AccessibilityController {
             (role: AXPath.copyString($0, "AXRole"),
              title: AXPath.copyString($0, "AXTitle") ?? AXPath.copyString($0, "AXDescription"))
         }
+        let identity = AXPath.reconstruct(element: element)
         return HitTest(
             info: Self.elementInfo(from: attrs, depth: nil),
             enabled: enabled,
             pid: pid,
             appName: NSRunningApplication(processIdentifier: pid)?.localizedName,
-            path: AXPath.upwardPath(of: element),
-            ancestors: ancestors
+            path: identity.path,
+            ancestors: ancestors,
+            identity: identity
         )
     }
 
@@ -211,7 +286,7 @@ actor AccessibilityController {
 
     /// PIDs for which we've already flipped AXManualAccessibility on.
     /// Used to avoid paying the IPC cost on every AX call.
-    private var manualAccessibilityEnabled: Set<pid_t> = []
+    private var preparationQueuedPIDs: Set<pid_t> = []
 
     /// For Chromium/Electron apps (VS Code, Slack, Discord, Cursor,
     /// 1Password, Obsidian, Postman, …) and iWork apps (Pages, Keynote,
@@ -228,8 +303,7 @@ actor AccessibilityController {
     ///
     /// Called automatically the first time any AX walk touches a given
     /// pid. Cached so subsequent calls are a free HashSet lookup.
-    func enableManualAccessibility(pid: pid_t) {
-        guard !manualAccessibilityEnabled.contains(pid) else { return }
+    private nonisolated static func prepareApplication(pid: pid_t) {
         let app = AXUIElementCreateApplication(pid)
         // Attribute name is private — pass as CFString literal. Setting
         // CFBooleanTrue on a regular (non-Electron) app is a no-op, so
@@ -245,23 +319,10 @@ actor AccessibilityController {
             "AXEnhancedUserInterface" as CFString,
             kCFBooleanTrue
         )
-        manualAccessibilityEnabled.insert(pid)
     }
 
-    func listElements(pid: pid_t, maxDepth: Int = AXDepth.default) -> [ElementInfo] {
-        enableManualAccessibility(pid: pid)
-        let root = AXUIElementCreateApplication(pid)
-        var visited = Set<AXKey>()
-        var output: [ElementInfo] = []
-        let deadline = Date().addingTimeInterval(5.0)
-
-        _ = walk(element: root, depth: 0, maxDepth: max(1, maxDepth), visited: &visited, deadline: deadline) { _, depth, attrs in
-            guard self.actionableRoles.contains(attrs.role ?? "AXUnknown") else { return false }
-            output.append(Self.elementInfo(from: attrs, depth: depth))
-            return false
-        }
-
-        return output
+    func listElements(pid: pid_t, maxDepth: Int = AXDepth.default) async -> [ElementInfo] {
+        await search(pid: pid, maxDepth: maxDepth, interactiveOnly: true).matches.map(\.info)
     }
 
     /// First depth-first match.
@@ -276,65 +337,43 @@ actor AccessibilityController {
     /// Safari tab) — the default stays substring for compatibility, but
     /// callers that know the role should pass exact:true.
     func findElement(
-        pid: pid_t,
-        role: String?,
-        title: String?,
-        exact: Bool = false,
+        pid: pid_t, role: String?, title: String?, exact: Bool = false,
         maxDepth: Int = AXDepth.default
-    ) -> AXUIElement? {
-        findElementWithPath(pid: pid, role: role, title: title, exact: exact, maxDepth: maxDepth)?.element
+    ) async -> AXUIElement? {
+        // v0.10 B3/B4: action helpers retain their existing full-DFS/menu
+        // selection; the read tool opts into shallow-first search below.
+        await findElementWithPath(pid: pid, role: role, title: title, exact: exact,
+                                  maxDepth: maxDepth, includeMenus: true, shallowFirst: false)?.element
     }
 
-    /// Same search as `findElement`, but also returns the element's AX
-    /// path so the caller can mint a stable, content-addressed id for it
-    /// (C-5) without a second upward walk.
+    /// v0.10 B4: shallow-first uses one breadth-first pass, preserving
+    /// original path ordinals without re-reading the first eight levels.
     func findElementWithPath(
-        pid: pid_t,
-        role: String?,
-        title: String?,
-        exact: Bool = false,
-        maxDepth: Int = AXDepth.default
-    ) -> (element: AXUIElement, path: [AXPathComponent])? {
-        var match: (element: AXUIElement, path: [AXPathComponent])?
-        let deadline = Date().addingTimeInterval(5.0)
-        enableManualAccessibility(pid: pid)
-        let root = AXUIElementCreateApplication(pid)
-        var visited = Set<AXKey>()
-
-        func recurse(element: AXUIElement, depth: Int, parentPath: [AXPathComponent], ordinal: Int) -> Bool {
-            guard depth <= maxDepth else { return false }
-            guard Date() < deadline else { return true }
-            guard visited.insert(AXKey(element: element)).inserted else { return false }
-
-            let attrs = AXAttributeBatch.fetch(element, includeChildren: true)
-            // The application root itself is the empty path; every other
-            // node appends its ordinal among its parent's children.
-            let path = depth == 0
-                ? parentPath
-                : AXPath.appending(
-                    parentPath, role: attrs.role, index: ordinal, identifier: attrs.identifier,
-                    title: attrs.title, subrole: attrs.subrole
-                )
-            let currentRole = attrs.role ?? "AXUnknown"
-            let roleMatches = Self.textMatches(filter: role, candidate: currentRole, exact: exact)
-            let titleMatches: Bool = {
-                guard let title, !title.isEmpty else { return true }
-                if Self.textMatches(filter: title, candidate: attrs.title ?? "", exact: exact) { return true }
-                // find_element (unlike find_elements) also falls back to
-                // AXValue — documented behaviour, kept for compatibility.
-                return Self.textMatches(filter: title, candidate: attrs.value ?? "", exact: exact)
-            }()
-            if roleMatches && titleMatches {
-                match = (element, path)
-                return true
+        pid: pid_t, role: String?, title: String?, exact: Bool = false,
+        maxDepth: Int = AXDepth.default, includeMenus: Bool = true,
+        shallowFirst: Bool = false
+    ) async -> (element: AXUIElement, path: [AXPathComponent])? {
+        let result = await search(
+            pid: pid, maxDepth: maxDepth, limit: 1, includeMenus: includeMenus,
+            shallowFirst: shallowFirst,
+            stopOnBest: shallowFirst ? Self.exactTitlePreference(title) : nil,
+            predicate: { attrs in
+                Self.textMatches(filter: role, candidate: attrs.role ?? "AXUnknown", exact: exact)
+                    && (Self.textMatches(filter: title, candidate: attrs.title ?? "", exact: exact)
+                        || Self.textMatches(filter: title, candidate: attrs.value ?? "", exact: exact))
             }
-            for (ordinal, child) in attrs.children.enumerated() {
-                if recurse(element: child, depth: depth + 1, parentPath: path, ordinal: ordinal) { return true }
-            }
-            return false
+        )
+        return result.matches.first.map { ($0.element, $0.path) }
+    }
+
+    /// v0.10 B4: partial labels remain fallbacks; an exact label is a
+    /// best-quality hit and cannot improve by walking deeper. No extra IO.
+    nonisolated static func exactTitlePreference(_ title: String?) -> (@Sendable (AXAttributeBatch.Values) -> Bool)? {
+        guard let title, !title.isEmpty else { return nil }
+        return { attrs in
+            textMatches(filter: title, candidate: attrs.title ?? "", exact: true)
+                || textMatches(filter: title, candidate: attrs.value ?? "", exact: true)
         }
-        _ = recurse(element: root, depth: 0, parentPath: [], ordinal: 0)
-        return match
     }
 
     /// Case-insensitive substring (default) or equality (`exact`) match.
@@ -602,109 +641,216 @@ actor AccessibilityController {
 
     // MARK: - v0.2.0 deep UI
 
-    /// Walks the AX tree for an app and returns every node (including
-    /// non-actionable containers) up to `maxDepth`. Each node's `childIndices`
-    /// points into the returned array so the tree can be reconstructed.
-    ///
-    /// `pruneRoles` (v0.9 workstream F): roles whose SUBTREE is not worth
-    /// walking. The node itself is still emitted — and, crucially, its
-    /// ordinal among its siblings is unchanged, so every other node's AX
-    /// path and therefore its content-addressed element id stay identical
-    /// to an unpruned walk.
-    ///
-    /// `capture_annotated` prunes `AXMenuBar`: an app's closed menus are
-    /// hundreds to thousands of `AXMenuItem` nodes (Safari: 1031, Chrome:
-    /// 319) that are walked BEFORE the windows, cost one IPC round trip
-    /// each, and can eat the whole 5 s deadline before the walk ever
-    /// reaches the window whose screenshot is being annotated. They are
-    /// also never drawable: a closed menu's items are parked off-screen at
-    /// 0×0 (gap audit A-4). Default empty = every existing caller behaves
-    /// exactly as before.
-    ///
-    /// `root` (v0.9.0, Codex r1 #2): start somewhere other than the
-    /// application element — in practice the `AXWindow` a `window_id`
-    /// resolved to, so a sibling window's subtree is never walked. Element
-    /// ids are unchanged because the root carries its own AX path.
+    /// v0.10 B1/B3/B7: walk on a per-pid serial queue. Other apps can
+    /// answer concurrently; no blocking AX IPC occupies this actor.
+    /// Pruning never renumbers siblings, preserving path-derived ids.
     func treeWalk(
-        pid: pid_t,
-        root axRoot: WalkRoot? = nil,
-        maxDepth: Int,
-        nodeCap: Int = 5000,
-        pruneRoles: Set<String> = []
-    ) -> [TreeNode] {
-        enableManualAccessibility(pid: pid)
-        let root = axRoot?.element ?? AXUIElementCreateApplication(pid)
-        let rootPath = axRoot?.path ?? []
-        var visited = Set<AXKey>()
+        pid: pid_t, root axRoot: WalkRoot? = nil, maxDepth: Int,
+        nodeCap: Int = 5000, pruneRoles: Set<String> = [],
+        includeMenus: Bool = true, clipRects: [CGRect] = []
+    ) async -> [TreeNode] {
+        await treeWalkResult(pid: pid, root: axRoot, maxDepth: maxDepth, nodeCap: nodeCap,
+                             pruneRoles: pruneRoles, includeMenus: includeMenus, clipRects: clipRects).nodes
+    }
+
+    func treeWalkResult(
+        pid: pid_t, root axRoot: WalkRoot? = nil, maxDepth: Int,
+        nodeCap: Int = 5000, pruneRoles: Set<String> = [],
+        includeMenus: Bool = true, clipRects: [CGRect] = [], timeBudget: TimeInterval = 5
+    ) async -> WalkResult {
+        await search(pid: pid, root: axRoot, maxDepth: maxDepth, nodeCap: nodeCap,
+                     includeMenus: includeMenus, clipRects: clipRects,
+                     pruneRoles: pruneRoles, collectNodes: true, timeBudget: timeBudget, predicate: { _ in false })
+    }
+
+    struct WalkResult: Sendable {
         var nodes: [TreeNode] = []
-        // Wall-clock deadline + node cap. Without these, large AX trees
-        // (Mail preview pane, Finder list view, Logic Pro with depth>=20)
-        // produce thousands of IPC round trips and the MCP client just
-        // hangs until it disconnects. Matches the 5 s / 5000-node budget
-        // used elsewhere in this controller.
-        let deadline = Date().addingTimeInterval(5.0)
+        var matches: [Match] = []
+        var nodesVisited = 0
+        var nodeCapReached = false
+        var timedOut = false
+        var timingsMS: [String: Double] = [:]
+    }
 
-        func recurse(element: AXUIElement, depth: Int, parentPath: [AXPathComponent], ordinal: Int) -> Int {
-            guard Date() < deadline, nodes.count < nodeCap else { return -1 }
-            // AXKey wraps CFHash + CFEqual — see its definition for why
-            // the pointer address is wrong here.
-            let key = AXKey(element: element)
-            guard visited.insert(key).inserted else { return -1 }
+    private var walkQueues: [pid_t: DispatchQueue] = [:]
 
-            let placeholderIndex = nodes.count
-            // Leaves at max depth don't need their child lists — skip
-            // copying them (a big container's AXChildren is not free).
-            let descend = depth < max(1, maxDepth)
-            let attrs = AXAttributeBatch.fetch(element, includeChildren: descend)
-            let path = depth == 0
-                ? parentPath
-                : AXPath.appending(
-                    parentPath, role: attrs.role, index: ordinal, identifier: attrs.identifier,
-                    title: attrs.title, subrole: attrs.subrole
-                )
-            nodes.append(
-                TreeNode(
-                    element: element,
-                    role: attrs.role,
-                    title: attrs.title,
-                    value: attrs.value,
-                    position: attrs.position.map { Point(x: Double($0.x), y: Double($0.y)) },
-                    size: attrs.size.map { Size(width: Double($0.width), height: Double($0.height)) },
-                    depth: depth,
-                    childIndices: [],
-                    path: path
-                )
+    /// v0.10 A4: filtering is part of matching, before the match limit.
+    /// v0.10 B7: the queue stays serial until IPC actually returns, even
+    /// when the caller is cancelled; timed-out work must never overlap a
+    /// subsequent walk of the same pid.
+    func search(
+        pid: pid_t, root axRoot: WalkRoot? = nil, maxDepth: Int = AXDepth.default,
+        nodeCap: Int = .max, limit: Int = .max, includeMenus: Bool = false,
+        clipRects: [CGRect] = [], viewportOnly: Bool = false, interactiveOnly: Bool = false,
+        pruneRoles: Set<String> = [], collectNodes: Bool = false, shallowFirst: Bool = false,
+        timeBudget: TimeInterval = 5,
+        stopOnBest: (@Sendable (AXAttributeBatch.Values) -> Bool)? = nil,
+        predicate: @escaping @Sendable (AXAttributeBatch.Values) -> Bool = { _ in true }
+    ) async -> WalkResult {
+        let root = axRoot ?? WalkRoot(element: AXUIElementCreateApplication(pid), path: [])
+        let fetch = readAttributes
+        return await withTimedWalkQueue(pid: pid) { queueMS, prepareMS in
+            let started = ProcessInfo.processInfo.systemUptime
+            var result = Self.walkTree(
+                root: root, maxDepth: maxDepth, nodeCap: max(1, nodeCap), limit: max(1, limit),
+                includeMenus: includeMenus, clipRects: clipRects, viewportOnly: viewportOnly,
+                interactiveOnly: interactiveOnly, pruneRoles: pruneRoles,
+                collectNodes: collectNodes, breadthFirst: shallowFirst,
+                deadline: started + max(0, timeBudget), fetch: fetch,
+                stopOnBest: stopOnBest, predicate: predicate
             )
-
-            guard descend else { return placeholderIndex }
-            // Pruned subtree: the node stays (and keeps its ordinal), its
-            // children are not walked.
-            if let role = attrs.role, pruneRoles.contains(role) { return placeholderIndex }
-
-            var childIndices: [Int] = []
-            for (childOrdinal, child) in attrs.children.enumerated() {
-                if Date() >= deadline || nodes.count >= nodeCap { break }
-                let idx = recurse(element: child, depth: depth + 1, parentPath: path, ordinal: childOrdinal)
-                if idx >= 0 { childIndices.append(idx) }
-            }
-
-            let node = nodes[placeholderIndex]
-            nodes[placeholderIndex] = TreeNode(
-                element: node.element,
-                role: node.role,
-                title: node.title,
-                value: node.value,
-                position: node.position,
-                size: node.size,
-                depth: node.depth,
-                childIndices: childIndices,
-                path: node.path
-            )
-            return placeholderIndex
+            result.timingsMS["queue"] = queueMS
+            result.timingsMS["prepare"] = prepareMS
+            result.timingsMS["walk"] = (ProcessInfo.processInfo.systemUptime - started) * 1000
+            return result
         }
+    }
 
-        _ = recurse(element: root, depth: 0, parentPath: rootPath, ordinal: 0)
-        return nodes
+    private func withWalkQueue<Value: Sendable>(
+        pid: pid_t, work: @escaping @Sendable () -> Value
+    ) async -> Value {
+        await withTimedWalkQueue(pid: pid) { _, _ in work() }
+    }
+
+    /// v0.10 B1/B7: drain per-request Objective-C temporaries BEFORE
+    /// resuming the caller. Queue reuse retains no AX frames or results.
+    /// Legacy entry point kept for the synchronous grounding / ranked walks
+    /// (S3 / S5): same once-per-pid AXManualAccessibility preparation the
+    /// queued walks do.
+    private func enableManualAccessibility(pid: pid_t) {
+        if preparationQueuedPIDs.insert(pid).inserted { prepareAccessibility(pid) }
+    }
+
+    private func withTimedWalkQueue<Value: Sendable>(
+        pid: pid_t, work: @escaping @Sendable (Double, Double) -> Value
+    ) async -> Value {
+        let prepare = preparationQueuedPIDs.insert(pid).inserted ? prepareAccessibility : nil
+        let queue: DispatchQueue
+        if let existing = walkQueues[pid] {
+            queue = existing
+        } else {
+            queue = DispatchQueue(label: "mac-control-mcp.ax-walk.\(pid)",
+                                  qos: .userInitiated, target: BlockingWorkPool.sharedQueue)
+            walkQueues[pid] = queue
+        }
+        let enqueued = ProcessInfo.processInfo.systemUptime
+        return await withCheckedContinuation { continuation in
+            queue.async {
+                let value = autoreleasepool {
+                    let started = ProcessInfo.processInfo.systemUptime
+                    prepare?(pid)
+                    let prepared = ProcessInfo.processInfo.systemUptime
+                    return work((started - enqueued) * 1000, (prepared - started) * 1000)
+                }
+                continuation.resume(returning: value)
+            }
+        }
+    }
+
+    private struct PendingNode {
+        let element: AXUIElement
+        let depth: Int
+        let parentPath: [AXPathComponent]
+        let ordinal: Int
+        let parentIndex: Int?
+    }
+
+    /// v0.10 B1/B4: a cursor borrows an AX child array instead of allocating
+    /// one work item per child before the next budget/limit check.
+    private struct PendingChildren {
+        let elements: [AXUIElement]
+        var ordinal = 0
+        let depth: Int
+        let parentPath: [AXPathComponent]
+        let parentIndex: Int?
+    }
+
+    private nonisolated static func walkTree(
+        root: WalkRoot, maxDepth: Int, nodeCap: Int, limit: Int,
+        includeMenus: Bool, clipRects: [CGRect], viewportOnly: Bool, interactiveOnly: Bool,
+        pruneRoles: Set<String>, collectNodes: Bool, breadthFirst: Bool, deadline: TimeInterval,
+        fetch: @Sendable (AXUIElement, Bool) -> AXAttributeBatch.Values,
+        stopOnBest: (@Sendable (AXAttributeBatch.Values) -> Bool)?,
+        predicate: @Sendable (AXAttributeBatch.Values) -> Bool
+    ) -> WalkResult {
+        var visited = Set<AXKey>()
+        var result = WalkResult()
+        var pending: [PendingChildren?] = [.init(elements: [root.element], depth: 0,
+                                               parentPath: root.path, parentIndex: nil)]
+        var head = 0
+        var fetchMS = 0.0
+        var effectiveDeadline = deadline
+        while breadthFirst ? head < pending.count : !pending.isEmpty {
+            if result.matches.count >= limit && stopOnBest == nil { break }
+            guard ProcessInfo.processInfo.systemUptime < effectiveDeadline else { result.timedOut = true; break }
+            guard visited.count < nodeCap else { result.nodeCapReached = true; break }
+            let offset = breadthFirst ? head : pending.count - 1
+            let siblings = pending[offset]!
+            let next = PendingNode(element: siblings.elements[siblings.ordinal], depth: siblings.depth,
+                                   parentPath: siblings.parentPath, ordinal: siblings.ordinal,
+                                   parentIndex: siblings.parentIndex)
+            if siblings.ordinal + 1 < siblings.elements.count {
+                pending[offset]!.ordinal += 1
+            } else if breadthFirst {
+                pending[offset] = nil
+                head += 1
+            } else {
+                pending.removeLast()
+            }
+            guard visited.insert(AXKey(element: next.element)).inserted else { continue }
+            let descend = next.depth < max(1, maxDepth)
+            let fetched = ProcessInfo.processInfo.systemUptime
+            // v0.10 B1/B7: AX batch decoding bridges autoreleased Foundation
+            // values. A per-node pool prevents large walks accumulating them.
+            let attrs = autoreleasepool { fetch(next.element, descend) }
+            fetchMS += (ProcessInfo.processInfo.systemUptime - fetched) * 1000
+            if !includeMenus && attrs.role == "AXMenuBar" { continue }
+            let path = next.depth == 0 ? next.parentPath : AXPath.appending(
+                next.parentPath, role: attrs.role, index: next.ordinal, identifier: attrs.identifier,
+                title: attrs.title, subrole: attrs.subrole
+            )
+            let frame: CGRect? = attrs.position.flatMap { origin in attrs.size.map { CGRect(origin: origin, size: $0) } }
+            let info = Self.elementInfo(from: attrs, depth: next.depth)
+            if (!interactiveOnly || AXPayload.isInteractive(role: attrs.role))
+                && (!viewportOnly || AXPayload.isInViewport(frame: frame, windows: clipRects))
+                && predicate(attrs) {
+                let match = Match(element: next.element, info: info, path: path, attrs: attrs)
+                if stopOnBest?(attrs) == true {
+                    result.matches = [match]
+                    break
+                }
+                if result.matches.count < limit {
+                    result.matches.append(match)
+                    // v0.10 B4: once enough usable fallbacks are held, an
+                    // absent exact label must not force another full-tree walk.
+                    // Tighten once; later substring hits cannot renew the budget.
+                    if stopOnBest != nil && result.matches.count == limit {
+                        effectiveDeadline = min(effectiveDeadline, ProcessInfo.processInfo.systemUptime + 0.1)
+                    }
+                }
+            }
+            let index = result.nodes.count
+            if collectNodes {
+                result.nodes.append(TreeNode(element: next.element, role: attrs.role, title: attrs.title, value: attrs.value,
+                                             position: info.position, size: info.size, depth: next.depth, childIndices: [], path: path))
+                if let parent = next.parentIndex {
+                    result.nodes[parent].childIndices.append(index)
+                }
+            }
+            // v0.10 B1/B2: unknown/zero geometry still descends; original
+            // child ordinals survive pruning and both traversal orders.
+            if descend && !pruneRoles.contains(attrs.role ?? "")
+                && !AXPayload.shouldPrune(frame: frame, clips: clipRects) {
+                if !attrs.children.isEmpty {
+                    pending.append(.init(elements: attrs.children, depth: next.depth + 1,
+                                         parentPath: path, parentIndex: collectNodes ? index : nil))
+                }
+            }
+        }
+        result.nodesVisited = visited.count
+        result.nodeCapReached = result.nodeCapReached || visited.count >= nodeCap
+        result.timingsMS["ax_fetch"] = fetchMS
+        return result
     }
 
     /// The `WalkRoot` for one of an app's windows: the window element plus
@@ -737,33 +883,40 @@ actor AccessibilityController {
         value: String?,
         exact: Bool = false,
         maxDepth: Int = AXDepth.default,
-        limit: Int = 100
-    ) -> [Match] {
-        // Inline recurse (same structure as treeWalk) instead of going
-        // through the private `walk(...)` helper. An earlier implementation
-        // used `walk` with an `inout` visited set and a closure visitor; it
-        // lost ~95% of the tree to spurious dedup hits on Logic Pro's AX
-        // graph (43 nodes visited vs treeWalk's 936). The interaction of
-        // actor isolation + inout parameters + capturing closures appears
-        // to confuse the compiler's reference handling enough to break the
-        // set's identity semantics in that code path.
-        //
-        // Wall-clock deadline (5 s) bounds the worst-case broad query
-        // against apps with massive AX trees (Finder, Logic Pro). See
-        // queryElements / findElement for the same pattern.
+        limit: Int = 100,
+        semantic: String? = nil,
+        groundingTarget: String? = nil,
+        includeMenus: Bool = true, clipRects: [CGRect] = [],
+        viewportOnly: Bool = false, interactiveOnly: Bool = false
+    ) async -> [Match] {
+        // v0.10 merge of S3 (grounding) and S5 (ranked search): a grounding
+        // target scores every label field with GroundingPolicy inside one
+        // bounded walk and must not go through the ranked-search filters;
+        // every other query takes the ranked AXSearch path.
+        if let groundingTarget {
+            return groundingWalk(pid: pid, root: axRoot, maxDepth: maxDepth, limit: limit, target: groundingTarget).matches
+        }
+        return await findElementsWithStats(pid: pid, root: axRoot, role: role, title: title, value: value,
+                              exact: exact, maxDepth: maxDepth, limit: limit, semantic: semantic,
+                              interactiveOnly: interactiveOnly, viewportOnly: viewportOnly,
+                              includeMenus: includeMenus).matches
+    }
+
+    /// v0.10 A5 (S3): grounding search — GroundingPolicy.match on role /
+    /// title / value / description of every node in a bounded DFS.
+    func groundingWalk(pid: pid_t, root axRoot: WalkRoot?, maxDepth: Int, limit: Int, target: String) -> (matches: [Match], nodesVisited: Int) {
         let deadline = Date().addingTimeInterval(5.0)
         enableManualAccessibility(pid: pid)
         let root = axRoot?.element ?? AXUIElementCreateApplication(pid)
         let rootPath = axRoot?.path ?? []
         var visited = Set<AXKey>()
         var matches: [Match] = []
+        let displays = WindowIdentity.displayBounds().map { $0.rect }
 
         func recurse(element: AXUIElement, depth: Int, parentPath: [AXPathComponent], ordinal: Int) {
             guard matches.count < limit, depth <= maxDepth else { return }
             guard Date() < deadline else { return }
-            // AXKey wraps CFHash + CFEqual — see its definition.
             guard visited.insert(AXKey(element: element)).inserted else { return }
-
             let attrs = AXAttributeBatch.fetch(element, includeChildren: true)
             let path = depth == 0
                 ? parentPath
@@ -771,19 +924,73 @@ actor AccessibilityController {
                     parentPath, role: attrs.role, index: ordinal, identifier: attrs.identifier,
                     title: attrs.title, subrole: attrs.subrole
                 )
-            if Self.matchesFilter(attrs: attrs, role: role, title: title, value: value, exact: exact) {
-                matches.append(Match(element: element, info: Self.elementInfo(from: attrs, depth: depth), path: path))
+            let groundingMatch: GroundingPolicy.Match? = {
+                guard let position = attrs.position, let size = attrs.size else { return nil }
+                return GroundingPolicy.match(.init(role: attrs.role, title: attrs.rawTitle ?? attrs.title,
+                    value: attrs.value, description: attrs.description,
+                    bounds: CGRect(origin: position, size: size)), target: target, displays: displays)
+            }()
+            if let groundingMatch {
+                matches.append(Match(element: element, info: Self.elementInfo(from: attrs, depth: depth),
+                                     path: path, groundingMatch: groundingMatch))
                 if matches.count >= limit { return }
             }
-
             for (childOrdinal, child) in attrs.children.enumerated() {
                 recurse(element: child, depth: depth + 1, parentPath: path, ordinal: childOrdinal)
                 if matches.count >= limit { return }
             }
         }
-
         recurse(element: root, depth: 0, parentPath: rootPath, ordinal: 0)
-        return matches
+        return (matches, visited.count)
+    }
+
+    struct SearchResult {
+        let matches: [Match]
+        let nodesVisited: Int
+        let stoppedEarly: Bool
+        let truncated: Bool
+    }
+
+    func findElementsWithStats(
+        pid: pid_t, root: WalkRoot? = nil, role: String?, title: String?, value: String?,
+        exact: Bool = false, maxDepth: Int = AXDepth.default, limit: Int = 100, semantic: String? = nil,
+        interactiveOnly: Bool = false, viewportOnly: Bool = false, includeMenus: Bool = true
+    ) async -> SearchResult {
+        let windows = viewportOnly ? await windowFrames(pid: pid) : nil
+        return searchSnapshot(pid: pid, root: root, maxDepth: maxDepth,
+                       query: AXSearch.Query(role: role, title: title, value: value, exact: exact, semantic: semantic), limit: limit,
+                       interactiveOnly: interactiveOnly, windows: windows, includeMenus: includeMenus)
+    }
+
+    // v0.10 C5: keep traversal and its read-count evidence on one code path.
+    private func searchSnapshot(pid: pid_t, root axRoot: WalkRoot? = nil, maxDepth: Int,
+                                query: AXSearch.Query, limit: Int, regex: Bool = false,
+                                interactiveOnly: Bool = false, windows: [CGRect]? = nil,
+                                includeMenus: Bool = true) -> SearchResult {
+        let deadline = Date().addingTimeInterval(5)
+        enableManualAccessibility(pid: pid)
+        let read = readAttributesInWeb
+        let result = AXSearch.walk(root: AXKey(element: axRoot?.element ?? AXUIElementCreateApplication(pid)),
+                                   rootPath: axRoot?.path ?? [], maxDepth: maxDepth,
+                                   deadline: deadline, query: query, limit: limit, regex: regex,
+                                   includeMenus: includeMenus, eligible: { attrs in
+            // v0.10 C5: payload-ineligible hits must not consume the limit
+            // or stop the walk before their eligible descendants are read.
+            guard !interactiveOnly || AXPayload.isInteractive(role: attrs.role) else { return false }
+            guard let windows else { return true }
+            let frame = attrs.position.flatMap { point in attrs.size.map { CGRect(origin: point, size: $0) } }
+            return AXPayload.isInViewport(frame: frame, windows: windows)
+        }) { key, children, web in
+            let attrs = autoreleasepool { read(key.element, children, web) }
+            return (attrs, attrs.children.map { AXKey(element: $0) })
+        }
+        let matches = result.hits.map { hit in
+            let entry = result.entries[hit.index]
+            return Match(element: entry.element.element, info: Self.elementInfo(from: entry.attrs, depth: entry.depth),
+                         path: entry.path, matchedField: hit.field, match: hit.kind, rankReason: hit.reason)
+        }
+        return SearchResult(matches: matches, nodesVisited: result.entries.count,
+                            stoppedEarly: result.stoppedEarly, truncated: result.truncated)
     }
 
     /// v0.9 (A-13): which of `role_regex`/`title_regex`/`value_regex` was
@@ -812,66 +1019,36 @@ actor AccessibilityController {
     /// regex semantics. Invalid regex falls back to literal substring —
     /// `invalidPatterns` in the result says exactly when that happened.
     func queryElements(
-        pid: pid_t,
-        rolePattern: String?,
-        titlePattern: String?,
-        valuePattern: String?,
-        maxDepth: Int = AXDepth.default,
-        limit: Int = 200
-    ) -> (matches: [Match], invalidPatterns: [InvalidPattern]) {
+        pid: pid_t, rolePattern: String?, titlePattern: String?, valuePattern: String?,
+        maxDepth: Int = AXDepth.default, limit: Int = 200, nodeCap: Int = 2000,
+        includeMenus: Bool = false, clipRects: [CGRect] = [],
+        viewportOnly: Bool = false, interactiveOnly: Bool = false, timeBudget: TimeInterval = 1
+    ) async -> (matches: [Match], invalidPatterns: [InvalidPattern], walk: WalkResult) {
         var invalidPatterns: [InvalidPattern] = []
         let roleRegex = Self.compileRegex(rolePattern, field: "role_regex", invalid: &invalidPatterns)
         let titleRegex = Self.compileRegex(titlePattern, field: "title_regex", invalid: &invalidPatterns)
         let valueRegex = Self.compileRegex(valuePattern, field: "value_regex", invalid: &invalidPatterns)
-
-        // Inline recurse for the same reason documented in findElements:
-        // the private `walk(...)` helper's inout-visited-set + capturing-
-        // visitor + actor-isolation interaction drops most of the tree on
-        // real applications.
-        //
-        // Wall-clock deadline: 5 seconds. Broad patterns like
-        // `AXMenuItem` across a whole app can touch thousands of AX
-        // nodes; each lookup is an IPC round trip to the target process,
-        // so without a cap the query just hangs until the client
-        // disconnects. Reported in v0.2.1 testing.
-        let deadline = Date().addingTimeInterval(5.0)
-        enableManualAccessibility(pid: pid)
-        let root = AXUIElementCreateApplication(pid)
-        var visited = Set<AXKey>()
-        var matches: [Match] = []
-
-        func recurse(element: AXUIElement, depth: Int, parentPath: [AXPathComponent], ordinal: Int) {
-            guard matches.count < limit, depth <= maxDepth else { return }
-            guard Date() < deadline else { return }
-            // AXKey wraps CFHash + CFEqual — see its definition for why
-            // the pointer address is wrong here.
-            let key = AXKey(element: element)
-            guard visited.insert(key).inserted else { return }
-
-            let attrs = AXAttributeBatch.fetch(element, includeChildren: true)
-            let path = depth == 0
-                ? parentPath
-                : AXPath.appending(
-                    parentPath, role: attrs.role, index: ordinal, identifier: attrs.identifier,
-                    title: attrs.title, subrole: attrs.subrole
-                )
-            let currentRole = attrs.role ?? "AXUnknown"
-            let roleOk = Self.matches(regex: roleRegex, literal: rolePattern, candidate: currentRole)
-            let titleOk = Self.matches(regex: titleRegex, literal: titlePattern, candidate: attrs.title ?? "")
-            let valueOk = Self.matches(regex: valueRegex, literal: valuePattern, candidate: attrs.value ?? "")
-            if roleOk && titleOk && valueOk {
-                matches.append(Match(element: element, info: Self.elementInfo(from: attrs, depth: depth), path: path))
-                if matches.count >= limit { return }
+        // v0.10 B3: anchored literal matches have equal best quality, so
+        // BFS may stop at limit without exploring earlier deep subtrees.
+        let patterns = [rolePattern, titlePattern, valuePattern].compactMap { $0 }.filter { !$0.isEmpty }
+        let anchored = !patterns.isEmpty && patterns.allSatisfy(Self.isAnchoredLiteral)
+        let walk = await search(
+            pid: pid, maxDepth: maxDepth, nodeCap: nodeCap, limit: limit,
+            includeMenus: includeMenus, clipRects: clipRects, viewportOnly: viewportOnly,
+            interactiveOnly: interactiveOnly, shallowFirst: anchored, timeBudget: timeBudget, predicate: { attrs in
+                Self.matches(regex: roleRegex, literal: rolePattern, candidate: attrs.role ?? "AXUnknown")
+                    && Self.matches(regex: titleRegex, literal: titlePattern, candidate: attrs.title ?? "")
+                    && Self.matches(regex: valueRegex, literal: valuePattern, candidate: attrs.value ?? "")
             }
+        )
+        return (walk.matches, invalidPatterns, walk)
+    }
 
-            for (childOrdinal, child) in attrs.children.enumerated() {
-                recurse(element: child, depth: depth + 1, parentPath: path, ordinal: childOrdinal)
-                if matches.count >= limit { return }
-            }
-        }
-
-        recurse(element: root, depth: 0, parentPath: [], ordinal: 0)
-        return (matches, invalidPatterns)
+    nonisolated static func isAnchoredLiteral(_ pattern: String) -> Bool {
+        guard pattern.hasPrefix("^"), pattern.hasSuffix("$"), pattern.count > 2 else { return false }
+        // v0.10 B3: alternation, wildcards, escapes and lookarounds keep
+        // their regex path; only unambiguous literal equality is fast-tracked.
+        return !pattern.dropFirst().dropLast().contains { ".*+?[](){}|\\^$".contains($0) }
     }
 
     /// List every AX attribute name exposed by this element.
@@ -891,7 +1068,7 @@ actor AccessibilityController {
     /// empty result — indistinguishable from "no match for your
     /// filter" — and the agent would retry the same query forever.
     ///
-    /// Heuristic: after enableManualAccessibility(), if the root app
+    /// Heuristic: after AX preparation, if the root app
     /// element has zero AXChildren AND zero AXWindows exposed via AX,
     /// the app is effectively headless to the accessibility API. We
     /// return a hint so callers can surface "try a web alternative /
@@ -906,38 +1083,41 @@ actor AccessibilityController {
         let hint: String?
     }
 
-    func probeAXTree(pid: pid_t) -> AXTreeHealth {
-        enableManualAccessibility(pid: pid)
-        let app = AXUIElementCreateApplication(pid)
-        let children = axElementArray(of: app, attribute: kAXChildrenAttribute as CFString)
-        let windows = axElementArray(of: app, attribute: kAXWindowsAttribute as CFString)
+    func probeAXTree(pid: pid_t) async -> AXTreeHealth {
+        // v0.10 B7: health reads share the queue so they cannot observe
+        // the app before its pending AX preparation has completed.
+        await withWalkQueue(pid: pid) {
+            let app = AXUIElementCreateApplication(pid)
+            let children = AXPath.copyElements(app, kAXChildrenAttribute as String)
+            let windows = AXPath.copyElements(app, kAXWindowsAttribute as String)
 
-        if children.isEmpty && windows.isEmpty {
-            // Look up the bundle ID so we can surface an app-specific hint.
-            let bundle = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "unknown"
-            let hint: String
-            switch bundle {
-            case "ru.keepcoder.Telegram":
-                hint = "Telegram's native macOS app uses TGModernGrowing (not NSAccessibility) and exposes no AX tree. Use web.telegram.org in Chrome/Safari instead — Chromium's AX tree is fully populated."
-            default:
-                hint = "This app (\(bundle)) exposes no AX children or windows even after enabling AXManualAccessibility / AXEnhancedUserInterface. It likely does not implement NSAccessibility. Options: (a) use coord-based clicks via the `click` tool with x/y, (b) use `ocr_screen` to locate targets visually, (c) try a web alternative if one exists."
+            if children.isEmpty && windows.isEmpty {
+                // Look up the bundle ID so we can surface an app-specific hint.
+                let bundle = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "unknown"
+                let hint: String
+                switch bundle {
+                case "ru.keepcoder.Telegram":
+                    hint = "Telegram's native macOS app uses TGModernGrowing (not NSAccessibility) and exposes no AX tree. Use web.telegram.org in Chrome/Safari instead — Chromium's AX tree is fully populated."
+                default:
+                    hint = "This app (\(bundle)) exposes no AX children or windows even after enabling AXManualAccessibility / AXEnhancedUserInterface. It likely does not implement NSAccessibility. Options: (a) use coord-based clicks via the `click` tool with x/y, (b) use `ocr_screen` to locate targets visually, (c) try a web alternative if one exists."
+                }
+                return AXTreeHealth(
+                    pid: pid,
+                    hasAXTree: false,
+                    childCount: 0,
+                    windowCount: 0,
+                    hint: hint
+                )
             }
+
             return AXTreeHealth(
                 pid: pid,
-                hasAXTree: false,
-                childCount: 0,
-                windowCount: 0,
-                hint: hint
+                hasAXTree: true,
+                childCount: children.count,
+                windowCount: windows.count,
+                hint: nil
             )
         }
-
-        return AXTreeHealth(
-            pid: pid,
-            hasAXTree: true,
-            childCount: children.count,
-            windowCount: windows.count,
-            hint: nil
-        )
     }
 
     /// List every AX action name supported by this element (e.g. AXPress).
@@ -1110,10 +1290,7 @@ actor AccessibilityController {
         value: String?,
         exact: Bool = false
     ) -> Bool {
-        guard textMatches(filter: role, candidate: attrs.role ?? "AXUnknown", exact: exact) else { return false }
-        guard textMatches(filter: title, candidate: attrs.title ?? "", exact: exact) else { return false }
-        guard textMatches(filter: value, candidate: attrs.value ?? "", exact: exact) else { return false }
-        return true
+        !AXSearch.search([AXSearch.Node(attrs: attrs, parent: nil)], role: role, title: title, value: value, exact: exact).isEmpty
     }
 
     static func elementInfo(from attrs: AXAttributeBatch.Values, depth: Int?) -> ElementInfo {
@@ -1123,7 +1300,8 @@ actor AccessibilityController {
             value: attrs.value,
             position: attrs.position.map { Point(x: Double($0.x), y: Double($0.y)) },
             size: attrs.size.map { Size(width: Double($0.width), height: Double($0.height)) },
-            depth: depth
+            depth: depth,
+            web: attrs.web
         )
     }
 
@@ -1175,44 +1353,6 @@ actor AccessibilityController {
             role: cachedRole, title: info.title, value: info.value,
             position: info.position, size: info.size, depth: info.depth
         )
-    }
-
-    @discardableResult
-    // Legacy helper retained only for `listElements` (v0.1 code path).
-    // Uses CFHash(element) for cycle detection — see findElements for the
-    // detailed rationale. Core Foundation recycles freed CFRef pointers,
-    // so a pointer-keyed visited set silently drops most of a real app's
-    // AX tree once elements get released and their addresses reused.
-    private func walk(
-        element: AXUIElement,
-        depth: Int,
-        maxDepth: Int,
-        visited: inout Set<AXKey>,
-        deadline: Date,
-        nodeCap: Int = 5000,
-        visitor: (AXUIElement, Int, AXAttributeBatch.Values) -> Bool
-    ) -> Bool {
-        guard depth <= maxDepth else { return false }
-        // Wall-clock + node-count budget. Each AX attribute read is an IPC
-        // round trip; a wide tree (thousands of nodes) would otherwise let
-        // list_elements hang the server until the client gives up. Returning
-        // `true` unwinds the recursion. Matches treeWalk/findElements' budget.
-        guard Date() < deadline, visited.count < nodeCap else { return true }
-
-        guard visited.insert(AXKey(element: element)).inserted else { return false }
-
-        let attrs = AXAttributeBatch.fetch(element, includeChildren: depth < maxDepth)
-        if visitor(element, depth, attrs) {
-            return true
-        }
-
-        for child in attrs.children {
-            if walk(element: child, depth: depth + 1, maxDepth: maxDepth, visited: &visited, deadline: deadline, nodeCap: nodeCap, visitor: visitor) {
-                return true
-            }
-        }
-
-        return false
     }
 
     // BUG-FIX v0.2.6 #4: Modern web apps (React/Angular/Shadcn) label

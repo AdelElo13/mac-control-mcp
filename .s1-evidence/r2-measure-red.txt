@@ -1,0 +1,22 @@
+test_measure_accepts_warmed_static_text_reference (__main__.ChromeProbeTests.test_measure_accepts_warmed_static_text_reference) ... ERROR
+test_persistent_probe_accepts_static_text_child_after_warmup (__main__.ChromeProbeTests.test_persistent_probe_accepts_static_text_child_after_warmup) ... ok
+test_persistent_probe_rejects_unrelated_child_id (__main__.ChromeProbeTests.test_persistent_probe_rejects_unrelated_child_id) ... ok
+test_stock_probe_accepts_static_text_children_after_warmup (__main__.ChromeProbeTests.test_stock_probe_accepts_static_text_children_after_warmup) ... ok
+test_stock_probe_rejects_unrelated_child_id (__main__.ChromeProbeTests.test_stock_probe_rejects_unrelated_child_id) ... ok
+test_stock_probe_rejects_unstable_child (__main__.ChromeProbeTests.test_stock_probe_rejects_unstable_child) ... ok
+
+======================================================================
+ERROR: test_measure_accepts_warmed_static_text_reference (__main__.ChromeProbeTests.test_measure_accepts_warmed_static_text_reference)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/.s1-evidence/r2-probe-tests.py", line 129, in test_measure_accepts_warmed_static_text_reference
+    namespace['measure'](7, 42)
+  File "session.py", line 256, in measure
+  File "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/.s1-evidence/r2-probe-tests.py", line 69, in require
+    raise RuntimeError(message)
+RuntimeError: benchmark point no longer hits a Chrome link
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.015s
+
+FAILED (errors=1)

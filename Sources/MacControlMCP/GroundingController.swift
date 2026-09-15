@@ -53,6 +53,9 @@ actor GroundingController {
         /// ran (or was not asked for). Lets a caller tell "AX found
         /// nothing" from "AX was never consulted".
         let axSkippedReason: String?
+        var nodesVisited: Int = 0
+        var timingsMS: [String: Double] = [:]
+        var truncated: Bool = false
     }
 
     struct Candidate: Codable, Sendable {
@@ -64,6 +67,12 @@ actor GroundingController {
         let elementId: String?
         let source: String               // "ax" | "ocr"
         let confidence: Double
+        var matchedField: String? = nil
+
+        enum CodingKeys: String, CodingKey {
+            case role, title, x, y, bounds, elementId, source, confidence
+            case matchedField = "matched_field"
+        }
     }
 
     /// Default AX depth ceiling — the project-wide `AXDepth.default`
@@ -189,11 +198,16 @@ actor GroundingController {
     private let accessibility: AccessibilityController
     private let screen: ScreenController
     private let elementCache: ElementCache?
+    // v0.10 B4: keep display IPC at the boundary so shallow/full-pass
+    // selection can be verified without a live desktop.
+    private let readDisplayBounds: @Sendable () -> [WindowIdentity.DisplayBounds]
 
-    init(accessibility: AccessibilityController, screen: ScreenController, elementCache: ElementCache? = nil) {
+    init(accessibility: AccessibilityController, screen: ScreenController, elementCache: ElementCache? = nil,
+         readDisplayBounds: @escaping @Sendable () -> [WindowIdentity.DisplayBounds] = WindowIdentity.displayBounds) {
         self.accessibility = accessibility
         self.screen = screen
         self.elementCache = elementCache
+        self.readDisplayBounds = readDisplayBounds
     }
 
     /// Find coordinates to click for `target` text. `strategy`:
@@ -206,10 +220,12 @@ actor GroundingController {
         pid rawPID: pid_t,
         strategy: Strategy = .auto,
         maxDepth: Int? = nil,
-        window: WindowScope? = nil
+        window: WindowScope? = nil,
+        includeMenus: Bool = false
     ) async -> GroundResult {
         let pid = window?.pid ?? rawPID
         let depth = Self.resolveMaxDepth(maxDepth)
+        var walk = AccessibilityController.WalkResult()
 
         // Codex r2 #2: a window scope with no attributable AXWindow means
         // the AX strategy cannot keep its promise, so it does not run at
@@ -236,7 +252,9 @@ actor GroundingController {
                     windowID: window.windowID, ownerName: window.ownerName
                 ),
                 errorCode: axSkippedReason,
-                axSkippedReason: axSkippedReason
+                axSkippedReason: axSkippedReason,
+                nodesVisited: walk.nodesVisited, timingsMS: walk.timingsMS,
+                truncated: walk.nodeCapReached || walk.timedOut
             )
         }
 
@@ -259,65 +277,36 @@ actor GroundingController {
             } else {
                 walkRoot = nil
             }
-            let results = await accessibility.findElements(
-                pid: pid,
-                root: walkRoot,
-                role: nil,
-                title: target,
-                value: nil,
-                maxDepth: depth,
-                limit: 20
+            let displayList = readDisplayBounds()
+            let displays = displayList.map { $0.rect }
+            // v0.10 merge (S2 + S3): one breadth-first walk on the shared
+            // engine; the grounding POLICY (title / value / description,
+            // size and display sanity, honest confidence) is the predicate,
+            // and an exact, usable label stops the search early (B4).
+            let policyMatch: @Sendable (AXAttributeBatch.Values) -> GroundingPolicy.Match? = { attrs in
+                guard let position = attrs.position, let size = attrs.size else { return nil }
+                return GroundingPolicy.match(.init(role: attrs.role, title: attrs.rawTitle ?? attrs.title,
+                    value: attrs.value, description: attrs.description,
+                    bounds: CGRect(origin: position, size: size)), target: target, displays: displays)
+            }
+            let result = await accessibility.search(
+                pid: pid, root: walkRoot, maxDepth: depth, limit: 20,
+                includeMenus: includeMenus, shallowFirst: true,
+                stopOnBest: { policyMatch($0)?.confidence == 1 },
+                predicate: { policyMatch($0) != nil }
             )
-            // v0.7.1 fix (BUG 5): filter off-screen AX candidates. macOS
-            // parks hidden menu items at (0, screen_height) with size
-            // (0,0) — those are technically "AX-matched" but cannot be
-            // clicked.
-            //
-            // v0.9 (C-14): the visible universe is the UNION of every
-            // attached display, not the main display. The old filter
-            // dropped any candidate with `x > mainWidth * 2`, i.e. most of
-            // a third display and all of a large secondary one, and
-            // measured the parked-menu-item signature against the main
-            // display's height only. `parkedHeights` keeps that signature
-            // check per display.
-            let displayList = WindowIdentity.displayBounds()
-            let visibleBounds = WindowIdentity.unionBounds(of: displayList)
-                ?? CGDisplayBounds(CGMainDisplayID())
-            let parkedHeights: [Double] = displayList.isEmpty
-                ? [Double(CGDisplayBounds(CGMainDisplayID()).height)]
-                : WindowIdentity.bottomEdges(of: displayList)
-            var survivors: [AccessibilityController.Match] = []
-            for match in results {
-                let info = match.info
-                guard let pos = info.position, let size = info.size else { continue }
-
-                // Filter: AXApplication is a container, not a clickable
-                // target. Clicking the app root is meaningless.
-                if info.role == "AXApplication" { continue }
-
-                // Filter: zero-size elements are off-screen / hidden.
-                if size.width < 1 || size.height < 1 { continue }
-
-                // Filter: parked-off-screen default (x≈0, y≈bottom edge of
-                // some display). The classic "hidden menu item" signature.
-                if abs(pos.x) < 1, parkedHeights.contains(where: { abs(pos.y - $0) < 1 }) {
-                    continue
-                }
-
-                let frame = CGRect(x: pos.x, y: pos.y, width: size.width, height: size.height)
-
-                // Filter: not on ANY display (C-14 — was: not on the main
-                // display, which discarded every element of a window on a
-                // secondary monitor).
-                guard frame.intersects(visibleBounds) else { continue }
-
-                // v0.9 (C-2): when a window_id scopes the call, only
-                // elements inside that window's frame count. Without this a
-                // pid-wide AX search would still return a match from the
-                // app's OTHER window.
-                if let window, !WindowIdentity.rect(frame, isWithin: window.bounds) { continue }
-
-                survivors.append(match)
+            walk = result
+            let results = result.matches.map { match -> AccessibilityController.Match in
+                var scored = match
+                scored.groundingMatch = match.attrs.flatMap(policyMatch)
+                return scored
+            }
+            let survivors = results.filter { match in
+                guard match.groundingMatch != nil else { return false }
+                guard let window else { return true }
+                guard let pos = match.info.position, let size = match.info.size else { return false }
+                return WindowIdentity.rect(CGRect(x: pos.x, y: pos.y, width: size.width, height: size.height),
+                                           isWithin: window.bounds)
             }
 
             // Element ids for every surviving AX match, in ONE cache hop,
@@ -335,24 +324,25 @@ actor GroundingController {
                 guard let pos = info.position, let size = info.size else { continue }
                 let centerX = pos.x + size.width / 2
                 let centerY = pos.y + size.height / 2
-                let titleLower = info.title?.lowercased() ?? ""
-                let exact = titleLower == target.lowercased()
-                let conf = exact ? 1.0 : 0.8
+                guard let match = survivor.groundingMatch else { continue }
                 axCandidates.append(.init(
                     role: info.role,
-                    title: info.title,
+                    title: match.label,
                     x: centerX, y: centerY,
                     bounds: Bounds(x: pos.x, y: pos.y, width: size.width, height: size.height),
                     elementId: ids[index],
                     source: "ax",
-                    confidence: conf
+                    confidence: match.confidence,
+                    matchedField: match.field
                 ))
             }
         }
 
-        // Happy path: exactly one AX hit, or a clear winner with the rest weak.
-        if strategy == .ax || (strategy == .auto && axCandidates.count == 1) {
-            if let best = axCandidates.max(by: { $0.confidence < $1.confidence }) {
+        axCandidates = GroundingPolicy.ranked(axCandidates)
+
+        // v0.10 B5 review: return a ranked exact or strictly leading AX match without OCR.
+        if strategy == .ax || (strategy == .auto && GroundingPolicy.prefersAX(axCandidates)) {
+            if let best = axCandidates.first {
                 return GroundResult(
                     ok: true,
                     strategyUsed: "ax",
@@ -364,7 +354,9 @@ actor GroundingController {
                     candidates: axCandidates,
                     error: nil,
                     errorCode: nil,
-                    axSkippedReason: axSkippedReason
+                    axSkippedReason: axSkippedReason,
+                nodesVisited: walk.nodesVisited, timingsMS: walk.timingsMS,
+                truncated: walk.nodeCapReached || walk.timedOut
                 )
             }
             if strategy == .ax {
@@ -375,7 +367,9 @@ actor GroundingController {
                     candidates: [],
                     error: "no AX match at depth \(depth)",
                     errorCode: "not_found",
-                    axSkippedReason: axSkippedReason
+                    axSkippedReason: axSkippedReason,
+                nodesVisited: walk.nodesVisited, timingsMS: walk.timingsMS,
+                truncated: walk.nodeCapReached || walk.timedOut
                 )
             }
         }
@@ -386,7 +380,7 @@ actor GroundingController {
         var ocrFailure: (message: String, code: String)?
         if wantsOCR {
             do {
-                ocrCandidates = try await ocrLookup(target: target, pid: pid, window: window)
+                ocrCandidates = try await ocrLookup(target: target, pid: pid, window: window, anchors: axCandidates)
             } catch {
                 ocrFailure = (
                     "OCR capture of pid \(pid)'s window failed: \(error)",
@@ -396,8 +390,8 @@ actor GroundingController {
         }
 
         // Merge and rank
-        let all = axCandidates + ocrCandidates
-        if let best = all.max(by: { $0.confidence < $1.confidence }) {
+        let all = GroundingPolicy.ranked(axCandidates + ocrCandidates)
+        if let best = all.first {
             return GroundResult(
                 ok: true,
                 strategyUsed: best.source,
@@ -409,7 +403,9 @@ actor GroundingController {
                 candidates: all,
                 error: nil,
                 errorCode: nil,
-                axSkippedReason: axSkippedReason
+                axSkippedReason: axSkippedReason,
+                nodesVisited: walk.nodesVisited, timingsMS: walk.timingsMS,
+                truncated: walk.nodeCapReached || walk.timedOut
             )
         }
 
@@ -424,7 +420,9 @@ actor GroundingController {
                 candidates: [],
                 error: ocrFailure.message,
                 errorCode: ocrFailure.code,
-                axSkippedReason: axSkippedReason
+                axSkippedReason: axSkippedReason,
+                nodesVisited: walk.nodesVisited, timingsMS: walk.timingsMS,
+                truncated: walk.nodeCapReached || walk.timedOut
             )
         }
 
@@ -435,7 +433,9 @@ actor GroundingController {
             candidates: [],
             error: "no grounding candidate from \(strategy.rawValue)",
             errorCode: "not_found",
-            axSkippedReason: axSkippedReason
+            axSkippedReason: axSkippedReason,
+                nodesVisited: walk.nodesVisited, timingsMS: walk.timingsMS,
+                truncated: walk.nodeCapReached || walk.timedOut
         )
     }
 
@@ -504,19 +504,26 @@ actor GroundingController {
     /// purpose: OCR'ing the main display for an occluded window returns
     /// the text of whatever is on top of it, which is how A-1 produced
     /// confident labels belonging to a different application.
-    private func ocrLookup(target: String, pid: pid_t, window: WindowScope? = nil) async throws -> [Candidate] {
+    private func ocrLookup(target: String, pid: pid_t, window: WindowScope? = nil, anchors: [Candidate]) async throws -> [Candidate] {
         // With a window_id the exact window is captured; without one the
         // app's best window is picked by the existing heuristic.
         let (capture, result) = window == nil
-            ? try await screen.ocrWindow(ownerPID: pid)
-            : try await screen.ocrWindow(selected: window!.selected)
+            ? try await screen.ocrGroundingWindow(ownerPID: pid, target: target)
+            : try await screen.ocrGroundingWindow(ownerPID: pid, selected: window!.selected, target: target)
+        return try Self.ocrCandidates(capture: capture, result: result, target: target,
+                                      anchors: anchors, displays: WindowIdentity.displayBounds().map { $0.rect })
+    }
+
+    static func ocrCandidates(capture: ScreenController.CaptureResult, result: ScreenController.OCRResult,
+                              target: String, anchors: [Candidate], displays: [CGRect]) throws -> [Candidate] {
         guard let windowBounds = capture.pointBounds, windowBounds.width > 0, windowBounds.height > 0 else {
             throw ScreenController.ScreenError.captureFailed
         }
-        let needle = target.lowercased()
+        let needle = GroundingPolicy.normalize(target)
+        let strongAnchors = anchors.filter { $0.confidence >= 0.8 }
         var out: [Candidate] = []
         for block in result.blocks {
-            let text = block.text.lowercased()
+            let text = GroundingPolicy.normalize(block.text)
             let exact = text == needle
             let contains = text.contains(needle)
             if !exact && !contains { continue }
@@ -530,6 +537,12 @@ actor GroundingController {
                                               points: Double(windowBounds.width))
             let heightPt = Self.pixelsToPoints(block.height, pixels: capture.height,
                                                points: Double(windowBounds.height))
+            // v0.10 A5/B5: apply the same visible-target policy before either
+            // scoring or deciding whether fast OCR can suppress accurate OCR.
+            let frame = CGRect(x: center.x - widthPt / 2, y: center.y - heightPt / 2,
+                               width: widthPt, height: heightPt)
+            guard GroundingPolicy.match(.init(role: nil, title: block.text, value: nil,
+                description: nil, bounds: frame), target: target, displays: displays) != nil else { continue }
             out.append(.init(
                 role: nil,
                 title: block.text,
@@ -538,10 +551,26 @@ actor GroundingController {
                                width: widthPt, height: heightPt),
                 elementId: nil,
                 source: "ocr",
-                confidence: exact ? 0.9 : (contains ? 0.6 : 0.3)
+                confidence: GroundingPolicy.ocrConfidence(text: block.text, target: target,
+                    recognition: Double(block.confidence), distance: strongAnchors
+                        .map { hypot($0.x - center.x, $0.y - center.y) }.min()),
+                matchedField: "ocr"
             ))
         }
-        return out
+        // v0.10 A5: OCR-only substring matches also lose confidence when
+        // they disagree spatially with an exact OCR label.
+        let exacts = out.filter { GroundingPolicy.normalize($0.title ?? "") == needle }
+        if strongAnchors.isEmpty, !exacts.isEmpty {
+            out = out.map { candidate in
+                guard GroundingPolicy.normalize(candidate.title ?? "") != needle else { return candidate }
+                let distance = exacts.map { hypot($0.x - candidate.x, $0.y - candidate.y) }.min()
+                return Candidate(role: candidate.role, title: candidate.title, x: candidate.x, y: candidate.y,
+                    bounds: candidate.bounds, elementId: candidate.elementId, source: candidate.source,
+                    confidence: GroundingPolicy.ocrConfidence(text: candidate.title ?? "", target: target,
+                        recognition: candidate.confidence, distance: distance), matchedField: "ocr")
+            }
+        }
+        return GroundingPolicy.ranked(out)
     }
 
     // MARK: - B2: ax_tree_augmented (single-pass OCR + geometric join)

@@ -1,0 +1,511 @@
+warning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 's3-baseline-source': failed storing manifest for 's3-baseline-source' in cache: attempt to write a readonly database
+warning: 's3-baseline-source': found 1 file(s) which are unhandled; explicitly declare them as resources or exclude from the target
+    /private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/Resources/well-known-mcp.json
+Building for debugging...
+[0/6] Write sources
+[1/6] Write mac-control-mcp-entitlement.plist
+[2/6] Write swift-version--58304C5D6DBC2206.txt
+[4/85] Compiling MacControlMCP Tools+V2Phase8.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/Tools.swift:848:27: warning: no 'async' operations occur within 'await' expression
+ 846 |             }
+ 847 | 
+ 848 |             let pressed = await accessibility.pressKey(keyCode: keyCode, modifiers: modifiers)
+     |                           `- warning: no 'async' operations occur within 'await' expression
+ 849 |             if pressed {
+ 850 |                 return successResult(
+[5/85] Compiling MacControlMCP Tools+V2Phase9.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/Tools.swift:848:27: warning: no 'async' operations occur within 'await' expression
+ 846 |             }
+ 847 | 
+ 848 |             let pressed = await accessibility.pressKey(keyCode: keyCode, modifiers: modifiers)
+     |                           `- warning: no 'async' operations occur within 'await' expression
+ 849 |             if pressed {
+ 850 |                 return successResult(
+[6/85] Compiling MacControlMCP Tools+WindowTarget.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/Tools.swift:848:27: warning: no 'async' operations occur within 'await' expression
+ 846 |             }
+ 847 | 
+ 848 |             let pressed = await accessibility.pressKey(keyCode: keyCode, modifiers: modifiers)
+     |                           `- warning: no 'async' operations occur within 'await' expression
+ 849 |             if pressed {
+ 850 |                 return successResult(
+[7/85] Compiling MacControlMCP Tools.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/Tools.swift:848:27: warning: no 'async' operations occur within 'await' expression
+ 846 |             }
+ 847 | 
+ 848 |             let pressed = await accessibility.pressKey(keyCode: keyCode, modifiers: modifiers)
+     |                           `- warning: no 'async' operations occur within 'await' expression
+ 849 |             if pressed {
+ 850 |                 return successResult(
+[8/85] Compiling MacControlMCP UndoController.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/Tools.swift:848:27: warning: no 'async' operations occur within 'await' expression
+ 846 |             }
+ 847 | 
+ 848 |             let pressed = await accessibility.pressKey(keyCode: keyCode, modifiers: modifiers)
+     |                           `- warning: no 'async' operations occur within 'await' expression
+ 849 |             if pressed {
+ 850 |                 return successResult(
+[9/85] Compiling MacControlMCP DisplayController.swift
+[10/85] Compiling MacControlMCP DockController.swift
+[11/85] Compiling MacControlMCP ElementCache.swift
+[12/85] Compiling MacControlMCP FileDialogController.swift
+[13/85] Compiling MacControlMCP FinderController.swift
+[14/85] Compiling MacControlMCP FocusGuard.swift
+[15/90] Compiling MacControlMCP PermissionContext.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/PermissionContext.swift:79:16: warning: 'init(cString:)' is deprecated: Use String(decoding: array, as: UTF8.self) instead, after truncating the null termination. [#DeprecatedDeclaration]
+ 77 |         let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+ 78 |         guard length > 0 else { return nil }
+ 79 |         return String(cString: buffer)
+    |                `- warning: 'init(cString:)' is deprecated: Use String(decoding: array, as: UTF8.self) instead, after truncating the null termination. [#DeprecatedDeclaration]
+ 80 |     }
+ 81 | 
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[16/90] Compiling MacControlMCP PermissionTiers.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/PermissionContext.swift:79:16: warning: 'init(cString:)' is deprecated: Use String(decoding: array, as: UTF8.self) instead, after truncating the null termination. [#DeprecatedDeclaration]
+ 77 |         let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+ 78 |         guard length > 0 else { return nil }
+ 79 |         return String(cString: buffer)
+    |                `- warning: 'init(cString:)' is deprecated: Use String(decoding: array, as: UTF8.self) instead, after truncating the null termination. [#DeprecatedDeclaration]
+ 80 |     }
+ 81 | 
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[17/90] Compiling MacControlMCP PowerController.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/PermissionContext.swift:79:16: warning: 'init(cString:)' is deprecated: Use String(decoding: array, as: UTF8.self) instead, after truncating the null termination. [#DeprecatedDeclaration]
+ 77 |         let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+ 78 |         guard length > 0 else { return nil }
+ 79 |         return String(cString: buffer)
+    |                `- warning: 'init(cString:)' is deprecated: Use String(decoding: array, as: UTF8.self) instead, after truncating the null termination. [#DeprecatedDeclaration]
+ 80 |     }
+ 81 | 
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[18/90] Compiling MacControlMCP ProcessRunner.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/PermissionContext.swift:79:16: warning: 'init(cString:)' is deprecated: Use String(decoding: array, as: UTF8.self) instead, after truncating the null termination. [#DeprecatedDeclaration]
+ 77 |         let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+ 78 |         guard length > 0 else { return nil }
+ 79 |         return String(cString: buffer)
+    |                `- warning: 'init(cString:)' is deprecated: Use String(decoding: array, as: UTF8.self) instead, after truncating the null termination. [#DeprecatedDeclaration]
+ 80 |     }
+ 81 | 
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[19/90] Compiling MacControlMCP RedactionController.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/PermissionContext.swift:79:16: warning: 'init(cString:)' is deprecated: Use String(decoding: array, as: UTF8.self) instead, after truncating the null termination. [#DeprecatedDeclaration]
+ 77 |         let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+ 78 |         guard length > 0 else { return nil }
+ 79 |         return String(cString: buffer)
+    |                `- warning: 'init(cString:)' is deprecated: Use String(decoding: array, as: UTF8.self) instead, after truncating the null termination. [#DeprecatedDeclaration]
+ 80 |     }
+ 81 | 
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[20/90] Compiling MacControlMCP ScreenAnnotator.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/PermissionContext.swift:79:16: warning: 'init(cString:)' is deprecated: Use String(decoding: array, as: UTF8.self) instead, after truncating the null termination. [#DeprecatedDeclaration]
+ 77 |         let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+ 78 |         guard length > 0 else { return nil }
+ 79 |         return String(cString: buffer)
+    |                `- warning: 'init(cString:)' is deprecated: Use String(decoding: array, as: UTF8.self) instead, after truncating the null termination. [#DeprecatedDeclaration]
+ 80 |     }
+ 81 | 
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[21/90] Compiling MacControlMCP AuditLogController.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ClipboardController.swift:291:25: warning: result of call to 'run(resultType:body:)' is unused [#no-usage]
+289 |     func clear() async {
+290 |         let name = pasteboardName
+291 |         await MainActor.run { Self.board(name).clearContents() }
+    |                         `- warning: result of call to 'run(resultType:body:)' is unused [#no-usage]
+292 |     }
+293 | 
+[22/90] Compiling MacControlMCP BlockingWorkPool.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ClipboardController.swift:291:25: warning: result of call to 'run(resultType:body:)' is unused [#no-usage]
+289 |     func clear() async {
+290 |         let name = pasteboardName
+291 |         await MainActor.run { Self.board(name).clearContents() }
+    |                         `- warning: result of call to 'run(resultType:body:)' is unused [#no-usage]
+292 |     }
+293 | 
+[23/90] Compiling MacControlMCP BrowserController.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ClipboardController.swift:291:25: warning: result of call to 'run(resultType:body:)' is unused [#no-usage]
+289 |     func clear() async {
+290 |         let name = pasteboardName
+291 |         await MainActor.run { Self.board(name).clearContents() }
+    |                         `- warning: result of call to 'run(resultType:body:)' is unused [#no-usage]
+292 |     }
+293 | 
+[24/90] Compiling MacControlMCP BrowserDOMController.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ClipboardController.swift:291:25: warning: result of call to 'run(resultType:body:)' is unused [#no-usage]
+289 |     func clear() async {
+290 |         let name = pasteboardName
+291 |         await MainActor.run { Self.board(name).clearContents() }
+    |                         `- warning: result of call to 'run(resultType:body:)' is unused [#no-usage]
+292 |     }
+293 | 
+[25/90] Compiling MacControlMCP BrowserErrorClassifier.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ClipboardController.swift:291:25: warning: result of call to 'run(resultType:body:)' is unused [#no-usage]
+289 |     func clear() async {
+290 |         let name = pasteboardName
+291 |         await MainActor.run { Self.board(name).clearContents() }
+    |                         `- warning: result of call to 'run(resultType:body:)' is unused [#no-usage]
+292 |     }
+293 | 
+[26/90] Compiling MacControlMCP ClipboardController.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ClipboardController.swift:291:25: warning: result of call to 'run(resultType:body:)' is unused [#no-usage]
+289 |     func clear() async {
+290 |         let name = pasteboardName
+291 |         await MainActor.run { Self.board(name).clearContents() }
+    |                         `- warning: result of call to 'run(resultType:body:)' is unused [#no-usage]
+292 |     }
+293 | 
+[27/90] Compiling MacControlMCP AXAttributeBatch.swift
+[28/90] Compiling MacControlMCP AXDepth.swift
+[29/90] Compiling MacControlMCP AXObserverBridge.swift
+[30/90] Compiling MacControlMCP AXPath.swift
+[31/90] Compiling MacControlMCP AXPayload.swift
+[32/90] Compiling MacControlMCP AXScopePolicy.swift
+[33/90] Compiling MacControlMCP GroundingController.swift
+[34/90] Compiling MacControlMCP HardwareController.swift
+[35/90] Compiling MacControlMCP ImageEncoding.swift
+[36/90] Compiling MacControlMCP LocationAuthorizer.swift
+[37/90] Compiling MacControlMCP MCPProtocol.swift
+[38/90] Compiling MacControlMCP MenuController.swift
+[39/90] Emitting module MacControlMCP
+[40/90] Compiling MacControlMCP AppleAppsController.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ArtifactStore.swift:154:13: warning: result of call to 'CC_SHA256' is unused [#no-usage]
+152 |         data.withUnsafeBytes { (buf: UnsafeRawBufferPointer) in
+153 |             guard let base = buf.baseAddress else { return }
+154 |             CC_SHA256(base, UInt32(data.count), &digest)
+    |             `- warning: result of call to 'CC_SHA256' is unused [#no-usage]
+155 |         }
+156 |         return digest.map { String(format: "%02x", $0) }.joined()
+[41/90] Compiling MacControlMCP AppleNativeController.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ArtifactStore.swift:154:13: warning: result of call to 'CC_SHA256' is unused [#no-usage]
+152 |         data.withUnsafeBytes { (buf: UnsafeRawBufferPointer) in
+153 |             guard let base = buf.baseAddress else { return }
+154 |             CC_SHA256(base, UInt32(data.count), &digest)
+    |             `- warning: result of call to 'CC_SHA256' is unused [#no-usage]
+155 |         }
+156 |         return digest.map { String(format: "%02x", $0) }.joined()
+[42/90] Compiling MacControlMCP AppleScriptErrorClassifier.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ArtifactStore.swift:154:13: warning: result of call to 'CC_SHA256' is unused [#no-usage]
+152 |         data.withUnsafeBytes { (buf: UnsafeRawBufferPointer) in
+153 |             guard let base = buf.baseAddress else { return }
+154 |             CC_SHA256(base, UInt32(data.count), &digest)
+    |             `- warning: result of call to 'CC_SHA256' is unused [#no-usage]
+155 |         }
+156 |         return digest.map { String(format: "%02x", $0) }.joined()
+[43/90] Compiling MacControlMCP AppleScriptString.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ArtifactStore.swift:154:13: warning: result of call to 'CC_SHA256' is unused [#no-usage]
+152 |         data.withUnsafeBytes { (buf: UnsafeRawBufferPointer) in
+153 |             guard let base = buf.baseAddress else { return }
+154 |             CC_SHA256(base, UInt32(data.count), &digest)
+    |             `- warning: result of call to 'CC_SHA256' is unused [#no-usage]
+155 |         }
+156 |         return digest.map { String(format: "%02x", $0) }.joined()
+[44/90] Compiling MacControlMCP ArtifactStore.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ArtifactStore.swift:154:13: warning: result of call to 'CC_SHA256' is unused [#no-usage]
+152 |         data.withUnsafeBytes { (buf: UnsafeRawBufferPointer) in
+153 |             guard let base = buf.baseAddress else { return }
+154 |             CC_SHA256(base, UInt32(data.count), &digest)
+    |             `- warning: result of call to 'CC_SHA256' is unused [#no-usage]
+155 |         }
+156 |         return digest.map { String(format: "%02x", $0) }.joined()
+[45/90] Compiling MacControlMCP AudioController.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ArtifactStore.swift:154:13: warning: result of call to 'CC_SHA256' is unused [#no-usage]
+152 |         data.withUnsafeBytes { (buf: UnsafeRawBufferPointer) in
+153 |             guard let base = buf.baseAddress else { return }
+154 |             CC_SHA256(base, UInt32(data.count), &digest)
+    |             `- warning: result of call to 'CC_SHA256' is unused [#no-usage]
+155 |         }
+156 |         return digest.map { String(format: "%02x", $0) }.joined()
+[46/90] Compiling MacControlMCP Tools+Annotate.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/Tools+Permissions.swift:227:19: warning: consider using asynchronous alternative function
+225 |             let store = CNContactStore()
+226 |             let keeper = ObjectKeeper(store)
+227 |             store.requestAccess(for: .contacts) { _, _ in keeper.release() }
+    |                   `- warning: consider using asynchronous alternative function
+228 |             return .triggered
+229 |             #else
+
+Contacts.CNContactStore.requestAccess:2:11: note: 'requestAccess(for:)' declared here
+1 | class CNContactStore {
+2 | open func requestAccess(for entityType: CNEntityType) async throws -> Bool}
+  |           `- note: 'requestAccess(for:)' declared here
+3 | 
+[47/90] Compiling MacControlMCP Tools+Batch.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/Tools+Permissions.swift:227:19: warning: consider using asynchronous alternative function
+225 |             let store = CNContactStore()
+226 |             let keeper = ObjectKeeper(store)
+227 |             store.requestAccess(for: .contacts) { _, _ in keeper.release() }
+    |                   `- warning: consider using asynchronous alternative function
+228 |             return .triggered
+229 |             #else
+
+Contacts.CNContactStore.requestAccess:2:11: note: 'requestAccess(for:)' declared here
+1 | class CNContactStore {
+2 | open func requestAccess(for entityType: CNEntityType) async throws -> Bool}
+  |           `- note: 'requestAccess(for:)' declared here
+3 | 
+[48/90] Compiling MacControlMCP Tools+ImageOutput.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/Tools+Permissions.swift:227:19: warning: consider using asynchronous alternative function
+225 |             let store = CNContactStore()
+226 |             let keeper = ObjectKeeper(store)
+227 |             store.requestAccess(for: .contacts) { _, _ in keeper.release() }
+    |                   `- warning: consider using asynchronous alternative function
+228 |             return .triggered
+229 |             #else
+
+Contacts.CNContactStore.requestAccess:2:11: note: 'requestAccess(for:)' declared here
+1 | class CNContactStore {
+2 | open func requestAccess(for entityType: CNEntityType) async throws -> Bool}
+  |           `- note: 'requestAccess(for:)' declared here
+3 | 
+[49/90] Compiling MacControlMCP Tools+Permissions.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/Tools+Permissions.swift:227:19: warning: consider using asynchronous alternative function
+225 |             let store = CNContactStore()
+226 |             let keeper = ObjectKeeper(store)
+227 |             store.requestAccess(for: .contacts) { _, _ in keeper.release() }
+    |                   `- warning: consider using asynchronous alternative function
+228 |             return .triggered
+229 |             #else
+
+Contacts.CNContactStore.requestAccess:2:11: note: 'requestAccess(for:)' declared here
+1 | class CNContactStore {
+2 | open func requestAccess(for entityType: CNEntityType) async throws -> Bool}
+  |           `- note: 'requestAccess(for:)' declared here
+3 | 
+[50/90] Compiling MacControlMCP Tools+TextEditing.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/Tools+Permissions.swift:227:19: warning: consider using asynchronous alternative function
+225 |             let store = CNContactStore()
+226 |             let keeper = ObjectKeeper(store)
+227 |             store.requestAccess(for: .contacts) { _, _ in keeper.release() }
+    |                   `- warning: consider using asynchronous alternative function
+228 |             return .triggered
+229 |             #else
+
+Contacts.CNContactStore.requestAccess:2:11: note: 'requestAccess(for:)' declared here
+1 | class CNContactStore {
+2 | open func requestAccess(for entityType: CNEntityType) async throws -> Bool}
+  |           `- note: 'requestAccess(for:)' declared here
+3 | 
+[51/90] Compiling MacControlMCP MissionControlController.swift
+[52/90] Compiling MacControlMCP MouseController.swift
+[53/90] Compiling MacControlMCP NotificationCenterController.swift
+[54/90] Compiling MacControlMCP OsascriptRunner.swift
+[55/90] Compiling MacControlMCP PasteboardSnapshot.swift
+[56/90] Compiling MacControlMCP PathValidator.swift
+[57/90] Compiling MacControlMCP StoreLocation.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/Subprocess.swift:55:30: warning: capture of 'store' with non-Sendable type '(Data) -> Void' in a '@Sendable' closure [#SendableClosureCaptures]
+ 53 |             ioQueue.async {
+ 54 |                 let data = handle.readDataToEndOfFile()
+ 55 |                 lock.lock(); store(data); lock.unlock()
+    |                              |- warning: capture of 'store' with non-Sendable type '(Data) -> Void' in a '@Sendable' closure [#SendableClosureCaptures]
+    |                              `- note: a function type must be marked '@Sendable' to conform to 'Sendable'
+ 56 |                 ioGroup.leave()
+ 57 |             }
+
+[#SendableClosureCaptures]: <https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures>
+[58/90] Compiling MacControlMCP Subprocess.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/Subprocess.swift:55:30: warning: capture of 'store' with non-Sendable type '(Data) -> Void' in a '@Sendable' closure [#SendableClosureCaptures]
+ 53 |             ioQueue.async {
+ 54 |                 let data = handle.readDataToEndOfFile()
+ 55 |                 lock.lock(); store(data); lock.unlock()
+    |                              |- warning: capture of 'store' with non-Sendable type '(Data) -> Void' in a '@Sendable' closure [#SendableClosureCaptures]
+    |                              `- note: a function type must be marked '@Sendable' to conform to 'Sendable'
+ 56 |                 ioGroup.leave()
+ 57 |             }
+
+[#SendableClosureCaptures]: <https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures>
+[59/90] Compiling MacControlMCP SystemController.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/Subprocess.swift:55:30: warning: capture of 'store' with non-Sendable type '(Data) -> Void' in a '@Sendable' closure [#SendableClosureCaptures]
+ 53 |             ioQueue.async {
+ 54 |                 let data = handle.readDataToEndOfFile()
+ 55 |                 lock.lock(); store(data); lock.unlock()
+    |                              |- warning: capture of 'store' with non-Sendable type '(Data) -> Void' in a '@Sendable' closure [#SendableClosureCaptures]
+    |                              `- note: a function type must be marked '@Sendable' to conform to 'Sendable'
+ 56 |                 ioGroup.leave()
+ 57 |             }
+
+[#SendableClosureCaptures]: <https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures>
+[60/90] Compiling MacControlMCP SystemInfoController.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/Subprocess.swift:55:30: warning: capture of 'store' with non-Sendable type '(Data) -> Void' in a '@Sendable' closure [#SendableClosureCaptures]
+ 53 |             ioQueue.async {
+ 54 |                 let data = handle.readDataToEndOfFile()
+ 55 |                 lock.lock(); store(data); lock.unlock()
+    |                              |- warning: capture of 'store' with non-Sendable type '(Data) -> Void' in a '@Sendable' closure [#SendableClosureCaptures]
+    |                              `- note: a function type must be marked '@Sendable' to conform to 'Sendable'
+ 56 |                 ioGroup.leave()
+ 57 |             }
+
+[#SendableClosureCaptures]: <https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures>
+[61/90] Compiling MacControlMCP TextEditingController.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/Subprocess.swift:55:30: warning: capture of 'store' with non-Sendable type '(Data) -> Void' in a '@Sendable' closure [#SendableClosureCaptures]
+ 53 |             ioQueue.async {
+ 54 |                 let data = handle.readDataToEndOfFile()
+ 55 |                 lock.lock(); store(data); lock.unlock()
+    |                              |- warning: capture of 'store' with non-Sendable type '(Data) -> Void' in a '@Sendable' closure [#SendableClosureCaptures]
+    |                              `- note: a function type must be marked '@Sendable' to conform to 'Sendable'
+ 56 |                 ioGroup.leave()
+ 57 |             }
+
+[#SendableClosureCaptures]: <https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures>
+[62/90] Compiling MacControlMCP Tools+V0_9AXCore.swift
+[63/90] Compiling MacControlMCP Tools+V2.swift
+[64/90] Compiling MacControlMCP Tools+V2Phase10.swift
+[65/90] Compiling MacControlMCP Tools+V2Phase11.swift
+[66/90] Compiling MacControlMCP Tools+V2Phase2.swift
+[67/90] Compiling MacControlMCP AXSnapshotController.swift
+[68/90] Compiling MacControlMCP AXTextBackend.swift
+[69/90] Compiling MacControlMCP AXWindowID.swift
+[70/90] Compiling MacControlMCP AccessibilityController.swift
+[71/90] Compiling MacControlMCP AgentMemoryController.swift
+[72/90] Compiling MacControlMCP AppLifecycleController.swift
+[73/90] Compiling MacControlMCP Tools+V2Phase3.swift
+[74/90] Compiling MacControlMCP Tools+V2Phase4.swift
+[75/90] Compiling MacControlMCP Tools+V2Phase5.swift
+[76/90] Compiling MacControlMCP Tools+V2Phase6.swift
+[77/90] Compiling MacControlMCP Tools+V2Phase7.swift
+[78/90] Compiling MacControlMCP ScreenCaptureKitBridge.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ScreenController.swift:619:24: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+617 |         // When this works it gives us the window even if occluded. Returns
+618 |         // nil on macOS 15+ in many cases — that's why SCK is Strategy 1.
+619 |         if let image = CGWindowListCreateImage(
+    |                        `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+620 |             .null,
+621 |             .optionIncludingWindow,
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ScreenController.swift:640:27: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+638 |         }
+639 | 
+640 |         guard let image = CGWindowListCreateImage(
+    |                           `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+641 |             bounds,
+642 |             .optionOnScreenOnly,
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ScreenController.swift:766:27: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+764 |     private func regionImage(_ region: CaptureRegion) throws -> CGImage {
+765 |         let rect = CGRect(x: region.x, y: region.y, width: region.width, height: region.height)
+766 |         guard let image = CGWindowListCreateImage(
+    |                           `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+767 |             rect,
+768 |             .optionOnScreenOnly,
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[79/90] Compiling MacControlMCP ScreenController.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ScreenController.swift:619:24: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+617 |         // When this works it gives us the window even if occluded. Returns
+618 |         // nil on macOS 15+ in many cases — that's why SCK is Strategy 1.
+619 |         if let image = CGWindowListCreateImage(
+    |                        `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+620 |             .null,
+621 |             .optionIncludingWindow,
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ScreenController.swift:640:27: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+638 |         }
+639 | 
+640 |         guard let image = CGWindowListCreateImage(
+    |                           `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+641 |             bounds,
+642 |             .optionOnScreenOnly,
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ScreenController.swift:766:27: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+764 |     private func regionImage(_ region: CaptureRegion) throws -> CGImage {
+765 |         let rect = CGRect(x: region.x, y: region.y, width: region.width, height: region.height)
+766 |         guard let image = CGWindowListCreateImage(
+    |                           `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+767 |             rect,
+768 |             .optionOnScreenOnly,
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[80/90] Compiling MacControlMCP ServerLifecycle.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ScreenController.swift:619:24: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+617 |         // When this works it gives us the window even if occluded. Returns
+618 |         // nil on macOS 15+ in many cases — that's why SCK is Strategy 1.
+619 |         if let image = CGWindowListCreateImage(
+    |                        `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+620 |             .null,
+621 |             .optionIncludingWindow,
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ScreenController.swift:640:27: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+638 |         }
+639 | 
+640 |         guard let image = CGWindowListCreateImage(
+    |                           `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+641 |             bounds,
+642 |             .optionOnScreenOnly,
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ScreenController.swift:766:27: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+764 |     private func regionImage(_ region: CaptureRegion) throws -> CGImage {
+765 |         let rect = CGRect(x: region.x, y: region.y, width: region.width, height: region.height)
+766 |         guard let image = CGWindowListCreateImage(
+    |                           `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+767 |             rect,
+768 |             .optionOnScreenOnly,
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[81/90] Compiling MacControlMCP ShortcutsController.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ScreenController.swift:619:24: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+617 |         // When this works it gives us the window even if occluded. Returns
+618 |         // nil on macOS 15+ in many cases — that's why SCK is Strategy 1.
+619 |         if let image = CGWindowListCreateImage(
+    |                        `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+620 |             .null,
+621 |             .optionIncludingWindow,
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ScreenController.swift:640:27: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+638 |         }
+639 | 
+640 |         guard let image = CGWindowListCreateImage(
+    |                           `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+641 |             bounds,
+642 |             .optionOnScreenOnly,
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ScreenController.swift:766:27: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+764 |     private func regionImage(_ region: CaptureRegion) throws -> CGImage {
+765 |         let rect = CGRect(x: region.x, y: region.y, width: region.width, height: region.height)
+766 |         guard let image = CGWindowListCreateImage(
+    |                           `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+767 |             rect,
+768 |             .optionOnScreenOnly,
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[82/90] Compiling MacControlMCP SpotlightController.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ScreenController.swift:619:24: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+617 |         // When this works it gives us the window even if occluded. Returns
+618 |         // nil on macOS 15+ in many cases — that's why SCK is Strategy 1.
+619 |         if let image = CGWindowListCreateImage(
+    |                        `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+620 |             .null,
+621 |             .optionIncludingWindow,
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ScreenController.swift:640:27: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+638 |         }
+639 | 
+640 |         guard let image = CGWindowListCreateImage(
+    |                           `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+641 |             bounds,
+642 |             .optionOnScreenOnly,
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/s3-baseline-source/Sources/MacControlMCP/ScreenController.swift:766:27: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+764 |     private func regionImage(_ region: CaptureRegion) throws -> CGImage {
+765 |         let rect = CGRect(x: region.x, y: region.y, width: region.width, height: region.height)
+766 |         guard let image = CGWindowListCreateImage(
+    |                           `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+767 |             rect,
+768 |             .optionOnScreenOnly,
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[83/90] Compiling MacControlMCP VoiceController.swift
+[84/90] Compiling MacControlMCP WindowController.swift
+[85/90] Compiling MacControlMCP WindowIdentity.swift
+[86/90] Compiling MacControlMCP WindowTargeting.swift
+[87/90] Compiling MacControlMCP main.swift
+[87/90] Write Objects.LinkFileList
+[88/90] Linking mac-control-mcp
+[89/90] Applying mac-control-mcp
+Build complete! (18.38s)

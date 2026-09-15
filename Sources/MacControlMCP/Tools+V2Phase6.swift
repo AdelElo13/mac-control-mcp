@@ -300,13 +300,13 @@ extension ToolRegistry {
         var pid: pid_t = 0
         var element: AXUIElement
         if let elementId = arguments["element_id"]?.stringValue, !elementId.isEmpty {
-            guard case .resolved(let resolved) = await elementCache.resolveLive(elementId) else {
-                return errorResult(
-                    "element_id '\(elementId)' not found or expired.",
-                    ["ok": .bool(false), "reason": .string("element_not_found")]
-                )
+            // v0.10 A2: preserve cache diagnostics at every id consumer.
+            switch await elementCache.resolveLive(elementId) {
+            case .resolved(let resolved): element = resolved
+            case .unknown: return unknownElementResult(elementId)
+            case .evicted(let hint): return evictedElementResult(elementId, hint: hint)
+            case .stale(let reason): return staleElementResult(elementId, reason: reason)
             }
-            element = resolved
             pid = await elementCache.pid(for: elementId) ?? 0
         } else {
             guard let parsedPid = parsePID(arguments["pid"]) else {

@@ -1,0 +1,53 @@
+initialize: 317 ms, serverInfo={'version': '0.9.0', 'name': 'mac-control-mcp'}
+--- list_apps {} -> 1 ms
+{
+ "ok": true,
+ "apps": [],
+ "count": 0
+}
+--- list_windows {} -> 4 ms
+{
+ "windows": [],
+ "count": 0,
+ "ok": true
+}
+--- permissions_status {} -> 4 ms
+{
+ "location": "info_plist_missing",
+ "screen_recording": "not_granted",
+ "reminders": "info_plist_missing",
+ "responsible_is_self": false,
+ "missing": [
+  "accessibility",
+  "screen_recording",
+  "calendar",
+  "reminders",
+  "contacts",
+  "location",
+  "microphone"
+ ],
+ "hint": "For each item in 'missing', call request_permissions (categories=[...]) to trigger the prompt, or open_permission_pane pane=<item> and enable 'claude'. Grants belong to the responsible app 'claude', not to mac-control-mcp alone — launching the server from another client changes which app needs them.",
+ "ok": true,
+ "server": {
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/.build/debug",
+  "pid": 60457,
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/.build/arm64-apple-macosx/debug/mac-control-mcp"
+ },
+ "calendar": "info_plist_missing",
+ "responsible_app": {
+  "name": "claude",
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "pid": 71183,
+  "bundle_id": "com.anthropic.claude-code"
+ },
+ "contacts": "info_plist_missing",
+ "prompt_blocked_by_missing_entitlement": [],
+ "accessibility": "not_granted",
+ "microphone": "info_plist_missing",
+ "launched_by": [
+  "python3.12",
+  "codex",
+  "node",
+  "node"
+ ]
+}

@@ -1,0 +1,739 @@
+initialize: 26 ms, serverInfo={'version': '0.9.0', 'name': 'mac-control-mcp'}
+--- permissions_status {} -> 15 ms
+{
+ "calendar": "info_plist_missing",
+ "screen_recording": "granted",
+ "contacts": "info_plist_missing",
+ "launched_by": [
+  "python3.12",
+  "zsh",
+  "claude",
+  "Claude"
+ ],
+ "microphone": "info_plist_missing",
+ "accessibility": "granted",
+ "hint": "For each item in 'missing', call request_permissions (categories=[...]) to trigger the prompt, or open_permission_pane pane=<item> and enable 'claude'. Grants belong to the responsible app 'claude', not to mac-control-mcp alone — launching the server from another client changes which app needs them.",
+ "prompt_blocked_by_missing_entitlement": [],
+ "location": "info_plist_missing",
+ "reminders": "info_plist_missing",
+ "server": {
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/.build/arm64-apple-macosx/debug/mac-control-mcp",
+  "pid": 50673,
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/.build/debug"
+ },
+ "missing": [
+  "calendar",
+  "reminders",
+  "contacts",
+  "location",
+  "microphone"
+ ],
+ "responsible_app": {
+  "bundle_id": "com.anthropic.claude-code",
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "name": "claude",
+  "pid": 71183
+ },
+ "ok": true,
+ "responsible_is_self": false
+}
+--- list_apps {} -> 14 ms
+{
+ "count": 29,
+ "apps": [
+  {
+   "bundleIdentifier": "com.bambulab.bambu-studio",
+   "pid": 17229,
+   "isActive": false,
+   "name": "Bambu Studio"
+  },
+  {
+   "bundleIdentifier": "com.bambulab.bambu-studio",
+   "pid": 17926,
+   "isActive": false,
+   "name": "Bambu Studio"
+  },
+  {
+   "bundleIdentifier": "com.bambulab.bambu-studio",
+   "pid": 19207,
+   "isActive": false,
+   "name": "Bambu Studio"
+  },
+  {
+   "bundleIdentifier": "com.bambulab.bambu-studio",
+   "pid": 21760,
+   "isActive": false,
+   "name": "Bambu Studio"
+  },
+  {
+   "bundleIdentifier": "com.bambulab.bambu-studio",
+   "pid": 28050,
+   "isActive": false,
+   "name": "Bambu Studio"
+  },
+  {
+   "bundleIdentifier": "org.blenderfoundation.blender",
+   "pid": 86006,
+   "isActive": false,
+   "name": "Blender"
+  },
+  {
+   "bundleIdentifier": "com.openai.codex",
+   "pid": 29546,
+   "isActive": false,
+   "name": "ChatGPT"
+  },
+  {
+   "bundleIdentifier": "com.anthropic.claudefordesktop",
+   "pid": 68593,
+   "isActive": false,
+   "name": "Claude"
+  },
+  {
+   "pid": 65205,
+   "isActive": false,
+   "name": "ControlZoo"
+  },
+  {
+   "bundleIdentifier": "com.apple.finder",
+   "pid": 742,
+   "isActive": false,
+   "name": "Finder"
+  },
+  {
+   "bundleIdentifier": "org.gimp.gimp",
+   "pid": 83707,
+   "isActive": false,
+   "name": "GIMP"
+  },
+  {
+   "bundleIdentifier": "com.google.Chrome.app.genakdkcdebdibfmnganjdpkpcodfjak",
+   "pid": 88957,
+   "isActive": false,
+   "name": "Gemini"
+  },
+  {
+   "bundleIdentifier": "com.google.Chrome",
+   "pid": 41308,
+   "isActive": false,
+   "name": "Google Chrome"
+  },
+  {
+   "bundleIdentifier": "com.apple.mail",
+   "pid": 51164,
+   "isActive": false,
+   "name": "Mail"
+  },
+  {
+   "bundleIdentifier": "com.apple.MobileSMS",
+   "pid": 83081,
+   "isActive": false,
+   "name": "Messages"
+  },
+  {
+   "bundleIdentifier": "com.microsoft.Outlook",
+   "pid": 3057,
+   "isActive": false,
+   "name": "Microsoft Outlook"
+  },
+  {
+   "bundleIdentifier": "com.apple.Music",
+   "pid": 733,
+   "isActive": false,
+   "name": "Music"
+  },
+  {
+   "bundleIdentifier": "com.nordvpn.macos",
+   "pid": 724,
+   "isActive": false,
+   "name": "NordVPN"
+  },
+  {
+   "bundleIdentifier": "com.apple.Notes",
+   "pid": 81526,
+   "isActive": false,
+   "name": "Notes"
+  },
+  {
+   "bundleIdentifier": "com.apple.iWork.Numbers",
+   "pid": 20944,
+   "isActive": false,
+   "name": "Numbers"
+  },
+  {
+   "bundleIdentifier": "com.operasoftware.Opera",
+   "pid": 16082,
+   "isActive": false,
+   "name": "Opera"
+  },
+  {
+   "bundleIdentifier": "com.apple.Preview",
+   "pid": 730,
+   "isActive": false,
+   "name": "Preview"
+  },
+  {
+   "bundleIdentifier": "com.apple.reminders",
+   "pid": 62468,
+   "isActive": false,
+   "name": "Reminders"
+  },
+  {
+   "bundleIdentifier": "com.apple.Safari",
+   "pid": 681,
+   "isActive": false,
+   "name": "Safari"
+  },
+  {
+   "bundleIdentifier": "com.snapmaker.snapmaker-orca",
+   "pid": 92800,
+   "isActive": false,
+   "name": "Snapmaker Orca"
+  },
+  {
+   "bundleIdentifier": "com.apple.systempreferences",
+   "pid": 76246,
+   "isActive": false,
+   "name": "System Settings"
+  },
+  {
+   "bundleIdentifier": "com.apple.Terminal",
+   "pid": 52822,
+   "isActive": false,
+   "name": "Terminal"
+  },
+  {
+   "bundleIdentifier": "com.apple.TextEdit",
+   "pid": 14281,
+   "isActive": true,
+   "name": "TextEdit"
+  },
+  {
+   "bundleIdentifier": "com.uaudio.uad-meter",
+   "pid": 61039,
+   "isActive": false,
+   "name": "UAD Meter & Control Panel"
+  }
+ ],
+ "ok": true
+}
+--- list_windows {} -> 142 ms
+{
+ "count": 33,
+ "windows": [
+  {
+   "window_id": 31769,
+   "minimized": false,
+   "display_index": 0,
+   "title": "https://news.ycombinator.com/submit",
+   "x": 0,
+   "app": "Safari",
+   "is_focused": false,
+   "width": 1800,
+   "height": 1056,
+   "main": true,
+   "pid": 681,
+   "index": 0,
+   "y": 39,
+   "z_order": 4
+  },
+  {
+   "minimized": true,
+   "window_id": 47,
+   "display_index": 0,
+   "title": "",
+   "x": 0,
+   "app": "NordVPN",
+   "is_focused": false,
+   "width": 500,
+   "height": 500,
+   "main": true,
+   "pid": 724,
+   "index": 0,
+   "y": 669
+  },
+  {
+   "minimized": true,
+   "window_id": 42,
+   "display_index": 0,
+   "title": "",
+   "x": 450,
+   "app": "NordVPN",
+   "is_focused": false,
+   "width": 900,
+   "height": 702,
+   "main": false,
+   "pid": 724,
+   "index": 1,
+   "y": 128
+  },
+  {
+   "window_id": 49,
+   "minimized": true,
+   "display_index": 0,
+   "title": "Music",
+   "x": 410,
+   "app": "Music",
+   "is_focused": false,
+   "width": 980,
+   "height": 600,
+   "main": true,
+   "pid": 733,
+   "index": 0,
+   "y": 158
+  },
+  {
+   "window_id": 31954,
+   "minimized": false,
+   "display_index": 0,
+   "title": "Downloads",
+   "x": 0,
+   "app": "Finder",
+   "width": 1800,
+   "is_focused": false,
+   "height": 1060,
+   "main": true,
+   "pid": 742,
+   "index": 0,
+   "y": 39,
+   "z_order": 1
+  },
+  {
+   "window_id": 31302,
+   "minimized": false,
+   "display_index": 0,
+   "width": 1540,
+   "x": 31,
+   "app": "Finder",
+   "is_focused": false,
+   "title": "a",
+   "height": 1060,
+   "main": false,
+   "pid": 742,
+   "index": 1,
+   "y": 39,
+   "z_order": 6
+  },
+  {
+   "height": 1169,
+   "pid": 742,
+   "y": 0,
+   "index": 2,
+   "x": 0,
+   "app": "Finder",
+   "minimized": false,
+   "is_focused": false,
+   "display_index": 0,
+   "main": false,
+   "title": "",
+   "width": 1800
+  },
+  {
+   "minimized": true,
+   "window_id": 2106,
+   "display_index": 0,
+   "title": "[Untitled]-15.0 (RGB color 8-bit non-linear integer, GIMP built-in sRGB, 1 layer) 1920x1080 – GIMP",
+   "x": 26,
+   "app": "GIMP",
+   "is_focused": false,
+   "width": 1686,
+   "height": 853,
+   "main": false,
+   "pid": 83707,
+   "index": 0,
+   "y": 154
+  },
+  {
+   "minimized": true,
+   "window_id": 3161,
+   "display_index": 0,
+   "width": 500,
+   "x": 0,
+   "app": "Microsoft Outlook",
+   "is_focused": false,
+   "title": "",
+   "height": 500,
+   "main": true,
+   "pid": 3057,
+   "index": 0,
+   "y": 669
+  },
+  {
+   "minimized": true,
+   "window_id": 16560,
+   "display_index": 0,
+   "width": 923,
+   "x": 509,
+   "app": "Notes",
+   "is_focused": false,
+   "title": "All iCloud",
+   "height": 883,
+   "main": true,
+   "pid": 81526,
+   "index": 0,
+   "y": 89
+  },
+  {
+   "minimized": true,
+   "window_id": 16558,
+   "display_index": 0,
+   "title": "",
+   "x": 0,
+   "app": "Notes",
+   "is_focused": false,
+   "width": 500,
+   "height": 500,
+   "main": false,
+   "pid": 81526,
+   "index": 1,
+   "y": 669
+  },
+  {
+   "window_id": 16599,
+   "minimized": true,
+   "display_index": 0,
+   "width": 1800,
+   "x": 0,
+   "app": "Blender",
+   "title": "* Untitled - Blender 5.2.0 LTS",
+   "is_focused": false,
+   "height": 1057,
+   "main": false,
+   "pid": 86006,
+   "index": 0,
+   "y": 39
+  },
+  {
+   "window_id": 29665,
+   "minimized": false,
+   "display_index": 0,
+   "title": "New Links | Hacker News - Part of group ✅Neuromcp - Google Chrome - John (Persoon 1)",
+   "width": 1200,
+   "app": "Google Chrome",
+   "x": 585,
+   "is_focused": false,
+   "height": 1024,
+   "main": true,
+   "pid": 41308,
+   "index": 0,
+   "y": 87,
+   "z_order": 15
+  },
+  {
+   "window_id": 21356,
+   "minimized": true,
+   "display_index": 0,
+   "title": "",
+   "x": 0,
+   "app": "Mail",
+   "is_focused": false,
+   "width": 500,
+   "height": 500,
+   "main": true,
+   "pid": 51164,
+   "index": 0,
+   "y": 669
+  },
+  {
+   "window_id": 25057,
+   "minimized": true,
+   "display_index": 0,
+   "title": "",
+   "x": 0,
+   "app": "Messages",
+   "is_focused": false,
+   "width": 500,
+   "height": 500,
+   "main": true,
+   "pid": 83081,
+   "index": 0,
+   "y": 669
+  },
+  {
+   "minimized": true,
+   "window_id": 25176,
+   "display_index": 0,
+   "title": "",
+   "x": 112,
+   "app": "Gemini",
+   "is_focused": false,
+   "width": 1386,
+   "height": 1056,
+   "main": false,
+   "pid": 88957,
+   "index": 0,
+   "y": 39
+  },
+  {
+   "minimized": true,
+   "window_id": 27280,
+   "display_index": 0,
+   "title": "",
+   "x": 0,
+   "app": "Opera",
+   "is_focused": false,
+   "width": 64,
+   "height": 64,
+   "main": true,
+   "pid": 16082,
+   "index": 0,
+   "y": 669
+  },
+  {
+   "window_id": 29448,
+   "minimized": false,
+   "display_index": 0,
+   "width": 344,
+   "x": 728,
+   "app": "UAD Meter & Control Panel",
+   "is_focused": false,
+   "title": "UAD Meter",
+   "height": 72,
+   "main": true,
+   "pid": 61039,
+   "index": 0,
+   "y": 535,
+   "z_order": 16
+  },
+  {
+   "minimized": false,
+   "window_id": 29675,
+   "display_index": 0,
+   "title": "Claude",
+   "x": 0,
+   "app": "Claude",
+   "width": 1800,
+   "is_focused": false,
+   "height": 1072,
+   "main": true,
+   "pid": 68593,
+   "index": 0,
+   "y": 39,
+   "z_order": 14
+  },
+  {
+   "minimized": false,
+   "window_id": 29678,
+   "display_index": 0,
+   "width": 900,
+   "x": 500,
+   "app": "Claude",
+   "is_focused": false,
+   "title": "Changes",
+   "height": 700,
+   "main": false,
+   "pid": 68593,
+   "index": 1,
+   "y": 273,
+   "z_order": 13
+  },
+  {
+   "window_id": 29712,
+   "minimized": false,
+   "display_index": 0,
+   "width": 723,
+   "x": 439,
+   "title": "Users & Groups",
+   "is_focused": false,
+   "app": "System Settings",
+   "height": 625,
+   "main": true,
+   "pid": 76246,
+   "index": 0,
+   "y": 261,
+   "z_order": 12
+  },
+  {
+   "minimized": false,
+   "window_id": 31899,
+   "display_index": 0,
+   "title": "mac-control-mcp — -zsh — 80×24",
+   "x": 58,
+   "app": "Terminal",
+   "is_focused": false,
+   "width": 500,
+   "height": 421,
+   "main": true,
+   "pid": 52822,
+   "index": 0,
+   "y": 126,
+   "z_order": 18
+  },
+  {
+   "minimized": false,
+   "window_id": 31866,
+   "display_index": 0,
+   "title": "mac-control-mcp — -zsh — 80×24",
+   "x": 29,
+   "app": "Terminal",
+   "is_focused": false,
+   "width": 500,
+   "height": 421,
+   "main": false,
+   "pid": 52822,
+   "index": 1,
+   "y": 97,
+   "z_order": 2
+  },
+  {
+   "window_id": 29900,
+   "minimized": false,
+   "display_index": 0,
+   "title": "Reminders",
+   "x": 237,
+   "app": "Reminders",
+   "is_focused": false,
+   "width": 768,
+   "height": 647,
+   "main": true,
+   "pid": 62468,
+   "index": 0,
+   "y": 314
+  },
+  {
+   "window_id": 30468,
+   "minimized": false,
+   "display_index": 0,
+   "width": 1800,
+   "x": 0,
+   "app": "Bambu Studio",
+   "is_focused": false,
+   "title": "* kleine dabbox dreambros TRAY-EDITIE COOL LOGO-ORIGINEEL [koelelement VonBueren mini 8x7.5x1.5cm] GLADDE-PLAAT-TEST X2D-PLA ORIGINEEL-MATEN OOG-DIKKER-v3 BAKJE-35.5",
+   "height": 1060,
+   "main": true,
+   "pid": 17229,
+   "index": 0,
+   "y": 39,
+   "z_order": 11
+  },
+  {
+   "window_id": 30657,
+   "minimized": false,
+   "display_index": 0,
+   "title": "* kleine dabbox dreambros TRAY-EDITIE COOL LOGO-ORIGINEEL [koelelement VonBueren mini 8x7.5x1.5cm] H2D-PLA ORIGINEEL-MATEN OOG-DIKKER-v3 BAKJE-35.5",
+   "x": 0,
+   "app": "Bambu Studio",
+   "is_focused": false,
+   "width": 1658,
+   "height": 1060,
+   "main": true,
+   "pid": 17926,
+   "index": 0,
+   "y": 39,
+   "z_order": 9
+  },
+  {
+   "minimized": false,
+   "window_id": 30813,
+   "display_index": 0,
+   "width": 1658,
+   "x": 0,
+   "app": "Bambu Studio",
+   "is_focused": false,
+   "title": "* kleine dabbox dreambros TRAY-EDITIE COOL LOGO-ORIGINEEL [koelelement VonBueren mini 8x7.5x1.5cm] X2D-PLA ORIGINEEL-MATEN OOG-DIKKER-v3 BAKJE-35.5",
+   "height": 1060,
+   "main": true,
+   "pid": 19207,
+   "index": 0,
+   "y": 39,
+   "z_order": 8
+  },
+  {
+   "minimized": false,
+   "window_id": 31007,
+   "display_index": 0,
+   "width": 1658,
+   "x": 0,
+   "app": "Bambu Studio",
+   "title": "* kleine dabbox dreambros TRAY-EDITIE COOL LOGO-ORIGINEEL [koelelement VonBueren mini 8x7.5x1.5cm] GLADDE-PLAAT-TEST P2S-PLA ORIGINEEL-MATEN OOG-DIKKER-v3 BAKJE-35.5",
+   "is_focused": false,
+   "height": 1060,
+   "main": true,
+   "pid": 21760,
+   "index": 0,
+   "y": 39,
+   "z_order": 7
+  },
+  {
+   "minimized": false,
+   "window_id": 31315,
+   "display_index": 0,
+   "title": "CanCooler-BambuStudio",
+   "width": 1658,
+   "x": 0,
+   "is_focused": false,
+   "app": "Bambu Studio",
+   "height": 1060,
+   "main": true,
+   "pid": 28050,
+   "index": 0,
+   "y": 39,
+   "z_order": 5
+  },
+  {
+   "window_id": 31479,
+   "minimized": false,
+   "display_index": 0,
+   "title": "ChatGPT",
+   "x": 63,
+   "app": "ChatGPT",
+   "is_focused": false,
+   "width": 862,
+   "height": 1055,
+   "main": true,
+   "pid": 29546,
+   "index": 0,
+   "y": 39,
+   "z_order": 17
+  },
+  {
+   "window_id": 31783,
+   "minimized": false,
+   "display_index": 0,
+   "title": "ControlZoo",
+   "x": 540,
+   "app": "ControlZoo",
+   "width": 720,
+   "is_focused": false,
+   "height": 752,
+   "main": true,
+   "pid": 65205,
+   "index": 0,
+   "y": 119,
+   "z_order": 3
+  },
+  {
+   "window_id": 32101,
+   "minimized": false,
+   "display_index": 0,
+   "title": "*kleine dabbox dreambros TRAY-EDITIE COOL LOGO-ORIGINEEL [koelelement VonBueren mini 8x7.5x1.5cm] GLADDE-PLAAT-TEST U1-PLA ORIGINEEL-MATEN OOG-DIKKER-v3 BAKJE-35.5 LOGO-5-LAGEN",
+   "x": 300,
+   "app": "Snapmaker Orca",
+   "is_focused": false,
+   "width": 1200,
+   "height": 963,
+   "main": true,
+   "pid": 92800,
+   "index": 0,
+   "y": 133,
+   "z_order": 10
+  },
+  {
+   "window_id": 32548,
+   "minimized": false,
+   "display_index": 0,
+   "title": "Untitled 2",
+   "width": 586,
+   "app": "TextEdit",
+   "is_focused": true,
+   "x": 195,
+   "height": 488,
+   "main": true,
+   "pid": 14281,
+   "index": 0,
+   "y": 92,
+   "z_order": 0
+  }
+ ],
+ "ok": true
+}

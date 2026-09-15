@@ -1,0 +1,222 @@
+[
+  [
+    "list_apps",
+    {}
+  ],
+  [
+    "list_windows",
+    {}
+  ],
+  [
+    "permissions_status",
+    {}
+  ],
+  [
+    "ground",
+    {
+      "pid": 7018,
+      "target": "Untitled",
+      "strategy": "ax"
+    }
+  ],
+  [
+    "ground",
+    {
+      "pid": 7018,
+      "target": "Untitled",
+      "strategy": "ocr"
+    }
+  ],
+  [
+    "ground",
+    {
+      "pid": 7018,
+      "target": "Untitled",
+      "strategy": "auto"
+    }
+  ],
+  [
+    "ground",
+    {
+      "pid": 681,
+      "target": "Skip to content",
+      "strategy": "ax"
+    }
+  ],
+  [
+    "ground",
+    {
+      "pid": 681,
+      "target": "Skip to content",
+      "strategy": "ocr"
+    }
+  ],
+  [
+    "ground",
+    {
+      "pid": 681,
+      "target": "Skip to content",
+      "strategy": "auto"
+    }
+  ],
+  [
+    "ground",
+    {
+      "pid": 41308,
+      "target": "Skip to content",
+      "strategy": "ax"
+    }
+  ],
+  [
+    "ground",
+    {
+      "pid": 41308,
+      "target": "Skip to content",
+      "strategy": "ocr"
+    }
+  ],
+  [
+    "ground",
+    {
+      "pid": 41308,
+      "target": "Skip to content",
+      "strategy": "auto"
+    }
+  ],
+  [
+    "ground",
+    {
+      "pid": 742,
+      "target": "Shared",
+      "strategy": "ax"
+    }
+  ],
+  [
+    "ground",
+    {
+      "pid": 742,
+      "target": "Shared",
+      "strategy": "ocr"
+    }
+  ],
+  [
+    "ground",
+    {
+      "pid": 742,
+      "target": "Shared",
+      "strategy": "auto"
+    }
+  ],
+  [
+    "ground",
+    {
+      "pid": 742,
+      "target": "Recents",
+      "strategy": "ax"
+    }
+  ],
+  [
+    "ground",
+    {
+      "pid": 742,
+      "target": "Recents",
+      "strategy": "ocr"
+    }
+  ],
+  [
+    "ground",
+    {
+      "pid": 742,
+      "target": "Recents",
+      "strategy": "auto"
+    }
+  ],
+  [
+    "ground",
+    {
+      "pid": 76246,
+      "target": "Add User…",
+      "strategy": "ax"
+    }
+  ],
+  [
+    "ground",
+    {
+      "pid": 76246,
+      "target": "Add User…",
+      "strategy": "ocr"
+    }
+  ],
+  [
+    "ground",
+    {
+      "pid": 76246,
+      "target": "Add User…",
+      "strategy": "auto"
+    }
+  ],
+  [
+    "ground",
+    {
+      "pid": 76246,
+      "target": "account",
+      "strategy": "ax"
+    }
+  ],
+  [
+    "ground",
+    {
+      "pid": 76246,
+      "target": "account",
+      "strategy": "ocr"
+    }
+  ],
+  [
+    "ground",
+    {
+      "pid": 76246,
+      "target": "account",
+      "strategy": "auto"
+    }
+  ],
+  [
+    "browser_dom_tree",
+    {
+      "browser": "Safari"
+    }
+  ],
+  [
+    "browser_dom_tree",
+    {
+      "browser": "Chrome"
+    }
+  ],
+  [
+    "capture_annotated",
+    {
+      "pid": 742
+    }
+  ],
+  [
+    "element_at_point",
+    {
+      "pid": 742,
+      "x": 100,
+      "y": 200
+    }
+  ],
+  [
+    "capture_annotated",
+    {
+      "pid": 76246
+    }
+  ],
+  [
+    "element_at_point",
+    {
+      "pid": 76246,
+      "x": 100,
+      "y": 200
+    }
+  ]
+]

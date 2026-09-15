@@ -1,0 +1,105 @@
+initialize: 310 ms, serverInfo={'version': '0.9.0', 'name': 'mac-control-mcp'}
+--- permissions_status {} -> 5 ms
+{
+ "accessibility": "not_granted",
+ "ok": true,
+ "prompt_blocked_by_missing_entitlement": [],
+ "missing": [
+  "accessibility",
+  "screen_recording",
+  "calendar",
+  "reminders",
+  "contacts",
+  "location",
+  "microphone"
+ ],
+ "hint": "For each item in 'missing', call request_permissions (categories=[...]) to trigger the prompt, or open_permission_pane pane=<item> and enable 'claude'. Grants belong to the responsible app 'claude', not to mac-control-mcp alone — launching the server from another client changes which app needs them.",
+ "reminders": "info_plist_missing",
+ "responsible_is_self": false,
+ "microphone": "info_plist_missing",
+ "contacts": "info_plist_missing",
+ "server": {
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/debug",
+  "pid": 35884,
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/arm64-apple-macosx/debug/mac-control-mcp"
+ },
+ "responsible_app": {
+  "name": "claude",
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "pid": 71183,
+  "bundle_id": "com.anthropic.claude-code"
+ },
+ "location": "info_plist_missing",
+ "screen_recording": "not_granted",
+ "calendar": "info_plist_missing",
+ "launched_by": [
+  "python3.12",
+  "codex",
+  "node",
+  "node"
+ ]
+}
+--- ground {"pid": 742, "window_id": 31954, "target": "Downloads", "strategy": "ocr"} -> 3 ms
+{
+ "error_code": "no_such_window",
+ "hint": "Call list_windows and use a window_id from its output — the window may have been closed, or the id may belong to a different session.",
+ "ok": false,
+ "window_id": 31954
+}
+--- ground {"pid": 742, "window_id": 31954, "target": "Downloads", "strategy": "auto"} -> 0 ms
+{
+ "hint": "Call list_windows and use a window_id from its output — the window may have been closed, or the id may belong to a different session.",
+ "window_id": 31954,
+ "error_code": "no_such_window",
+ "ok": false
+}
+--- element_at_point {"pid": 76246, "x": 656, "y": 859} -> 0 ms
+{
+ "responsible_is_self": false,
+ "error_code": "permission_missing",
+ "launched_by": [
+  "python3.12",
+  "codex",
+  "node",
+  "node"
+ ],
+ "pane": "accessibility",
+ "server": {
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/arm64-apple-macosx/debug/mac-control-mcp",
+  "pid": 35884,
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/debug"
+ },
+ "responsible_app": {
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "pid": 71183,
+  "name": "claude",
+  "bundle_id": "com.anthropic.claude-code"
+ },
+ "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry.",
+ "ok": false
+}
+--- element_at_point {"pid": 76246, "x": 656, "y": 483.5} -> 0 ms
+{
+ "responsible_is_self": false,
+ "error_code": "permission_missing",
+ "launched_by": [
+  "python3.12",
+  "codex",
+  "node",
+  "node"
+ ],
+ "pane": "accessibility",
+ "server": {
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/debug",
+  "pid": 35884,
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/arm64-apple-macosx/debug/mac-control-mcp"
+ },
+ "responsible_app": {
+  "pid": 71183,
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "name": "claude",
+  "bundle_id": "com.anthropic.claude-code"
+ },
+ "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry.",
+ "ok": false
+}

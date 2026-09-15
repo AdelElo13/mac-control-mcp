@@ -1,0 +1,49 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ids': failed storing manifest for 'wt10-ids' in cache: attempt to write a readonly database
+Building for debugging...
+[0/4] Write swift-version--58304C5D6DBC2206.txt
+Build complete! (0.09s)
+Test Suite 'Selected tests' started at 2026-09-15 19:38:49.622.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 19:38:49.627.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 19:38:49.627.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 19:38:49.627.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.006) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "AX handle safety (C-5 review)" started.
+◇ Test "identifier wins when the recorded path has one" started.
+✔ Test "identifier wins when the recorded path has one" passed after 0.001 seconds.
+◇ Test "without an identifier, title AND subrole must both match" started.
+✔ Test "without an identifier, title AND subrole must both match" passed after 0.001 seconds.
+◇ Test "a titleless, identifierless control still matches its exact twin shape" started.
+✔ Test "a titleless, identifierless control still matches its exact twin shape" passed after 0.001 seconds.
+◇ Test "inserting a sibling does NOT hand the ordinal's new occupant back" started.
+✔ Test "inserting a sibling does NOT hand the ordinal's new occupant back" passed after 0.001 seconds.
+◇ Test "ordinal alone is never enough — a same-role neighbour is refused" started.
+✔ Test "ordinal alone is never enough — a same-role neighbour is refused" passed after 0.001 seconds.
+◇ Test "an ambiguous fingerprint is refused rather than guessed" started.
+✔ Test "an ambiguous fingerprint is refused rather than guessed" passed after 0.001 seconds.
+◇ Test "fingerprint repair succeeds when the identifier is present and the ordinal drifted" started.
+✔ Test "fingerprint repair succeeds when the identifier is present and the ordinal drifted" passed after 0.001 seconds.
+◇ Test "fingerprint fields do not change the element id" started.
+✔ Test "fingerprint fields do not change the element id" passed after 0.001 seconds.
+◇ Test "process identity distinguishes a recycled pid" started.
+✔ Test "process identity distinguishes a recycled pid" passed after 0.001 seconds.
+◇ Test "a live process reports a stable, non-nil identity" started.
+✔ Test "a live process reports a stable, non-nil identity" passed after 0.001 seconds.
+◇ Test "resolveLive refuses an entry whose process identity changed" started.
+✔ Test "resolveLive refuses an entry whose process identity changed" passed after 0.001 seconds.
+◇ Test "resolveLive still returns a live element for an intact entry" started.
+✔ Test "resolveLive still returns a live element for an intact entry" passed after 0.001 seconds.
+◇ Test "an unknown id is 'unknown', not 'stale'" started.
+✔ Test "an unknown id is 'unknown', not 'stale'" passed after 0.001 seconds.
+◇ Test "tools report stale_element and unknown_element_id distinctly" started.
+✔ Test "tools report stale_element and unknown_element_id distinctly" passed after 0.001 seconds.
+◇ Test "a max_bytes-truncated tree has no child index past the end" started.
+✔ Test "a max_bytes-truncated tree has no child index past the end" passed after 0.001 seconds.
+✔ Suite "AX handle safety (C-5 review)" passed after 0.003 seconds.
+✔ Test run with 15 tests in 1 suite passed after 0.004 seconds.

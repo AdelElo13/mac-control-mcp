@@ -1,0 +1,194 @@
+[
+  {
+    "tool": "element_at_point",
+    "args": {
+      "pid": 742,
+      "x": 1444.5,
+      "y": 105
+    },
+    "ms": 3,
+    "ok": false,
+    "role": null,
+    "error_code": "permission_missing"
+  },
+  {
+    "tool": "element_at_point",
+    "args": {
+      "pid": 742,
+      "x": 1550.5,
+      "y": 105
+    },
+    "ms": 0,
+    "ok": false,
+    "role": null,
+    "error_code": "permission_missing"
+  },
+  {
+    "tool": "element_at_point",
+    "args": {
+      "pid": 742,
+      "x": 1444.5,
+      "y": 105
+    },
+    "ms": 0,
+    "ok": false,
+    "role": null,
+    "error_code": "permission_missing"
+  },
+  {
+    "tool": "element_at_point",
+    "args": {
+      "pid": 742,
+      "x": 1550.5,
+      "y": 105
+    },
+    "ms": 0,
+    "ok": false,
+    "role": null,
+    "error_code": "permission_missing"
+  },
+  {
+    "tool": "element_at_point",
+    "args": {
+      "pid": 742,
+      "x": 1444.5,
+      "y": 105
+    },
+    "ms": 0,
+    "ok": false,
+    "role": null,
+    "error_code": "permission_missing"
+  },
+  {
+    "tool": "element_at_point",
+    "args": {
+      "pid": 742,
+      "x": 1550.5,
+      "y": 105
+    },
+    "ms": 0,
+    "ok": false,
+    "role": null,
+    "error_code": "permission_missing"
+  },
+  {
+    "tool": "element_at_point",
+    "args": {
+      "pid": 742,
+      "x": 1444.5,
+      "y": 105
+    },
+    "ms": 0,
+    "ok": false,
+    "role": null,
+    "error_code": "permission_missing"
+  },
+  {
+    "tool": "element_at_point",
+    "args": {
+      "pid": 742,
+      "x": 1550.5,
+      "y": 105
+    },
+    "ms": 0,
+    "ok": false,
+    "role": null,
+    "error_code": "permission_missing"
+  },
+  {
+    "tool": "element_at_point",
+    "args": {
+      "pid": 742,
+      "x": 1444.5,
+      "y": 105
+    },
+    "ms": 0,
+    "ok": false,
+    "role": null,
+    "error_code": "permission_missing"
+  },
+  {
+    "tool": "element_at_point",
+    "args": {
+      "pid": 742,
+      "x": 1550.5,
+      "y": 105
+    },
+    "ms": 0,
+    "ok": false,
+    "role": null,
+    "error_code": "permission_missing"
+  },
+  {
+    "tool": "element_at_point",
+    "args": {
+      "pid": 742,
+      "x": 1444.5,
+      "y": 105
+    },
+    "ms": 0,
+    "ok": false,
+    "role": null,
+    "error_code": "permission_missing"
+  },
+  {
+    "tool": "element_at_point",
+    "args": {
+      "pid": 742,
+      "x": 1550.5,
+      "y": 105
+    },
+    "ms": 0,
+    "ok": false,
+    "role": null,
+    "error_code": "permission_missing"
+  },
+  {
+    "tool": "element_at_point",
+    "args": {
+      "pid": 742,
+      "x": 1444.5,
+      "y": 105
+    },
+    "ms": 0,
+    "ok": false,
+    "role": null,
+    "error_code": "permission_missing"
+  },
+  {
+    "tool": "element_at_point",
+    "args": {
+      "pid": 742,
+      "x": 1550.5,
+      "y": 105
+    },
+    "ms": 0,
+    "ok": false,
+    "role": null,
+    "error_code": "permission_missing"
+  },
+  {
+    "tool": "element_at_point",
+    "args": {
+      "pid": 742,
+      "x": 1444.5,
+      "y": 105
+    },
+    "ms": 0,
+    "ok": false,
+    "role": null,
+    "error_code": "permission_missing"
+  },
+  {
+    "tool": "element_at_point",
+    "args": {
+      "pid": 742,
+      "x": 1550.5,
+      "y": 105
+    },
+    "ms": 0,
+    "ok": false,
+    "role": null,
+    "error_code": "permission_missing"
+  }
+]

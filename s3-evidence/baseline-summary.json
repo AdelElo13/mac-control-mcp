@@ -1,0 +1,372 @@
+[
+  {
+    "tool": "list_apps",
+    "args": {},
+    "ms": 1,
+    "ok": true,
+    "error_code": null,
+    "count": 0,
+    "matched_field": null
+  },
+  {
+    "tool": "list_windows",
+    "args": {},
+    "ms": 3,
+    "ok": true,
+    "error_code": null,
+    "count": 0,
+    "matched_field": null
+  },
+  {
+    "tool": "permissions_status",
+    "args": {},
+    "ms": 3,
+    "ok": true,
+    "error_code": null,
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "ground",
+    "args": {
+      "pid": 7018,
+      "target": "Untitled",
+      "strategy": "ax"
+    },
+    "ms": 1,
+    "ok": false,
+    "error_code": "not_found",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "ground",
+    "args": {
+      "pid": 7018,
+      "target": "Untitled",
+      "strategy": "ocr"
+    },
+    "ms": 0,
+    "ok": false,
+    "error_code": "capture_failed",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "ground",
+    "args": {
+      "pid": 7018,
+      "target": "Untitled",
+      "strategy": "auto"
+    },
+    "ms": 1,
+    "ok": false,
+    "error_code": "capture_failed",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "ground",
+    "args": {
+      "pid": 681,
+      "target": "Skip to content",
+      "strategy": "ax"
+    },
+    "ms": 1,
+    "ok": false,
+    "error_code": "not_found",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "ground",
+    "args": {
+      "pid": 681,
+      "target": "Skip to content",
+      "strategy": "ocr"
+    },
+    "ms": 0,
+    "ok": false,
+    "error_code": "capture_failed",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "ground",
+    "args": {
+      "pid": 681,
+      "target": "Skip to content",
+      "strategy": "auto"
+    },
+    "ms": 1,
+    "ok": false,
+    "error_code": "capture_failed",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "ground",
+    "args": {
+      "pid": 41308,
+      "target": "Skip to content",
+      "strategy": "ax"
+    },
+    "ms": 1,
+    "ok": false,
+    "error_code": "not_found",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "ground",
+    "args": {
+      "pid": 41308,
+      "target": "Skip to content",
+      "strategy": "ocr"
+    },
+    "ms": 0,
+    "ok": false,
+    "error_code": "capture_failed",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "ground",
+    "args": {
+      "pid": 41308,
+      "target": "Skip to content",
+      "strategy": "auto"
+    },
+    "ms": 1,
+    "ok": false,
+    "error_code": "capture_failed",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "ground",
+    "args": {
+      "pid": 742,
+      "target": "Shared",
+      "strategy": "ax"
+    },
+    "ms": 1,
+    "ok": false,
+    "error_code": "not_found",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "ground",
+    "args": {
+      "pid": 742,
+      "target": "Shared",
+      "strategy": "ocr"
+    },
+    "ms": 0,
+    "ok": false,
+    "error_code": "capture_failed",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "ground",
+    "args": {
+      "pid": 742,
+      "target": "Shared",
+      "strategy": "auto"
+    },
+    "ms": 1,
+    "ok": false,
+    "error_code": "capture_failed",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "ground",
+    "args": {
+      "pid": 742,
+      "target": "Recents",
+      "strategy": "ax"
+    },
+    "ms": 1,
+    "ok": false,
+    "error_code": "not_found",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "ground",
+    "args": {
+      "pid": 742,
+      "target": "Recents",
+      "strategy": "ocr"
+    },
+    "ms": 0,
+    "ok": false,
+    "error_code": "capture_failed",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "ground",
+    "args": {
+      "pid": 742,
+      "target": "Recents",
+      "strategy": "auto"
+    },
+    "ms": 1,
+    "ok": false,
+    "error_code": "capture_failed",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "ground",
+    "args": {
+      "pid": 76246,
+      "target": "Add User…",
+      "strategy": "ax"
+    },
+    "ms": 1,
+    "ok": false,
+    "error_code": "not_found",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "ground",
+    "args": {
+      "pid": 76246,
+      "target": "Add User…",
+      "strategy": "ocr"
+    },
+    "ms": 0,
+    "ok": false,
+    "error_code": "capture_failed",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "ground",
+    "args": {
+      "pid": 76246,
+      "target": "Add User…",
+      "strategy": "auto"
+    },
+    "ms": 1,
+    "ok": false,
+    "error_code": "capture_failed",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "ground",
+    "args": {
+      "pid": 76246,
+      "target": "account",
+      "strategy": "ax"
+    },
+    "ms": 1,
+    "ok": false,
+    "error_code": "not_found",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "ground",
+    "args": {
+      "pid": 76246,
+      "target": "account",
+      "strategy": "ocr"
+    },
+    "ms": 0,
+    "ok": false,
+    "error_code": "capture_failed",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "ground",
+    "args": {
+      "pid": 76246,
+      "target": "account",
+      "strategy": "auto"
+    },
+    "ms": 1,
+    "ok": false,
+    "error_code": "capture_failed",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "browser_dom_tree",
+    "args": {
+      "browser": "Safari"
+    },
+    "ms": 628,
+    "ok": false,
+    "error_code": "failed",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "browser_dom_tree",
+    "args": {
+      "browser": "Chrome"
+    },
+    "ms": 306,
+    "ok": false,
+    "error_code": "failed",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "capture_annotated",
+    "args": {
+      "pid": 742
+    },
+    "ms": 0,
+    "ok": false,
+    "error_code": "capture_failed",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "element_at_point",
+    "args": {
+      "pid": 742,
+      "x": 100,
+      "y": 200
+    },
+    "ms": 0,
+    "ok": false,
+    "error_code": "permission_missing",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "capture_annotated",
+    "args": {
+      "pid": 76246
+    },
+    "ms": 0,
+    "ok": false,
+    "error_code": "capture_failed",
+    "count": null,
+    "matched_field": null
+  },
+  {
+    "tool": "element_at_point",
+    "args": {
+      "pid": 76246,
+      "x": 100,
+      "y": 200
+    },
+    "ms": 0,
+    "ok": false,
+    "error_code": "permission_missing",
+    "count": null,
+    "matched_field": null
+  }
+]

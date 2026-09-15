@@ -161,4 +161,40 @@ struct AXPathTests {
         let third = await registry.callTool(name: "find_elements", arguments: args)
         #expect(firstIDs == ids(third))
     }
+    // v0.10 A8: the application handle is itself a valid empty path.
+    @Test("upward path accepts the application root itself")
+    func upwardApplicationRoot() {
+        #expect(AXPath.upwardPath(of: AXUIElementCreateApplication(getpid())) == [])
+    }
+
+    // v0.10 A6: a rejected root was visited even when there are no matches.
+    @Test("search metadata counts visited nodes instead of matches", arguments: ["find_elements", "query_elements", "list_elements"])
+    func visitedNodesWithoutMatches(tool: String) async {
+        let registry = ToolRegistry(accessibility: AccessibilityController())
+        let result = await registry.callTool(name: tool, arguments: [
+            "pid": .number(Double(getpid())), "max_depth": .number(0),
+            "role": .string("AXNeverMatches"), "role_regex": .string("^AXNeverMatches$")
+        ])
+        let payload = result.structuredContent.objectValue
+        #expect(payload?["count"]?.intValue == 0)
+        #expect(payload?["nodes_visited"]?.intValue == 1)
+    }
+
+    // v0.10 A8: callers must know why a hit cannot share a search id.
+    @Test("unrooted hit exposes an explicit random-id reason")
+    func unrootedHitReason() {
+        let info = AccessibilityController.ElementInfo(role: "AXLink", title: "Example",
+            value: nil, position: nil, size: nil, depth: nil)
+        let hit = AccessibilityController.HitTest(info: info, enabled: true, pid: 42,
+            appName: "Browser", path: nil, ancestors: [])
+        let payload = ToolRegistry.encodeHit(hit, id: "el_random", x: 1, y: 2)
+        #expect(payload["stable_id"] == .bool(false))
+        #expect(payload["stable_id_reason"]?.stringValue?.isEmpty == false)
+        let rooted = AccessibilityController.HitTest(info: info, enabled: true, pid: 42,
+            appName: "Browser", path: [], ancestors: [])
+        let stable = ToolRegistry.encodeHit(rooted, id: "el_rooted", x: 1, y: 2)
+        #expect(stable["stable_id"] == .bool(true))
+        #expect(stable["stable_id_reason"] == nil)
+    }
+
 }

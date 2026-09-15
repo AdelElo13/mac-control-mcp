@@ -1,0 +1,31 @@
+ M .s1-evidence/reviewer/session.py
+ M LIVE-CHECKS.md
+ M Sources/MacControlMCP/AXPathReconstruction.swift
+ M Sources/MacControlMCP/Tools+V0_9AXCore.swift
+ M Tests/MacControlMCPTests/AXPathReconstructionTests.swift
+ M docs/TOOLS.md
+?? .s1-evidence/R2-REPORT.md
+?? .s1-evidence/r2-build-final.txt
+?? .s1-evidence/r2-build-start.txt
+?? .s1-evidence/r2-cache-green.txt
+?? .s1-evidence/r2-cache-red.txt
+?? .s1-evidence/r2-commit-attempt.txt
+?? .s1-evidence/r2-doc-validation.txt
+?? .s1-evidence/r2-final-AXPathTests.txt
+?? .s1-evidence/r2-final-AnnotatedElementIdentityTests.txt
+?? .s1-evidence/r2-final-CodexR2RegressionTests.txt
+?? .s1-evidence/r2-final-ElementCacheTests.txt
+?? .s1-evidence/r2-final-Phase9ToolsTests.txt
+?? .s1-evidence/r2-final-ToolDocsDriftTests.txt
+?? .s1-evidence/r2-final-probe-tests.txt
+?? .s1-evidence/r2-git-status-final.txt
+?? .s1-evidence/r2-green.txt
+?? .s1-evidence/r2-measure-green.txt
+?? .s1-evidence/r2-measure-red.txt
+?? .s1-evidence/r2-probe-green.txt
+?? .s1-evidence/r2-probe-red.txt
+?? .s1-evidence/r2-probe-tests.py
+?? .s1-evidence/r2-red.txt
+?? .s1-evidence/reviewer/a8-web/
+?? .s1-evidence/reviewer2-check.jsonl
+?? .s1-evidence/reviewer2/

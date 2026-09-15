@@ -65,6 +65,13 @@ enum BrowserErrorClassifier {
             return Classification(errorCode: "permission_policy_denied", error: stderr, hint: hint, pane: nil)
         }
 
+        // v0.10 A7: a missing active tab is not an unclassified script failure.
+        if (lower.contains("can't get") || lower.contains("cannot get"))
+            && (lower.contains("tab") || lower.contains("window")) {
+            return Classification(errorCode: "no_active_tab", error: stderr,
+                hint: "Open a window and an active tab in \(browser.rawValue), then retry.", pane: nil)
+        }
+
         // -600 — the target application isn't running.
         if lower.contains("-600") || lower.contains("isn't running") || lower.contains("is not running") {
             return Classification(

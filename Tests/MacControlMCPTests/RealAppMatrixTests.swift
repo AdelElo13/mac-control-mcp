@@ -356,7 +356,7 @@ struct RealAppMatrixTests {
 
         guard case .object(let tree)? = driver.callTool(
             "get_ui_tree",
-            arguments: #"{"pid":\#(pid),"max_depth":10}"#, timeout: 30
+            arguments: #"{"pid":\#(pid),"max_depth":10,"include_menus":true}"#, timeout: 30
         ),
               case .number(let treeCount) = tree["count"] ?? .null else {
             Self.expect("find_elements coverage", in: "Finder", .fail("get_ui_tree failed"))
@@ -367,7 +367,7 @@ struct RealAppMatrixTests {
         // its menubar. find_elements should find most of them.
         guard case .object(let findResp)? = driver.callTool(
             "find_elements",
-            arguments: #"{"pid":\#(pid),"role":"AXMenuItem","max_depth":10,"limit":500}"#, timeout: 30
+            arguments: #"{"pid":\#(pid),"role":"AXMenuItem","include_menus":true,"max_depth":10,"limit":500}"#, timeout: 30
         ),
               case .number(let foundCount) = findResp["count"] ?? .null else {
             Self.expect("find_elements coverage", in: "Finder", .fail("find_elements failed"))
@@ -382,7 +382,7 @@ struct RealAppMatrixTests {
         // on a tree of thousands.
         guard case .object(let menuCount)? = driver.callTool(
             "find_elements",
-            arguments: #"{"pid":\#(pid),"role":"AXMenuItem","max_depth":10,"limit":5000}"#, timeout: 30
+            arguments: #"{"pid":\#(pid),"role":"AXMenuItem","include_menus":true,"max_depth":10,"limit":5000}"#, timeout: 30
         ),
               case .number(let totalMenuItems) = menuCount["count"] ?? .null else {
             Self.expect("find_elements coverage", in: "Finder", .fail("uncapped find_elements failed"))
@@ -459,7 +459,7 @@ struct RealWorldCoverageGuard {
         }
         guard case .object(let find)? = driver.callTool(
             "find_elements",
-            arguments: #"{"pid":\#(pid),"role":"AXMenuItem","max_depth":8,"limit":500}"#
+            arguments: #"{"pid":\#(pid),"role":"AXMenuItem","include_menus":true,"max_depth":8,"limit":500}"#
         ),
               case .number(let count) = find["count"] ?? .null else {
             Issue.record("find_elements failed against live Finder — strict coverage absent")

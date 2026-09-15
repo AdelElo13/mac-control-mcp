@@ -1,0 +1,38 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ground': failed storing manifest for 'wt10-ground' in cache: attempt to write a readonly database
+Building for debugging...
+[0/5] Write sources
+[1/5] Write swift-version--58304C5D6DBC2206.txt
+[3/5] Compiling MacControlMCPTests GroundingPrecisionTests.swift
+[4/5] Emitting module MacControlMCPTests
+[4/6] Write Objects.LinkFileList
+[5/6] Linking mac-control-mcpPackageTests
+Build complete! (2.84s)
+Test Suite 'Selected tests' started at 2026-09-15 17:18:49.672.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 17:18:49.678.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 17:18:49.678.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 17:18:49.678.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.006) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Grounding precision" started.
+◇ Test containersAndHiddenLinksCannotBeTargets() started.
+✔ Test containersAndHiddenLinksCannotBeTargets() passed after 0.001 seconds.
+◇ Test valueAndDescriptionBeatPartialImageTitle() started.
+✔ Test valueAndDescriptionBeatPartialImageTitle() passed after 0.001 seconds.
+◇ Test unicodeAndEllipsisAreEquivalent() started.
+✔ Test unicodeAndEllipsisAreEquivalent() passed after 0.001 seconds.
+◇ Test exactTiesPreferSmallestArea() started.
+✔ Test exactTiesPreferSmallestArea() passed after 0.001 seconds.
+◇ Test repeatedOCRPassesDoNotInventAlternatives() started.
+✘ Test repeatedOCRPassesDoNotInventAlternatives() recorded an issue at GroundingPrecisionTests.swift:60:9: Expectation failed: (GroundingPolicy.ranked([first, duplicate]).count → 2) == 1
+✘ Test repeatedOCRPassesDoNotInventAlternatives() failed after 0.001 seconds with 1 issue.
+◇ Test distantOCRIsWeakerAndFastFallbackPreservesRecall() started.
+✔ Test distantOCRIsWeakerAndFastFallbackPreservesRecall() passed after 0.001 seconds.
+✘ Suite "Grounding precision" failed after 0.001 seconds with 1 issue.
+↳ /// v0.10 A5/B5: synthetic AX labels isolate ranking from desktop state.
+✘ Test run with 6 tests in 1 suite failed after 0.001 seconds with 1 issue.

@@ -1,0 +1,7 @@
+Reviewer: /root/review_s3
+Initial finding: out-of-frame window recovery could select background controls behind a sheet/popover/dialog.
+Resolution: nearest overlay/window recoveryRoot passed by production; fixture for all three overlay roles had RED (3 issues), then GREEN.
+Final review:
+Akkoord. De productiecode kiest nu de dichtstbijzijnde sheet/popover/dialog/window als herstelroot. De lokale scrollscope kan die grens niet doorbreken. De nieuwe fixture dekt alle drie overlayrollen.
+Geen resterende concrete issues. git diff --check slaagt.
+Verdict: APPROVE.

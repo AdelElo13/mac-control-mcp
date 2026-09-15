@@ -1,0 +1,183 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ground': failed storing manifest for 'wt10-ground' in cache: attempt to write a readonly database
+warning: 'wt10-ground': found 1 file(s) which are unhandled; explicitly declare them as resources or exclude from the target
+    /private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/Resources/well-known-mcp.json
+[0/1] Planning build
+Building for debugging...
+[0/9] Write sources
+[1/10] /private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/arm64-apple-macosx/debug/mac-control-mcpPackageTests.derived/runner.swift
+[2/10] Write sources
+[4/10] Write swift-version--58304C5D6DBC2206.txt
+[6/12] Compiling MacControlMCP GroundingPolicy.swift
+[7/12] Emitting module MacControlMCP
+[7/12] Write Objects.LinkFileList
+[8/12] Linking mac-control-mcp
+[9/12] Applying mac-control-mcp
+[11/68] Compiling MacControlMCPTests BlockingWorkPoolTests.swift
+[12/68] Compiling MacControlMCPTests BrowserErrorClassificationTests.swift
+[13/68] Compiling MacControlMCPTests BugFixesV0_2_6Tests.swift
+[14/68] Compiling MacControlMCPTests CaptureAnnotatedToolTests.swift
+[15/71] Compiling MacControlMCPTests Phase4ToolsTests.swift
+[16/71] Compiling MacControlMCPTests Phase5ToolsTests.swift
+[17/71] Compiling MacControlMCPTests Phase6ToolsTests.swift
+[18/71] Compiling MacControlMCPTests Phase7HardeningTests.swift
+[19/71] Compiling MacControlMCPTests AXAttributeBatchTests.swift
+[20/71] Compiling MacControlMCPTests AXDepthTests.swift
+[21/71] Compiling MacControlMCPTests AXHandleSafetyTests.swift
+[22/71] Compiling MacControlMCPTests AXPathTests.swift
+[23/71] Compiling MacControlMCPTests AnnotatedElementIdentityTests.swift
+[24/71] Compiling MacControlMCPTests AppleScriptStringTests.swift
+[25/71] Compiling MacControlMCPTests AuditLogFixesTests.swift
+[26/71] Compiling MacControlMCPTests BatchToolTests.swift
+[27/71] Compiling MacControlMCPTests GroundingCoordinateTests.swift
+[28/71] Compiling MacControlMCPTests GroundingPrecisionTests.swift
+[29/71] Compiling MacControlMCPTests GroundingWindowScopeTests.swift
+[30/71] Compiling MacControlMCPTests HardeningTests.swift
+[31/71] Compiling MacControlMCPTests ElementAtPointTests.swift
+[32/71] Compiling MacControlMCPTests ElementCacheTests.swift
+[33/71] Compiling MacControlMCPTests EntitlementsConsistencyTests.swift
+[34/71] Compiling MacControlMCPTests FocusGuardTests.swift
+[35/71] Emitting module MacControlMCPTests
+[36/71] Compiling MacControlMCPTests ScreenAnnotatorTests.swift
+[37/71] Compiling MacControlMCPTests ServerLifecycleTests.swift
+[38/71] Compiling MacControlMCPTests StdioIntegrationTests.swift
+[39/71] Compiling MacControlMCPTests SubprocessTests.swift
+[40/71] Compiling MacControlMCPTests ToolRegistryV2Tests.swift
+[41/71] Compiling MacControlMCPTests WindowIdentityTests.swift
+[42/71] Compiling MacControlMCPTests WindowScopedTreeTests.swift
+[43/71] Compiling MacControlMCPTests Phase7ToolsTests.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Tests/MacControlMCPTests/RealAppMatrixTests.swift:361:32: warning: immutable value 'treeCount' was never used; consider replacing with '_' or removing it [#no-usage]
+359 |             arguments: #"{"pid":\#(pid),"max_depth":10}"#, timeout: 30
+360 |         ),
+361 |               case .number(let treeCount) = tree["count"] ?? .null else {
+    |                                `- warning: immutable value 'treeCount' was never used; consider replacing with '_' or removing it [#no-usage]
+362 |             Self.expect("find_elements coverage", in: "Finder", .fail("get_ui_tree failed"))
+363 |             return
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Tests/MacControlMCPTests/RealAppMatrixTests.swift:372:32: warning: immutable value 'foundCount' was never used; consider replacing with '_' or removing it [#no-usage]
+370 |             arguments: #"{"pid":\#(pid),"role":"AXMenuItem","max_depth":10,"limit":500}"#, timeout: 30
+371 |         ),
+372 |               case .number(let foundCount) = findResp["count"] ?? .null else {
+    |                                `- warning: immutable value 'foundCount' was never used; consider replacing with '_' or removing it [#no-usage]
+373 |             Self.expect("find_elements coverage", in: "Finder", .fail("find_elements failed"))
+374 |             return
+[44/71] Compiling MacControlMCPTests Phase8ToolsTests.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Tests/MacControlMCPTests/RealAppMatrixTests.swift:361:32: warning: immutable value 'treeCount' was never used; consider replacing with '_' or removing it [#no-usage]
+359 |             arguments: #"{"pid":\#(pid),"max_depth":10}"#, timeout: 30
+360 |         ),
+361 |               case .number(let treeCount) = tree["count"] ?? .null else {
+    |                                `- warning: immutable value 'treeCount' was never used; consider replacing with '_' or removing it [#no-usage]
+362 |             Self.expect("find_elements coverage", in: "Finder", .fail("get_ui_tree failed"))
+363 |             return
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Tests/MacControlMCPTests/RealAppMatrixTests.swift:372:32: warning: immutable value 'foundCount' was never used; consider replacing with '_' or removing it [#no-usage]
+370 |             arguments: #"{"pid":\#(pid),"role":"AXMenuItem","max_depth":10,"limit":500}"#, timeout: 30
+371 |         ),
+372 |               case .number(let foundCount) = findResp["count"] ?? .null else {
+    |                                `- warning: immutable value 'foundCount' was never used; consider replacing with '_' or removing it [#no-usage]
+373 |             Self.expect("find_elements coverage", in: "Finder", .fail("find_elements failed"))
+374 |             return
+[45/71] Compiling MacControlMCPTests Phase9ToolsTests.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Tests/MacControlMCPTests/RealAppMatrixTests.swift:361:32: warning: immutable value 'treeCount' was never used; consider replacing with '_' or removing it [#no-usage]
+359 |             arguments: #"{"pid":\#(pid),"max_depth":10}"#, timeout: 30
+360 |         ),
+361 |               case .number(let treeCount) = tree["count"] ?? .null else {
+    |                                `- warning: immutable value 'treeCount' was never used; consider replacing with '_' or removing it [#no-usage]
+362 |             Self.expect("find_elements coverage", in: "Finder", .fail("get_ui_tree failed"))
+363 |             return
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Tests/MacControlMCPTests/RealAppMatrixTests.swift:372:32: warning: immutable value 'foundCount' was never used; consider replacing with '_' or removing it [#no-usage]
+370 |             arguments: #"{"pid":\#(pid),"role":"AXMenuItem","max_depth":10,"limit":500}"#, timeout: 30
+371 |         ),
+372 |               case .number(let foundCount) = findResp["count"] ?? .null else {
+    |                                `- warning: immutable value 'foundCount' was never used; consider replacing with '_' or removing it [#no-usage]
+373 |             Self.expect("find_elements coverage", in: "Finder", .fail("find_elements failed"))
+374 |             return
+[46/71] Compiling MacControlMCPTests RealAppMatrixTests.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Tests/MacControlMCPTests/RealAppMatrixTests.swift:361:32: warning: immutable value 'treeCount' was never used; consider replacing with '_' or removing it [#no-usage]
+359 |             arguments: #"{"pid":\#(pid),"max_depth":10}"#, timeout: 30
+360 |         ),
+361 |               case .number(let treeCount) = tree["count"] ?? .null else {
+    |                                `- warning: immutable value 'treeCount' was never used; consider replacing with '_' or removing it [#no-usage]
+362 |             Self.expect("find_elements coverage", in: "Finder", .fail("get_ui_tree failed"))
+363 |             return
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Tests/MacControlMCPTests/RealAppMatrixTests.swift:372:32: warning: immutable value 'foundCount' was never used; consider replacing with '_' or removing it [#no-usage]
+370 |             arguments: #"{"pid":\#(pid),"role":"AXMenuItem","max_depth":10,"limit":500}"#, timeout: 30
+371 |         ),
+372 |               case .number(let foundCount) = findResp["count"] ?? .null else {
+    |                                `- warning: immutable value 'foundCount' was never used; consider replacing with '_' or removing it [#no-usage]
+373 |             Self.expect("find_elements coverage", in: "Finder", .fail("find_elements failed"))
+374 |             return
+[47/71] Compiling MacControlMCPTests PermissionUXTests.swift
+[48/71] Compiling MacControlMCPTests Phase10ToolsTests.swift
+[49/71] Compiling MacControlMCPTests Phase2ToolsTests.swift
+[50/71] Compiling MacControlMCPTests Phase3ToolsTests.swift
+[51/71] Compiling MacControlMCPTests AXPayloadBudgetTests.swift
+[52/71] Compiling MacControlMCPTests AXScopePolicyTests.swift
+[53/71] Compiling MacControlMCPTests AXSnapshotIdentityTests.swift
+[54/71] Compiling MacControlMCPTests AXTreeAugmentedScopeTests.swift
+[55/71] Compiling MacControlMCPTests HonestFailuresTests.swift
+[56/71] Compiling MacControlMCPTests LocationWifiScanTests.swift
+[57/71] Compiling MacControlMCPTests NonFiniteNumberRegressionTests.swift
+[58/71] Compiling MacControlMCPTests PerfHelpersTests.swift
+[59/71] Compiling MacControlMCPTests TestSupport.swift
+[60/71] Compiling MacControlMCPTests TextEditingBackendTests.swift
+[61/71] Compiling MacControlMCPTests TextEditingTests.swift
+[62/71] Compiling MacControlMCPTests ToolDocsDriftTests.swift
+[63/71] Compiling MacControlMCPTests ClipboardRichTests.swift
+[64/71] Compiling MacControlMCPTests CodexR2RegressionTests.swift
+[65/71] Compiling MacControlMCPTests ControlZooMatrixTests.swift
+[66/71] Compiling MacControlMCPTests CrashRegressionTests.swift
+[67/71] Compiling MacControlMCPTests WindowSelectionTests.swift
+[68/71] Compiling MacControlMCPTests WindowTargetToolsTests.swift
+[69/71] Compiling MacControlMCPTests WindowTargetingTests.swift
+[70/73] Compiling mac_control_mcpPackageTests runner.swift
+[71/73] Emitting module mac_control_mcpPackageTests
+[71/73] Write Objects.LinkFileList
+[72/73] Linking mac-control-mcpPackageTests
+Build complete! (10.90s)
+Test Suite 'Selected tests' started at 2026-09-15 17:15:45.699.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 17:15:45.704.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 17:15:45.704.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 17:15:45.704.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.005) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Grounding precision" started.
+◇ Test containersAndHiddenLinksCannotBeTargets() started.
+✘ Test containersAndHiddenLinksCannotBeTargets() recorded an issue at GroundingPrecisionTests.swift:22:13: Expectation failed: (GroundingPolicy.match(node(role, title: "Untitled"), target: "Untitled", displays: displays) → Match(field: "title", label: "Untitled", confidence: 1.0)) == nil
+✘ Test containersAndHiddenLinksCannotBeTargets() recorded an issue at GroundingPrecisionTests.swift:22:13: Expectation failed: (GroundingPolicy.match(node(role, title: "Untitled"), target: "Untitled", displays: displays) → Match(field: "title", label: "Untitled", confidence: 1.0)) == nil
+✘ Test containersAndHiddenLinksCannotBeTargets() recorded an issue at GroundingPrecisionTests.swift:22:13: Expectation failed: (GroundingPolicy.match(node(role, title: "Untitled"), target: "Untitled", displays: displays) → Match(field: "title", label: "Untitled", confidence: 1.0)) == nil
+✘ Test containersAndHiddenLinksCannotBeTargets() recorded an issue at GroundingPrecisionTests.swift:22:13: Expectation failed: (GroundingPolicy.match(node(role, title: "Untitled"), target: "Untitled", displays: displays) → Match(field: "title", label: "Untitled", confidence: 1.0)) == nil
+✘ Test containersAndHiddenLinksCannotBeTargets() recorded an issue at GroundingPrecisionTests.swift:24:9: Expectation failed: (GroundingPolicy.match(node("AXLink", title: "Skip to content", width: 1, height: 1), target: "Skip to content", displays: displays) → Match(field: "title", label: "Skip to content", confidence: 1.0)) == nil
+✘ Test containersAndHiddenLinksCannotBeTargets() recorded an issue at GroundingPrecisionTests.swift:25:9: Expectation failed: (GroundingPolicy.match(node(title: "Gap", x: 1500), target: "Gap", displays: displays) → Match(field: "title", label: "Gap", confidence: 1.0)) == nil
+✘ Test containersAndHiddenLinksCannotBeTargets() recorded an issue at GroundingPrecisionTests.swift:26:9: Expectation failed: (GroundingPolicy.match(node(value: "Recents", x: 2100), target: "Recents", displays: displays) → nil) != nil
+✘ Test containersAndHiddenLinksCannotBeTargets() failed after 0.001 seconds with 7 issues.
+◇ Test valueAndDescriptionBeatPartialImageTitle() started.
+✘ Test valueAndDescriptionBeatPartialImageTitle() recorded an issue at GroundingPrecisionTests.swift:35:9: Expectation failed: (matches.last?.field → "title") == "value"
+✘ Test valueAndDescriptionBeatPartialImageTitle() recorded an issue at GroundingPrecisionTests.swift:36:9: Expectation failed: (matches.first!.confidence → 1.0) <= 0.6
+✘ Test valueAndDescriptionBeatPartialImageTitle() recorded an issue at GroundingPrecisionTests.swift:37:9: Expectation failed: (matches.last!.confidence → 0.8) == (1 → 1.0)
+✘ Test valueAndDescriptionBeatPartialImageTitle() recorded an issue at GroundingPrecisionTests.swift:38:9: Expectation failed: (GroundingPolicy.match(tree[3], target: "Recents", displays: displays)?.field → nil) == "description"
+✘ Test valueAndDescriptionBeatPartialImageTitle() failed after 0.001 seconds with 4 issues.
+◇ Test unicodeAndEllipsisAreEquivalent() started.
+✘ Test unicodeAndEllipsisAreEquivalent() recorded an issue at GroundingPrecisionTests.swift:42:9: Expectation failed: (GroundingPolicy.normalize("ＡＤＤ User…") → "ａｄｄ user…") == (GroundingPolicy.normalize("add user...") → "add user...")
+✘ Test unicodeAndEllipsisAreEquivalent() recorded an issue at GroundingPrecisionTests.swift:43:9: Expectation failed: (GroundingPolicy.normalize("Straße") → "straße") == (GroundingPolicy.normalize("STRASSE") → "strasse")
+✘ Test unicodeAndEllipsisAreEquivalent() recorded an issue at GroundingPrecisionTests.swift:44:9: Expectation failed: (GroundingPolicy.match(node(value: "Add User..."), target: "Add User…", displays: displays)?.confidence → nil) == (1 → 1.0)
+✘ Test unicodeAndEllipsisAreEquivalent() failed after 0.001 seconds with 3 issues.
+◇ Test exactTiesPreferSmallestArea() started.
+✘ Test exactTiesPreferSmallestArea() recorded an issue at GroundingPrecisionTests.swift:52:9: Expectation failed: (GroundingPolicy.ranked([large, small]).first?.elementId → "large") == "small"
+✘ Test exactTiesPreferSmallestArea() failed after 0.001 seconds with 1 issue.
+◇ Test distantOCRIsWeakerAndFastFallbackPreservesRecall() started.
+✘ Test distantOCRIsWeakerAndFastFallbackPreservesRecall() recorded an issue at GroundingPrecisionTests.swift:56:9: Expectation failed: (GroundingPolicy.ocrConfidence(text: "Internet Accounts", target: "account", recognition: 1, distance: 302) → 0.6) < 0.6
+✘ Test distantOCRIsWeakerAndFastFallbackPreservesRecall() recorded an issue at GroundingPrecisionTests.swift:57:9: Expectation failed: (GroundingPolicy.ocrConfidence(text: "Account", target: "account", recognition: 0.4, distance: nil) → 0.9) <= 0.4
+✘ Test distantOCRIsWeakerAndFastFallbackPreservesRecall() recorded an issue at GroundingPrecisionTests.swift:60:9: Expectation failed: !(GroundingPolicy.needsAccurate(confidences: [0.9]) → true)
+✘ Test distantOCRIsWeakerAndFastFallbackPreservesRecall() recorded an issue at GroundingPrecisionTests.swift:61:9: Expectation failed: (ScreenController.OCRRequestOptions(fast: true).languageCorrection → true) == false
+✘ Test distantOCRIsWeakerAndFastFallbackPreservesRecall() failed after 0.001 seconds with 4 issues.
+✘ Suite "Grounding precision" failed after 0.001 seconds with 19 issues.
+↳ /// v0.10 A5/B5: synthetic AX labels isolate ranking from desktop state.
+✘ Test run with 5 tests in 1 suite failed after 0.001 seconds with 19 issues.

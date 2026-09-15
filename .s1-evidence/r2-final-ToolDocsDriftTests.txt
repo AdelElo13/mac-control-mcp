@@ -1,0 +1,30 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ids': failed storing manifest for 'wt10-ids' in cache: attempt to write a readonly database
+warning: 'wt10-ids': found 1 file(s) which are unhandled; explicitly declare them as resources or exclude from the target
+    /private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/Sources/MacControlMCP/Resources/well-known-mcp.json
+[0/1] Planning build
+Building for debugging...
+[0/4] Write swift-version--58304C5D6DBC2206.txt
+Build complete! (0.16s)
+Test Suite 'Selected tests' started at 2026-09-15 20:25:34.671.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 20:25:34.676.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 20:25:34.676.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 20:25:34.676.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.005) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Tool docs drift" started.
+◇ Test "docs/TOOLS.md matches the live tool registry" started.
+✔ Test "docs/TOOLS.md matches the live tool registry" passed after 0.016 seconds.
+◇ Test "README.md tool-count markers match the real tool count" started.
+✔ Test "README.md tool-count markers match the real tool count" passed after 0.005 seconds.
+◇ Test "server.json description states the real tool count" started.
+✔ Test "server.json description states the real tool count" passed after 0.001 seconds.
+◇ Test "release-artifacts/manifest.json (if tracked in git) states the real tool count" started.
+✔ Test "release-artifacts/manifest.json (if tracked in git) states the real tool count" passed after 0.011 seconds.
+✔ Suite "Tool docs drift" passed after 0.034 seconds.
+✔ Test run with 4 tests in 1 suite passed after 0.035 seconds.

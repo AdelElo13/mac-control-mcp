@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 import ApplicationServices
 @testable import MacControlMCP
 
@@ -177,4 +178,235 @@ struct ElementCacheTests {
         _ = await cache.storeMany([AXUIElementCreateSystemWide()], pid: 2)
         #expect(await cache.count == 1)
     }
+    // v0.10 A1: a live positional handle must not bypass its recorded identity.
+    @Test("live handle with a different fingerprint is stale")
+    func liveFingerprintMismatch() async {
+        let cache = ElementCache()
+        let id = await cache.store(
+            AXUIElementCreateSystemWide(), pid: getpid(),
+            path: [AXPathComponent(role: "AXMenuItem", index: 0, identifier: nil,
+                                   title: "Close All Windows", subrole: nil)]
+        )
+        guard case .stale = await cache.resolveLive(id) else {
+            Issue.record("v0.10 A1: live handle silently resolved a different control")
+            return
+        }
+    }
+
+    // v0.10 A2: repeated full trees must not consume another app's working set.
+    @Test("capacity eviction prefers older entries from the incoming pid")
+    func evictionIsPIDLocal() async {
+        let cache = ElementCache(maxEntries: 3)
+        let other = await cache.store(AXUIElementCreateSystemWide(), pid: 2)
+        let old = await cache.store(AXUIElementCreateSystemWide(), pid: 1)
+        _ = await cache.store(AXUIElementCreateSystemWide(), pid: 1)
+        _ = await cache.store(AXUIElementCreateSystemWide(), pid: 1)
+        #expect(await cache.resolve(other) != nil)
+        #expect(await cache.resolve(old) == nil)
+        #expect(String(describing: await cache.resolveLive(old)).contains("evicted"))
+    }
+
+    @Test("refreshing stable paths at capacity does not evict other ids")
+    func refreshDoesNotEvict() async {
+        let cache = ElementCache(maxEntries: 2)
+        let other = await cache.store(AXUIElementCreateSystemWide(), pid: 2)
+        let path = [component("AXButton", 0)]
+        let element = AXUIElementCreateSystemWide()
+        _ = await cache.store(element, pid: 1, path: path)
+        _ = await cache.storeMany(withPaths: [(element, path)], pid: 1)
+        #expect(await cache.resolve(other) != nil)
+        _ = await cache.store(element, pid: 1, path: path)
+        #expect(await cache.resolve(other) != nil)
+    }
+
+    @Test("six 2000-node trees fit in the default cache")
+    func repeatedTreesFit() async {
+        let cache = ElementCache()
+        let element = AXUIElementCreateSystemWide()
+        let first = await cache.store(element, pid: 2)
+        for _ in 0..<6 {
+            _ = await cache.storeMany(Array(repeating: element, count: 2000), pid: 1)
+        }
+        #expect(await cache.resolve(first) != nil)
+        #expect(await cache.count == 12001)
+    }
+
+    // v0.10 A2: resolving one old node must not protect its whole old tree.
+    @Test("capacity removes the oldest tree even when its ids were recently read")
+    func evictionUsesTreeAge() async throws {
+        let cache = ElementCache(maxEntries: 2)
+        let old = try #require(await cache.storeMany([AXUIElementCreateSystemWide()], pid: 1).first!)
+        try await Task.sleep(for: .milliseconds(2))
+        let newer = await cache.store(AXUIElementCreateSystemWide(), pid: 1)
+        #expect(await cache.resolve(old) != nil)
+        _ = await cache.store(AXUIElementCreateSystemWide(), pid: 1)
+        #expect(await cache.resolve(old) == nil)
+        #expect(await cache.resolve(newer) != nil)
+    }
+
+    @Test("colliding paths in one batch cannot exceed capacity")
+    func collidingBatchCapacity() async {
+        let cache = ElementCache(maxEntries: 3, identify: Self.collidingIdentify)
+        _ = await cache.store(AXUIElementCreateSystemWide(), pid: 2)
+        _ = await cache.store(AXUIElementCreateSystemWide(), pid: 2)
+        let element = AXUIElementCreateSystemWide()
+        _ = await cache.storeMany(withPaths: [
+            (element, [component("AXButton", 0)]),
+            (element, [component("AXButton", 1)]),
+            (element, [component("AXButton", 2)])
+        ], pid: 1)
+        #expect(await cache.count <= 3)
+    }
+
+    @Test("element and text tools distinguish eviction with configured retention hints", arguments: [
+        "get_element_attributes", "perform_element_action", "set_element_attribute", "text_get_value", "wait_for_ax_notification"
+    ])
+    func evictionToolContract(tool: String) async {
+        let cache = ElementCache(ttl: 17, maxEntries: 1)
+        let registry = ToolRegistry(accessibility: AccessibilityController(), elementCache: cache)
+        let id = await cache.store(AXUIElementCreateSystemWide(), pid: getpid())
+        _ = await cache.store(AXUIElementCreateSystemWide(), pid: getpid())
+        let result = await registry.callTool(name: tool, arguments: [
+            "element_id": .string(id), "action": .string("AXPress"), "value": .string("unused"),
+            "name": .string("AXValue"), "notification": .string("AXValueChanged")
+        ])
+        let payload = result.structuredContent.objectValue
+        #expect(payload?["error_code"]?.stringValue == "evicted_element_id")
+        #expect(payload?["hint"]?.stringValue?.contains("17.0 seconds") == true)
+        #expect(payload?["hint"]?.stringValue?.contains("1 entries") == true)
+    }
+
+    // v0.10 A1: an unreadable fingerprint is not evidence of identity.
+    @Test("failed fingerprint batch cannot validate an AXUnknown leaf")
+    func unreadableFingerprintIsStale() async {
+        let cache = ElementCache()
+        let id = await cache.store(AXUIElementCreateApplication(-1), pid: getpid(),
+                                   path: [component("AXUnknown", 0)])
+        guard case .stale = await cache.resolveLive(id) else {
+            Issue.record("failed AX read was accepted as an AXUnknown fingerprint")
+            return
+        }
+    }
+
+    // v0.10 A2: quarantine allocates a new random id for every collision,
+    // including repeated paths, so distinct-path counting can under-reserve.
+    @Test("repeated colliding paths cannot overflow the batch capacity")
+    func repeatedCollidingBatchCapacity() async {
+        let cache = ElementCache(maxEntries: 5, identify: Self.collidingIdentify)
+        _ = await cache.storeMany(Array(repeating: AXUIElementCreateSystemWide(), count: 3), pid: 2)
+        let element = AXUIElementCreateSystemWide()
+        let a = [component("AXButton", 0)]
+        let b = [component("AXButton", 1)]
+        _ = await cache.storeMany(withPaths: [a, b, a, b, a].map { (element, $0) }, pid: 1)
+        #expect(await cache.count <= 5)
+    }
+
+    // v0.10 A1: every fake read stays under the lock because cache calls
+    // execute on its actor while the test changes the published label.
+    private final class FakeAX: @unchecked Sendable {
+        private let lock = NSLock()
+        private var title = "Close All Windows"
+        private var reads = 0
+        private var aliveChecks = 0
+        private var repairs = 0
+        private var repairPath: [AXPathComponent]?
+        private var repairPID: pid_t?
+        let replacement: AXUIElement?
+
+        init(replacement: AXUIElement? = nil) { self.replacement = replacement }
+
+        func relabel() { lock.withLock { title = "Close Window" } }
+
+        func fingerprint(_ element: AXUIElement) -> AXFingerprint {
+            lock.withLock {
+                reads += 1
+                let isReplacement = replacement.map { CFEqual($0, element) } ?? false
+                return AXFingerprint(role: "AXMenuItem", identifier: nil,
+                    title: isReplacement ? "Close All Windows" : title, subrole: nil)
+            }
+        }
+
+        func isAlive(_ element: AXUIElement) -> Bool {
+            lock.withLock { aliveChecks += 1 }
+            return true
+        }
+
+        func resolve(_ path: [AXPathComponent], _ pid: pid_t) -> AXUIElement? {
+            lock.withLock {
+                repairs += 1
+                repairPath = path
+                repairPID = pid
+            }
+            return replacement
+        }
+
+        func snapshot() -> (reads: Int, alive: Int, repairs: Int, path: [AXPathComponent]?, pid: pid_t?) {
+            lock.withLock { (reads, aliveChecks, repairs, repairPath, repairPID) }
+        }
+    }
+
+    @Test("fake live menu relabel cannot silently retarget its cached id")
+    func fakeLiveMenuRelabel() async {
+        let fake = FakeAX()
+        let cache = ElementCache(fingerprint: fake.fingerprint, isAlive: fake.isAlive, resolvePath: fake.resolve)
+        let path = [AXPathComponent(role: "AXMenuItem", index: 0, identifier: nil,
+                                    title: "Close All Windows", subrole: nil)]
+        let id = await cache.store(AXUIElementCreateSystemWide(), pid: getpid(), path: path)
+        guard case .resolved = await cache.resolveLive(id) else {
+            Issue.record("intact fake handle must resolve")
+            return
+        }
+        #expect(fake.snapshot().reads == 1)
+        #expect(fake.snapshot().alive == 0)
+        #expect(fake.snapshot().repairs == 0)
+        fake.relabel()
+        guard case .stale = await cache.resolveLive(id) else {
+            Issue.record("v0.10 A1: Close All Windows silently became Close Window")
+            return
+        }
+        #expect(fake.snapshot().reads == 2)
+        #expect(fake.snapshot().repairs == 1)
+        #expect(fake.snapshot().path == path)
+        #expect(fake.snapshot().pid == getpid())
+    }
+
+    @Test("fake mismatched handle repairs and caches the verified replacement")
+    func fakeLiveMenuRepair() async {
+        let replacement = AXUIElementCreateApplication(getpid())
+        let fake = FakeAX(replacement: replacement)
+        fake.relabel()
+        let cache = ElementCache(fingerprint: fake.fingerprint, isAlive: fake.isAlive, resolvePath: fake.resolve)
+        let path = [AXPathComponent(role: "AXMenuItem", index: 0, identifier: nil,
+                                    title: "Close All Windows", subrole: nil)]
+        let id = await cache.store(AXUIElementCreateSystemWide(), pid: getpid(), path: path)
+        guard case .resolved(let repaired) = await cache.resolveLive(id) else {
+            Issue.record("verified path replacement must resolve")
+            return
+        }
+        #expect(CFEqual(repaired, replacement))
+        #expect(await cache.path(for: id) == path)
+        guard case .resolved(let cached) = await cache.resolveLive(id) else {
+            Issue.record("repaired handle must remain usable")
+            return
+        }
+        #expect(CFEqual(cached, replacement))
+        #expect(fake.snapshot().reads == 2)
+        #expect(fake.snapshot().repairs == 1)
+        #expect(fake.snapshot().alive == 0)
+    }
+
+    @Test("fake pathless ids keep the liveness-only contract")
+    func fakePathlessResolution() async {
+        let fake = FakeAX()
+        let cache = ElementCache(fingerprint: fake.fingerprint, isAlive: fake.isAlive, resolvePath: fake.resolve)
+        let id = await cache.store(AXUIElementCreateSystemWide(), pid: getpid())
+        guard case .resolved = await cache.resolveLive(id) else {
+            Issue.record("pathless live handle must resolve")
+            return
+        }
+        #expect(fake.snapshot().alive == 1)
+        #expect(fake.snapshot().reads == 0)
+        #expect(fake.snapshot().repairs == 0)
+    }
+
 }

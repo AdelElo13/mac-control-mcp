@@ -1,0 +1,81 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ids': failed storing manifest for 'wt10-ids' in cache: attempt to write a readonly database
+Building for debugging...
+[0/5] Write sources
+[1/5] Write swift-version--58304C5D6DBC2206.txt
+[3/5] Compiling MacControlMCPTests ElementCacheTests.swift
+[4/5] Emitting module MacControlMCPTests
+[4/6] Write Objects.LinkFileList
+[5/6] Linking mac-control-mcpPackageTests
+Build complete! (3.25s)
+Test Suite 'Selected tests' started at 2026-09-15 17:58:55.411.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 17:58:55.418.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 17:58:55.418.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 17:58:55.418.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.007) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "ElementCache" started.
+◇ Test "store returns distinct IDs" started.
+✔ Test "store returns distinct IDs" passed after 0.001 seconds.
+◇ Test "resolve returns the stored element" started.
+✔ Test "resolve returns the stored element" passed after 0.001 seconds.
+◇ Test "resolve returns nil for unknown IDs" started.
+✔ Test "resolve returns nil for unknown IDs" passed after 0.001 seconds.
+◇ Test "ttl expiry drops entries on resolve" started.
+✔ Test "ttl expiry drops entries on resolve" passed after 0.127 seconds.
+◇ Test "maxEntries triggers oldest-first eviction" started.
+✔ Test "maxEntries triggers oldest-first eviction" passed after 0.001 seconds.
+◇ Test "storeMany returns one distinct, resolvable ID per element in order" started.
+✔ Test "storeMany returns one distinct, resolvable ID per element in order" passed after 0.001 seconds.
+◇ Test "storeMany evicts oldest entries first and keeps the whole batch" started.
+✔ Test "storeMany evicts oldest entries first and keeps the whole batch" passed after 0.001 seconds.
+◇ Test "storeMany larger than capacity never exceeds maxEntries and returns no dangling IDs" started.
+✔ Test "storeMany larger than capacity never exceeds maxEntries and returns no dangling IDs" passed after 0.001 seconds.
+◇ Test "a colliding id never silently retargets the existing entry" started.
+[mac-control-mcp] element id collision on el_collision: pid 7 path axpath2:7:1:8:AXWindow:0:- vs pid 7 path axpath2:7:1:8:AXButton:1:-. Both handles quarantined; no element was retargeted.
+✔ Test "a colliding id never silently retargets the existing entry" passed after 0.001 seconds.
+◇ Test "re-storing the same (pid, path) still refreshes in place" started.
+✔ Test "re-storing the same (pid, path) still refreshes in place" passed after 0.001 seconds.
+◇ Test "a colliding id across pids is a collision too" started.
+[mac-control-mcp] element id collision on el_collision: pid 7 path axpath2:7:1:8:AXWindow:0:- vs pid 8 path axpath2:8:1:8:AXWindow:0:-. Both handles quarantined; no element was retargeted.
+✔ Test "a colliding id across pids is a collision too" passed after 0.001 seconds.
+◇ Test "real paths that naively concatenate the same get distinct cache ids" started.
+✔ Test "real paths that naively concatenate the same get distinct cache ids" passed after 0.001 seconds.
+◇ Test "storeMany drops expired entries before inserting" started.
+✔ Test "storeMany drops expired entries before inserting" passed after 0.126 seconds.
+◇ Test "live handle with a different fingerprint is stale" started.
+✔ Test "live handle with a different fingerprint is stale" passed after 0.009 seconds.
+◇ Test "capacity eviction prefers older entries from the incoming pid" started.
+✔ Test "capacity eviction prefers older entries from the incoming pid" passed after 0.001 seconds.
+◇ Test "refreshing stable paths at capacity does not evict other ids" started.
+✔ Test "refreshing stable paths at capacity does not evict other ids" passed after 0.001 seconds.
+◇ Test "six 2000-node trees fit in the default cache" started.
+✔ Test "six 2000-node trees fit in the default cache" passed after 0.190 seconds.
+◇ Test "capacity removes the oldest tree even when its ids were recently read" started.
+✔ Test "capacity removes the oldest tree even when its ids were recently read" passed after 0.004 seconds.
+◇ Test "colliding paths in one batch cannot exceed capacity" started.
+[mac-control-mcp] element id collision on el_collision: pid 1 path axpath2:1:1:8:AXButton:0:- vs pid 1 path axpath2:1:1:8:AXButton:1:-. Both handles quarantined; no element was retargeted.
+✔ Test "colliding paths in one batch cannot exceed capacity" passed after 0.001 seconds.
+◇ Test "element and text tools distinguish eviction with configured retention hints" started.
+◇ Test case passing 1 argument tool → "get_element_attributes" to "element and text tools distinguish eviction with configured retention hints" started.
+◇ Test case passing 1 argument tool → "perform_element_action" to "element and text tools distinguish eviction with configured retention hints" started.
+◇ Test case passing 1 argument tool → "set_element_attribute" to "element and text tools distinguish eviction with configured retention hints" started.
+◇ Test case passing 1 argument tool → "text_get_value" to "element and text tools distinguish eviction with configured retention hints" started.
+◇ Test case passing 1 argument tool → "wait_for_ax_notification" to "element and text tools distinguish eviction with configured retention hints" started.
+✔ Test "element and text tools distinguish eviction with configured retention hints" with 5 test cases passed after 0.014 seconds.
+◇ Test "failed fingerprint batch cannot validate an AXUnknown leaf" started.
+✔ Test "failed fingerprint batch cannot validate an AXUnknown leaf" passed after 0.001 seconds.
+◇ Test "repeated colliding paths cannot overflow the batch capacity" started.
+[mac-control-mcp] element id collision on el_collision: pid 1 path axpath2:1:1:8:AXButton:0:- vs pid 1 path axpath2:1:1:8:AXButton:1:-. Both handles quarantined; no element was retargeted.
+[mac-control-mcp] element id collision on el_collision: pid 1 path axpath2:1:1:8:AXButton:0:- vs pid 1 path axpath2:1:1:8:AXButton:1:-. Both handles quarantined; no element was retargeted.
+✘ Test "repeated colliding paths cannot overflow the batch capacity" recorded an issue at ElementCacheTests.swift:300:9: Expectation failed: await cache.count <= 5
+✘ Test "repeated colliding paths cannot overflow the batch capacity" failed after 0.001 seconds with 1 issue.
+↳ // v0.10 A2: quarantine allocates a new random id for every collision,
+↳ // including repeated paths, so distinct-path counting can under-reserve.
+✘ Suite "ElementCache" failed after 0.483 seconds with 1 issue.
+✘ Test run with 22 tests in 1 suite failed after 0.483 seconds with 1 issue.

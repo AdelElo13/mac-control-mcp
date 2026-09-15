@@ -1,0 +1,118 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ids': failed storing manifest for 'wt10-ids' in cache: attempt to write a readonly database
+Building for debugging...
+[0/5] Write sources
+[1/5] Write swift-version--58304C5D6DBC2206.txt
+[3/5] Compiling MacControlMCPTests AXPathReconstructionTests.swift
+[4/5] Emitting module MacControlMCPTests
+[4/6] Write Objects.LinkFileList
+[5/6] Linking mac-control-mcpPackageTests
+Build complete! (3.01s)
+Test Suite 'Selected tests' started at 2026-09-15 20:21:20.484.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 20:21:20.489.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 20:21:20.489.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 20:21:20.489.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.005) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "AX path identity (C-5)" started.
+◇ Test "A8 parent-chain reconstruction records equal-handle steps" started.
+✔ Test "A8 parent-chain reconstruction records equal-handle steps" passed after 0.001 seconds.
+◇ Test "A8 a relayed hit handle matches a unique sibling by fingerprint and frame" started.
+✔ Test "A8 a relayed hit handle matches a unique sibling by fingerprint and frame" passed after 0.001 seconds.
+◇ Test "A8 skipped AXParent level recovers the exact top-down path and id" started.
+✔ Test "A8 skipped AXParent level recovers the exact top-down path and id" passed after 0.001 seconds.
+◇ Test "A8 a disconnected parent chain can still recover an aliased web link" started.
+✔ Test "A8 a disconnected parent chain can still recover an aliased web link" passed after 0.001 seconds.
+◇ Test "A8 an extra virtual parent does not enter the canonical path" started.
+✔ Test "A8 an extra virtual parent does not enter the canonical path" passed after 0.001 seconds.
+◇ Test "A8 indistinguishable sibling aliases are refused" started.
+✔ Test "A8 indistinguishable sibling aliases are refused" passed after 0.001 seconds.
+◇ Test "A8 the node budget bounds actual snapshot reads across both strategies" started.
+✔ Test "A8 the node budget bounds actual snapshot reads across both strategies" passed after 0.001 seconds.
+◇ Test "A8 missing roots retain a specific reason when top-down cannot find the hit" started.
+✔ Test "A8 missing roots retain a specific reason when top-down cannot find the hit" passed after 0.001 seconds.
+◇ Test "A8 overflowing descendants cannot hide a second matching alias" started.
+✔ Test "A8 overflowing descendants cannot hide a second matching alias" passed after 0.001 seconds.
+◇ Test "A8 exact handles recover top-down even when the target has no frame" started.
+✔ Test "A8 exact handles recover top-down even when the target has no frame" passed after 0.001 seconds.
+◇ Test "A8 recovery preserves ordinals among unrelated children" started.
+✔ Test "A8 recovery preserves ordinals among unrelated children" passed after 0.001 seconds.
+◇ Test "A8 alias matching requires role, identifier, title and frame" started.
+◇ Test case passing 1 argument field → "role" to "A8 alias matching requires role, identifier, title and frame" started.
+◇ Test case passing 1 argument field → "identifier" to "A8 alias matching requires role, identifier, title and frame" started.
+◇ Test case passing 1 argument field → "title" to "A8 alias matching requires role, identifier, title and frame" started.
+◇ Test case passing 1 argument field → "frame" to "A8 alias matching requires role, identifier, title and frame" started.
+◇ Test case passing 1 argument field → "missing_frame" to "A8 alias matching requires role, identifier, title and frame" started.
+✔ Test "A8 alias matching requires role, identifier, title and frame" with 5 test cases passed after 0.001 seconds.
+◇ Test "A8 a candidate found before the cap cannot establish alias uniqueness" started.
+✔ Test "A8 a candidate found before the cap cannot establish alias uniqueness" passed after 0.001 seconds.
+◇ Test "A8 top-down depth cap refuses paths deeper than the configured limit" started.
+✔ Test "A8 top-down depth cap refuses paths deeper than the configured limit" passed after 0.001 seconds.
+◇ Test "A8 cycles terminate in both directions with a specific diagnostic" started.
+✔ Test "A8 cycles terminate in both directions with a specific diagnostic" passed after 0.001 seconds.
+◇ Test "A8 alias descendants are checked against the canonical parent" started.
+✔ Test "A8 alias descendants are checked against the canonical parent" passed after 0.001 seconds.
+◇ Test "A8 tool output preserves reconstruction strategy and specific failure" started.
+✔ Test "A8 tool output preserves reconstruction strategy and specific failure" passed after 0.001 seconds.
+◇ Test "A8 an unreadable sibling cannot prove a hit alias unique" started.
+✔ Test "A8 an unreadable sibling cannot prove a hit alias unique" passed after 0.001 seconds.
+◇ Test "A8 the known application root need not publish a role" started.
+✔ Test "A8 the known application root need not publish a role" passed after 0.001 seconds.
+◇ Test "A8 shared handles use the tree walk's first DFS path" started.
+✔ Test "A8 shared handles use the tree walk's first DFS path" passed after 0.001 seconds.
+◇ Test "A8 an unreadable earlier branch prevents a canonical exact-match claim" started.
+✔ Test "A8 an unreadable earlier branch prevents a canonical exact-match claim" passed after 0.001 seconds.
+◇ Test "A8 geometric reconstruction bounds reads on 5000/10000-node pages" started.
+◇ Test case passing 1 argument pageNodes → 5000 to "A8 geometric reconstruction bounds reads on 5000/10000-node pages" started.
+[A8 R2 wide] page_nodes=5000 reads=151 stable=true
+◇ Test case passing 1 argument pageNodes → 10000 to "A8 geometric reconstruction bounds reads on 5000/10000-node pages" started.
+[A8 R2 wide] page_nodes=10000 reads=201 stable=true
+✔ Test "A8 geometric reconstruction bounds reads on 5000/10000-node pages" with 2 test cases passed after 0.006 seconds.
+◇ Test "A8 pruned search falls back for overflowing exact handles" started.
+✔ Test "A8 pruned search falls back for overflowing exact handles" passed after 0.001 seconds.
+◇ Test "A8 zero-size containers may hide the target" started.
+✔ Test "A8 zero-size containers may hide the target" passed after 0.001 seconds.
+◇ Test "A8 an exact overflow handle wins over a visible fingerprint alias" started.
+✔ Test "A8 an exact overflow handle wins over a visible fingerprint alias" passed after 0.001 seconds.
+◇ Test "A8 exhausted pruned pass can fall back through cached overflow nodes" started.
+✘ Test "A8 exhausted pruned pass can fall back through cached overflow nodes" recorded an issue at AXPathReconstructionTests.swift:364:9: Expectation failed: (result.path → nil) == ([nodes[1]!.component(index: 0), target.component(index: 0)] → [MacControlMCP.AXPathComponent(role: "AXGroup", index: 0, identifier: nil, title: nil, subrole: nil), MacControlMCP.AXPathComponent(role: "AXLink", index: 0, identifier: nil, title: Optional("Target"), subrole: nil)])
+✘ Test "A8 exhausted pruned pass can fall back through cached overflow nodes" failed after 0.001 seconds with 1 issue.
+◇ Test "identity string is canonical, length-prefixed, and includes pid, role, ordinal, identifier" started.
+✔ Test "identity string is canonical, length-prefixed, and includes pid, role, ordinal, identifier" passed after 0.001 seconds.
+◇ Test "same (pid, path) always yields the same id" started.
+✔ Test "same (pid, path) always yields the same id" passed after 0.001 seconds.
+◇ Test "a crafted AXIdentifier cannot forge another path's identity" started.
+✔ Test "a crafted AXIdentifier cannot forge another path's identity" passed after 0.001 seconds.
+◇ Test "adjacent numeric fields cannot be run together" started.
+✔ Test "adjacent numeric fields cannot be run together" passed after 0.001 seconds.
+◇ Test "absent identifier is distinguishable from a literal dash" started.
+✔ Test "absent identifier is distinguishable from a literal dash" passed after 0.001 seconds.
+◇ Test "different elements yield different ids" started.
+✔ Test "different elements yield different ids" passed after 0.001 seconds.
+◇ Test "hash is process-independent (not Swift's seeded Hasher)" started.
+✔ Test "hash is process-independent (not Swift's seeded Hasher)" passed after 0.001 seconds.
+◇ Test "empty identifiers are normalised away" started.
+✔ Test "empty identifiers are normalised away" passed after 0.001 seconds.
+◇ Test "appending builds the path a walk would record" started.
+✔ Test "appending builds the path a walk would record" passed after 0.001 seconds.
+◇ Test "the same query twice returns identical element ids, and the cache survives a clear" started.
+✔ Test "the same query twice returns identical element ids, and the cache survives a clear" passed after 0.001 seconds.
+◇ Test "upward path accepts the application root itself" started.
+✔ Test "upward path accepts the application root itself" passed after 0.001 seconds.
+◇ Test "search metadata counts visited nodes instead of matches" started.
+◇ Test case passing 1 argument tool → "find_elements" to "search metadata counts visited nodes instead of matches" started.
+◇ Test case passing 1 argument tool → "query_elements" to "search metadata counts visited nodes instead of matches" started.
+◇ Test case passing 1 argument tool → "list_elements" to "search metadata counts visited nodes instead of matches" started.
+✔ Test "search metadata counts visited nodes instead of matches" with 3 test cases passed after 0.006 seconds.
+◇ Test "unrooted hit exposes an explicit random-id reason" started.
+✔ Test "unrooted hit exposes an explicit random-id reason" passed after 0.001 seconds.
+✘ Suite "AX path identity (C-5)" failed after 0.017 seconds with 1 issue.
+↳ /// C-5 / B-10 — element handles must be content-addressed: the same
+↳ /// element has to yield the same id on every call and in every session,
+↳ /// and two different elements must never share one.
+✘ Test run with 39 tests in 1 suite failed after 0.017 seconds with 1 issue.

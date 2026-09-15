@@ -154,7 +154,7 @@ final class ToolRegistry: @unchecked Sendable {
             Self.definitionsV2Phase6 + Self.definitionsV2Phase7 + Self.definitionsV2Phase8 +
             Self.definitionsV2Phase9 + Self.definitionsV2Phase10 + Self.definitionsV2Phase11 +
             Self.definitionsBatch + Self.definitionsV0_9AXCore + Self.definitionsAnnotate +
-            Self.definitionsTextEditing
+            Self.definitionsTextEditing + Self.definitionsActions
     }
 
     // MARK: - Tool dispatch
@@ -173,6 +173,8 @@ final class ToolRegistry: @unchecked Sendable {
     // controllers.
     func callTool(name: String, arguments: [String: JSONValue]) async -> ToolCallResult {
         switch name {
+        case "wait_for": return await callWaitFor(arguments)
+        case "act": return await callAct(arguments)
         case "list_elements":
             return await callListElements(arguments)
         case "find_element":
@@ -507,36 +509,45 @@ final class ToolRegistry: @unchecked Sendable {
         if let dead = noSuchProcessResult(pid: pid, tool: "list_elements") { return dead }
 
         let maxDepth = AXDepth.resolve(arguments["max_depth"]?.intValue)
-        let elements = await accessibility.listElements(pid: pid, maxDepth: maxDepth)
         let budget = PayloadOptions(arguments, known: AXPayload.elementFields)
-
-        // list_elements is already role-filtered to actionable controls,
-        // so `interactive_only` is a no-op here; `viewport_only`,
-        // `fields` and `max_bytes` still apply (v0.9 C-9).
-        let windows = budget.viewportOnly ? await accessibility.windowFrames(pid: pid) : []
-        let visible = budget.viewportOnly
-            ? elements.filter {
-                AXPayload.isInViewport(
-                    frame: ToolRegistry.frame(position: $0.position, size: $0.size),
-                    windows: windows
-                )
-            }
-            : elements
-        let encoded = visible.map { encodeElement(info: $0, id: nil, fields: budget.fields) }
+        let includeMenus = AXPayload.flag(arguments["include_menus"])
+        // v0.10 B3: listing visits do not consume element-cache entries.
+        let nodeCap = max(1, min(arguments["node_cap"]?.intValue ?? 2000, 10_000))
+        let pruneOffscreen = !AXPayload.flag(arguments["include_offscreen"]) || budget.viewportOnly
+        let timeBudget = AXPayload.walkBudget(arguments, defaultMS: 1000)
+        let windowsStarted = ProcessInfo.processInfo.systemUptime
+        let windows = pruneOffscreen ? await accessibility.windowFrames(pid: pid) : []
+        let windowsMS = (ProcessInfo.processInfo.systemUptime - windowsStarted) * 1000
+        let walk = await accessibility.search(pid: pid, maxDepth: maxDepth, nodeCap: nodeCap,
+                                              includeMenus: includeMenus, clipRects: windows,
+                                              viewportOnly: pruneOffscreen, interactiveOnly: true, timeBudget: timeBudget)
+        var phases = walk.timingsMS
+        phases["windows"] = windowsMS
+        let payloadStarted = ProcessInfo.processInfo.systemUptime
+        let elements = walk.matches.map(\.info)
+        let encoded = elements.map { encodeElement(info: $0, id: nil, fields: budget.fields) }
         let budgeted = AXPayload.applyByteBudget(encoded, maxBytes: budget.maxBytes)
 
+        phases["payload"] = (ProcessInfo.processInfo.systemUptime - payloadStarted) * 1000
         var payload: [String: JSONValue] = [
             "ok": .bool(true),
             "pid": .number(Double(pid)),
             "max_depth": .number(Double(maxDepth)),
             "count": .number(Double(budgeted.items.count)),
-            "elements": .array(budgeted.items)
+            "elements": .array(budgeted.items),
+            "menus_excluded": .bool(!includeMenus),
+            "offscreen_excluded": .bool(pruneOffscreen),
+            "timings_ms": .object(phases.mapValues(JSONValue.number)),
+            "time_budget_ms": .number(timeBudget * 1000),
+            "timed_out": .bool(walk.timedOut),
+            "node_cap": .number(Double(nodeCap)),
+            "node_cap_reached": .bool(walk.nodeCapReached)
         ]
         budget.annotate(
             &payload,
             maxDepthUsed: maxDepth,
-            nodesVisited: elements.count,
-            truncated: budgeted.truncated
+            nodesVisited: walk.nodesVisited,
+            truncated: budgeted.truncated || walk.nodeCapReached || walk.timedOut
         )
         if let hint = await axEmptyHint(pid: pid, whenEmpty: elements.isEmpty) {
             payload["ax_tree_hint"] = .string(hint)
@@ -550,21 +561,49 @@ final class ToolRegistry: @unchecked Sendable {
         }
         if let dead = noSuchProcessResult(pid: pid, tool: "find_element") { return dead }
 
+        if let error = validateSemantic(arguments) { return error }
         let role = arguments["role"]?.stringValue
         let title = arguments["title"]?.stringValue
         // v0.9 (A-9): opt-in equality matching. Default stays substring.
         let exact = AXPayload.flag(arguments["exact"])
         let maxDepth = AXDepth.resolve(arguments["max_depth"]?.intValue)
 
-        guard let hit = await accessibility.findElementWithPath(
-            pid: pid, role: role, title: title, exact: exact, maxDepth: maxDepth
-        ) else {
+        let includeMenus = AXPayload.flag(arguments["include_menus"])
+        let semantic = arguments["semantic"]?.stringValue
+        // v0.10 merge (S2 + S5): a semantic target needs the ranked search;
+        // a plain role/title lookup takes the breadth-first walk (shallow
+        // before deep, exact label stops the search, menus excluded).
+        let hitAndStats: (hit: AccessibilityController.Match?, nodesVisited: Int, stoppedEarly: Bool, truncated: Bool, timings: [String: Double])
+        if semantic != nil {
+            let search = await accessibility.findElementsWithStats(
+                pid: pid, role: role, title: title, value: arguments["value"]?.stringValue, exact: exact, maxDepth: maxDepth,
+                limit: 1, semantic: semantic, includeMenus: includeMenus
+            )
+            hitAndStats = (search.matches.first, search.nodesVisited, search.stoppedEarly, search.truncated, [:])
+        } else {
+            let walk = await accessibility.search(
+                pid: pid, maxDepth: maxDepth, limit: 1, includeMenus: includeMenus, shallowFirst: true,
+                stopOnBest: AccessibilityController.exactTitlePreference(title),
+                predicate: { attrs in
+                    AccessibilityController.textMatches(filter: role, candidate: attrs.role ?? "AXUnknown", exact: exact)
+                        && (AccessibilityController.textMatches(filter: title, candidate: attrs.title ?? "", exact: exact)
+                            || AccessibilityController.textMatches(filter: title, candidate: attrs.value ?? "", exact: exact))
+                }
+            )
+            hitAndStats = (walk.matches.first, walk.nodesVisited, walk.matches.count >= 1, walk.timedOut || walk.nodeCapReached, walk.timingsMS)
+        }
+        guard let hit = hitAndStats.hit else {
             var payload: [String: JSONValue] = [
                 "ok": .bool(false),
                 "pid": .number(Double(pid)),
                 "role": role.map(JSONValue.string) ?? .null,
                 "title": title.map(JSONValue.string) ?? .null,
                 "exact": .bool(exact),
+                "menus_excluded": .bool(semantic == nil && !includeMenus),
+                "nodes_visited": .number(Double(hitAndStats.nodesVisited)),
+                "search_stopped_early": .bool(hitAndStats.stoppedEarly),
+                "timings_ms": .object(hitAndStats.timings.mapValues(JSONValue.number)),
+                "truncated": .bool(hitAndStats.truncated),
                 "max_depth_used": .number(Double(maxDepth))
             ]
             if let hint = await axEmptyHint(pid: pid, whenEmpty: true) {
@@ -573,7 +612,8 @@ final class ToolRegistry: @unchecked Sendable {
             return errorResult("No matching element found.", payload)
         }
 
-        let info = await accessibility.getElementInfo(element: hit.element)
+        // v0.10 B4: the search already fetched this info in its batch.
+        let info = hit.info
         // v0.9 (C-5 / A-9): find_element now returns an element_id too,
         // so the cheapest entry-point tool no longer forces a second
         // find_elements call just to get a handle.
@@ -585,8 +625,16 @@ final class ToolRegistry: @unchecked Sendable {
                 "pid": .number(Double(pid)),
                 "element_id": .string(id),
                 "exact": .bool(exact),
+                "menus_excluded": .bool(semantic == nil && !includeMenus),
+                "nodes_visited": .number(Double(hitAndStats.nodesVisited)),
+                "search_stopped_early": .bool(hitAndStats.stoppedEarly),
+                "timings_ms": .object(hitAndStats.timings.mapValues(JSONValue.number)),
+                "truncated": .bool(hitAndStats.truncated),
                 "max_depth_used": .number(Double(maxDepth)),
-                "element": encodeAsJSONValue(info)
+                "matched_field": .string(hit.matchedField),
+                "match": .string(hit.match),
+                "rank_reason": .string(hit.rankReason),
+                "element": encodeElement(info: info, id: id)
             ]
         )
     }
@@ -628,6 +676,7 @@ final class ToolRegistry: @unchecked Sendable {
     }
 
     private func callClick(_ arguments: [String: JSONValue]) async -> ToolCallResult {
+        if arguments["element_id"] != nil { return await callElementMouse("click", arguments) }
         let pid = parsePID(arguments["pid"])
 
         if let x = arguments["x"]?.doubleValue, let y = arguments["y"]?.doubleValue {
@@ -728,6 +777,7 @@ final class ToolRegistry: @unchecked Sendable {
     }
 
     private func callTypeText(_ arguments: [String: JSONValue]) async -> ToolCallResult {
+        if arguments["element_id"] != nil { return await callTargetedType(arguments) }
         guard let text = arguments["text"]?.stringValue else {
             return invalidArgument("type_text requires text.")
         }
@@ -940,7 +990,7 @@ final class ToolRegistry: @unchecked Sendable {
     /// Parse a JSON modifiers array. Delegates name→flag mapping to the
     /// shared `ModifierMap` (see Tools+V2Phase5.swift) so key_down/key_up/
     /// press_key_sequence and press_key all use the exact same parsing.
-    private func parseModifiers(_ rawValue: JSONValue?) -> Result<[CGEventFlags], ToolInputError> {
+    func parseModifiers(_ rawValue: JSONValue?) -> Result<[CGEventFlags], ToolInputError> {
         guard let rawValue else { return .success([]) }
         guard let values = rawValue.arrayValue else {
             return .failure(ToolInputError(description: "modifiers must be an array of strings."))
@@ -993,11 +1043,13 @@ final class ToolRegistry: @unchecked Sendable {
     /// `expected_window` (the guard is opt-in and existing behaviour is
     /// unchanged), or when the actual focus matches. Returns a
     /// `focus_mismatch` error result — inject nothing — on mismatch.
-    func checkFocusGuard(_ arguments: [String: JSONValue]) async -> ToolCallResult? {
+    func checkFocusGuard(_ arguments: [String: JSONValue], actual suppliedFocus: FocusGuard.ActualFocus? = nil) async -> ToolCallResult? {
         let expectedApp = arguments["expected_app"]?.stringValue
         let expectedWindow = arguments["expected_window"]?.stringValue
 
-        let actual = await FocusGuard.currentFocus()
+        let actual: FocusGuard.ActualFocus
+        if let suppliedFocus { actual = suppliedFocus }
+        else { actual = await FocusGuard.currentFocus() }
         let outcome = FocusGuard.evaluate(
             expectedApp: expectedApp,
             expectedWindow: expectedWindow,
@@ -1060,12 +1112,28 @@ final class ToolRegistry: @unchecked Sendable {
         MCPToolDefinition(
             name: "list_elements",
             description: "Survey the ACTIONABLE controls of an app (fixed role whitelist: buttons, links, text fields/areas, checkboxes, radio buttons, pop-up/menu buttons, sliders, switches, steppers… — no containers, rows or static text) down to max_depth (default 24). "
-                + "No filters and no element ids. Use it to answer \"what can I interact with here?\"; use find_elements / query_elements to target specific elements and get ids for follow-up calls, and get_ui_tree for the full structure including containers. " + axPayloadBudgetDoc,
+                + "Off-window subtrees are pruned by default; include_offscreen:true restores them (explicit viewport_only:true still filters). Zero-size/unknown containers are explored. Bounded by node_cap (default 2000, max 10000, independent of the element cache) and time_budget_ms (default 1000, max 5000); node_cap_reached or timed_out sets truncated=true. timings_ms separates queue, preparation, AX fetch, walk and payload costs. No text filters and no element ids. Use it to answer \"what can I interact with here?\"; use find_elements / query_elements to target specific elements and get ids for follow-up calls, and get_ui_tree for the full structure including containers. " + axPayloadBudgetDoc,
             inputSchema: schema(
                 properties: [
                     "pid": .object([
                         "type": .array([.string("integer"), .string("string")]),
                         "description": .string("Target process ID.")
+                    ]),
+                    "include_menus": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Include the AXMenuBar subtree. Default false; responses report menus_excluded. Dedicated menu tools are unaffected.")
+                    ]),
+                    "include_offscreen": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Include off-window elements and their subtrees. Default false; explicit viewport_only:true takes precedence. Responses report offscreen_excluded.")
+                    ]),
+                    "time_budget_ms": .object([
+                        "type": .array([.string("integer"), .string("string")]),
+                        "description": .string("AX walk budget in milliseconds, checked between reads. Default 1000, clamped 1-5000. One in-flight AX call can overrun it; timed_out/truncated report a cutoff.")
+                    ]),
+                    "node_cap": .object([
+                        "type": .array([.string("integer"), .string("string")]),
+                        "description": .string("Maximum visited nodes, independent of the element cache. Default 2000, clamped 1-10000. node_cap_reached and truncated report a cutoff.")
                     ]),
                     "max_depth": .object([
                         "type": .array([.string("integer"), .string("string")]),
@@ -1094,9 +1162,9 @@ final class ToolRegistry: @unchecked Sendable {
         ),
         MCPToolDefinition(
             name: "find_element",
-            description: "Return the FIRST element (depth-first, max_depth default 24, 5 s budget) whose role contains `role` and whose title contains `title` — case-insensitive SUBSTRING by default; title matches AXTitle → AXDescription → AXIdentifier and falls back to AXValue. "
+            description: "Return the first exact label in one breadth-first search (shallow before deep, original sibling order); if no exact label exists, return the first substring match within max_depth (default 24, 5 s budget). Once a substring fallback is found, at most 100 ms remains to find an exact label; truncated=true reports that deadline cutoff whose role contains `role` and whose title contains `title` — case-insensitive SUBSTRING by default; title matches AXTitle → AXDescription → AXIdentifier and falls back to AXValue. "
                 + "WARNING: substring matching on role is wider than it looks — role \"Button\" also matches AXRadioButton, AXMenuButton and AXPopUpButton (a Safari tab was returned for role=Button title=Sign). Pass exact:true for equality matching when you know the exact role/title. "
-                + "Returns role/title/value/position/size plus a content-addressed element_id usable with perform_element_action / get_element_attributes / set_element_attribute. "
+                + "This shallow-first order may select a shallow match after a sibling whose matching descendant is deeper than 8. AXMenuBar subtrees are excluded by default (menus_excluded=true); include_menus:true restores them. Returns role/title/value/position/size plus a content-addressed element_id usable with perform_element_action / get_element_attributes / set_element_attribute. "
                 + "Use find_elements when you need every match; query_elements for regex (e.g. ^Save$); list_elements to survey controls; get_ui_tree for full structure.",
             inputSchema: schema(
                 properties: [
@@ -1104,9 +1172,11 @@ final class ToolRegistry: @unchecked Sendable {
                         "type": .array([.string("integer"), .string("string")]),
                         "description": .string("Target process ID.")
                     ]),
+                    "semantic": .object(["type": .string("string"), "description": .string(axSemanticDoc)]),
+                    "value": .object(["type": .string("string"), "description": .string("Case-insensitive value filter.")]),
                     "role": .object([
                         "type": .string("string"),
-                        "description": .string("Case-insensitive role filter (substring unless exact=true).")
+                        "description": .string("Exact case-insensitive role name; Button is normalized to AXButton.")
                     ]),
                     "title": .object([
                         "type": .string("string"),
@@ -1114,7 +1184,11 @@ final class ToolRegistry: @unchecked Sendable {
                     ]),
                     "exact": .object([
                         "type": .string("boolean"),
-                        "description": .string("Match role and title by case-insensitive EQUALITY instead of substring. Default false for compatibility.")
+                        "description": .string("Match title/value by case-insensitive equality; roles always use exact normalized names.")
+                    ]),
+                    "include_menus": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Include the AXMenuBar subtree. Default false; responses report menus_excluded. Dedicated menu tools are unaffected.")
                     ]),
                     "max_depth": .object([
                         "type": .array([.string("integer"), .string("string")]),
@@ -1126,16 +1200,10 @@ final class ToolRegistry: @unchecked Sendable {
         ),
         MCPToolDefinition(
             name: "click",
-            description: "Click an element by role/title or click absolute coordinates. "
-                + "Coordinate clicks post a synthetic CGEvent that always lands on the "
-                + "frontmost app — pass expected_app/expected_window to abort instead of "
-                + "clicking the wrong window if focus changed. Role/title clicks try AXPress "
-                + "first (focus-independent) and only fall back to a coordinate CGEvent click "
-                + "when AXPress is unsupported on that element — expected_app/expected_window "
-                + "is checked only if/when that fallback fires. Prefer perform_element_action "
-                + "(AXPress) directly when you already have an element handle.",
+            description: "click by element_id or coordinates. Element IDs resolve live; stale identities fail with stale_element. Plain click uses AXPress when supported; other mouse input uses the center clipped to the owning window and a display, or fails with not_visible. Element targets automatically guard their owning app/window as well as expected_app/expected_window. Returns verified true/false/null with a reason; an unchanged surviving element does not prove the action had an effect. pid plus role/title selectors remain supported.",
             inputSchema: schema(
                 properties: [
+                    "element_id": .object(["type": .string("string"), "description": .string("Live element ID; automatically guards its owning app/window. Returns tri-state verified with reason.")]),
                     "pid": .object([
                         "type": .array([.string("integer"), .string("string")]),
                         "description": .string("Target process ID when clicking by selector.")
@@ -1165,15 +1233,10 @@ final class ToolRegistry: @unchecked Sendable {
         ),
         MCPToolDefinition(
             name: "type_text",
-            description: "Type text into the currently focused field. "
-                + "Strategies: auto (clipboard → keys → ax, default; best for React/Angular SPAs), "
-                + "clipboard (paste events), keys (CGEvent unicode), ax (AX set_value last-resort). "
-                + "auto/clipboard/keys post synthetic events and are checked against "
-                + "expected_app/expected_window before typing; strategy=ax sets the value "
-                + "directly and is not checked, since it does not depend on focus. Prefer "
-                + "set_element_attribute (AXValue) directly when you already have an element handle.",
+            description: "Type text into the focused field or an element_id. With element_id, refuse secure fields, set AXFocused through set_element_attribute and verify focus before typing; guard the owning app/window automatically. Strategies: auto (clipboard → keys → ax), clipboard, keys, ax. Without an ID, existing focused-field behavior is retained. Targeted results include verified (true/false/null) and a verification reason; focus change alone does not prove the text was accepted.",
             inputSchema: schema(
                 properties: [
+                    "element_id": .object(["type": .string("string"), "description": .string("Live element ID; automatically guards its owning app/window. Returns tri-state verified with reason.")]),
                     "text": .object([
                         "type": .string("string")
                     ]),

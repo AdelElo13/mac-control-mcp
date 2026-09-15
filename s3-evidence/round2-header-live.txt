@@ -1,0 +1,401 @@
+initialize: 343 ms, serverInfo={'version': '0.9.0', 'name': 'mac-control-mcp'}
+--- element_at_point {"pid": 742, "x": 1444.5, "y": 105} -> 3 ms
+{
+ "ok": false,
+ "pane": "accessibility",
+ "responsible_is_self": false,
+ "responsible_app": {
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "bundle_id": "com.anthropic.claude-code",
+  "pid": 71183,
+  "name": "claude"
+ },
+ "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry.",
+ "launched_by": [
+  "python3.12",
+  "codex",
+  "node",
+  "node"
+ ],
+ "error_code": "permission_missing",
+ "server": {
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/debug",
+  "pid": 68934,
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/arm64-apple-macosx/debug/mac-control-mcp"
+ }
+}
+--- element_at_point {"pid": 742, "x": 1550.5, "y": 105} -> 0 ms
+{
+ "ok": false,
+ "pane": "accessibility",
+ "responsible_is_self": false,
+ "responsible_app": {
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "bundle_id": "com.anthropic.claude-code",
+  "name": "claude",
+  "pid": 71183
+ },
+ "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry.",
+ "launched_by": [
+  "python3.12",
+  "codex",
+  "node",
+  "node"
+ ],
+ "error_code": "permission_missing",
+ "server": {
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/debug",
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/arm64-apple-macosx/debug/mac-control-mcp",
+  "pid": 68934
+ }
+}
+--- element_at_point {"pid": 742, "x": 1444.5, "y": 105} -> 0 ms
+{
+ "ok": false,
+ "pane": "accessibility",
+ "responsible_is_self": false,
+ "responsible_app": {
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "bundle_id": "com.anthropic.claude-code",
+  "name": "claude",
+  "pid": 71183
+ },
+ "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry.",
+ "launched_by": [
+  "python3.12",
+  "codex",
+  "node",
+  "node"
+ ],
+ "error_code": "permission_missing",
+ "server": {
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/debug",
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/arm64-apple-macosx/debug/mac-control-mcp",
+  "pid": 68934
+ }
+}
+--- element_at_point {"pid": 742, "x": 1550.5, "y": 105} -> 0 ms
+{
+ "ok": false,
+ "pane": "accessibility",
+ "responsible_is_self": false,
+ "responsible_app": {
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "bundle_id": "com.anthropic.claude-code",
+  "name": "claude",
+  "pid": 71183
+ },
+ "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry.",
+ "launched_by": [
+  "python3.12",
+  "codex",
+  "node",
+  "node"
+ ],
+ "error_code": "permission_missing",
+ "server": {
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/debug",
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/arm64-apple-macosx/debug/mac-control-mcp",
+  "pid": 68934
+ }
+}
+--- element_at_point {"pid": 742, "x": 1444.5, "y": 105} -> 0 ms
+{
+ "ok": false,
+ "pane": "accessibility",
+ "responsible_is_self": false,
+ "responsible_app": {
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "bundle_id": "com.anthropic.claude-code",
+  "name": "claude",
+  "pid": 71183
+ },
+ "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry.",
+ "launched_by": [
+  "python3.12",
+  "codex",
+  "node",
+  "node"
+ ],
+ "error_code": "permission_missing",
+ "server": {
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/debug",
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/arm64-apple-macosx/debug/mac-control-mcp",
+  "pid": 68934
+ }
+}
+--- element_at_point {"pid": 742, "x": 1550.5, "y": 105} -> 0 ms
+{
+ "ok": false,
+ "pane": "accessibility",
+ "responsible_is_self": false,
+ "responsible_app": {
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "bundle_id": "com.anthropic.claude-code",
+  "name": "claude",
+  "pid": 71183
+ },
+ "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry.",
+ "launched_by": [
+  "python3.12",
+  "codex",
+  "node",
+  "node"
+ ],
+ "error_code": "permission_missing",
+ "server": {
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/debug",
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/arm64-apple-macosx/debug/mac-control-mcp",
+  "pid": 68934
+ }
+}
+--- element_at_point {"pid": 742, "x": 1444.5, "y": 105} -> 0 ms
+{
+ "ok": false,
+ "pane": "accessibility",
+ "responsible_is_self": false,
+ "responsible_app": {
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "bundle_id": "com.anthropic.claude-code",
+  "name": "claude",
+  "pid": 71183
+ },
+ "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry.",
+ "launched_by": [
+  "python3.12",
+  "codex",
+  "node",
+  "node"
+ ],
+ "error_code": "permission_missing",
+ "server": {
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/debug",
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/arm64-apple-macosx/debug/mac-control-mcp",
+  "pid": 68934
+ }
+}
+--- element_at_point {"pid": 742, "x": 1550.5, "y": 105} -> 0 ms
+{
+ "ok": false,
+ "pane": "accessibility",
+ "responsible_is_self": false,
+ "responsible_app": {
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "bundle_id": "com.anthropic.claude-code",
+  "name": "claude",
+  "pid": 71183
+ },
+ "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry.",
+ "launched_by": [
+  "python3.12",
+  "codex",
+  "node",
+  "node"
+ ],
+ "error_code": "permission_missing",
+ "server": {
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/debug",
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/arm64-apple-macosx/debug/mac-control-mcp",
+  "pid": 68934
+ }
+}
+--- element_at_point {"pid": 742, "x": 1444.5, "y": 105} -> 0 ms
+{
+ "ok": false,
+ "pane": "accessibility",
+ "responsible_is_self": false,
+ "responsible_app": {
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "bundle_id": "com.anthropic.claude-code",
+  "name": "claude",
+  "pid": 71183
+ },
+ "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry.",
+ "launched_by": [
+  "python3.12",
+  "codex",
+  "node",
+  "node"
+ ],
+ "error_code": "permission_missing",
+ "server": {
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/debug",
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/arm64-apple-macosx/debug/mac-control-mcp",
+  "pid": 68934
+ }
+}
+--- element_at_point {"pid": 742, "x": 1550.5, "y": 105} -> 0 ms
+{
+ "ok": false,
+ "pane": "accessibility",
+ "responsible_is_self": false,
+ "responsible_app": {
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "bundle_id": "com.anthropic.claude-code",
+  "name": "claude",
+  "pid": 71183
+ },
+ "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry.",
+ "launched_by": [
+  "python3.12",
+  "codex",
+  "node",
+  "node"
+ ],
+ "error_code": "permission_missing",
+ "server": {
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/debug",
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/arm64-apple-macosx/debug/mac-control-mcp",
+  "pid": 68934
+ }
+}
+--- element_at_point {"pid": 742, "x": 1444.5, "y": 105} -> 0 ms
+{
+ "ok": false,
+ "pane": "accessibility",
+ "responsible_is_self": false,
+ "responsible_app": {
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "bundle_id": "com.anthropic.claude-code",
+  "name": "claude",
+  "pid": 71183
+ },
+ "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry.",
+ "launched_by": [
+  "python3.12",
+  "codex",
+  "node",
+  "node"
+ ],
+ "error_code": "permission_missing",
+ "server": {
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/debug",
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/arm64-apple-macosx/debug/mac-control-mcp",
+  "pid": 68934
+ }
+}
+--- element_at_point {"pid": 742, "x": 1550.5, "y": 105} -> 0 ms
+{
+ "ok": false,
+ "pane": "accessibility",
+ "responsible_is_self": false,
+ "responsible_app": {
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "bundle_id": "com.anthropic.claude-code",
+  "name": "claude",
+  "pid": 71183
+ },
+ "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry.",
+ "launched_by": [
+  "python3.12",
+  "codex",
+  "node",
+  "node"
+ ],
+ "error_code": "permission_missing",
+ "server": {
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/debug",
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/arm64-apple-macosx/debug/mac-control-mcp",
+  "pid": 68934
+ }
+}
+--- element_at_point {"pid": 742, "x": 1444.5, "y": 105} -> 0 ms
+{
+ "ok": false,
+ "pane": "accessibility",
+ "responsible_is_self": false,
+ "responsible_app": {
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "bundle_id": "com.anthropic.claude-code",
+  "name": "claude",
+  "pid": 71183
+ },
+ "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry.",
+ "launched_by": [
+  "python3.12",
+  "codex",
+  "node",
+  "node"
+ ],
+ "error_code": "permission_missing",
+ "server": {
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/debug",
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/arm64-apple-macosx/debug/mac-control-mcp",
+  "pid": 68934
+ }
+}
+--- element_at_point {"pid": 742, "x": 1550.5, "y": 105} -> 0 ms
+{
+ "ok": false,
+ "pane": "accessibility",
+ "responsible_is_self": false,
+ "responsible_app": {
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "bundle_id": "com.anthropic.claude-code",
+  "name": "claude",
+  "pid": 71183
+ },
+ "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry.",
+ "launched_by": [
+  "python3.12",
+  "codex",
+  "node",
+  "node"
+ ],
+ "error_code": "permission_missing",
+ "server": {
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/debug",
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/arm64-apple-macosx/debug/mac-control-mcp",
+  "pid": 68934
+ }
+}
+--- element_at_point {"pid": 742, "x": 1444.5, "y": 105} -> 0 ms
+{
+ "ok": false,
+ "pane": "accessibility",
+ "responsible_is_self": false,
+ "responsible_app": {
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "bundle_id": "com.anthropic.claude-code",
+  "name": "claude",
+  "pid": 71183
+ },
+ "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry.",
+ "launched_by": [
+  "python3.12",
+  "codex",
+  "node",
+  "node"
+ ],
+ "error_code": "permission_missing",
+ "server": {
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/debug",
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/arm64-apple-macosx/debug/mac-control-mcp",
+  "pid": 68934
+ }
+}
+--- element_at_point {"pid": 742, "x": 1550.5, "y": 105} -> 0 ms
+{
+ "ok": false,
+ "pane": "accessibility",
+ "responsible_is_self": false,
+ "responsible_app": {
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "bundle_id": "com.anthropic.claude-code",
+  "name": "claude",
+  "pid": 71183
+ },
+ "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry.",
+ "launched_by": [
+  "python3.12",
+  "codex",
+  "node",
+  "node"
+ ],
+ "error_code": "permission_missing",
+ "server": {
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/debug",
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/arm64-apple-macosx/debug/mac-control-mcp",
+  "pid": 68934
+ }
+}

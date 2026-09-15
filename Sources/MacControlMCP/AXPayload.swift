@@ -27,10 +27,10 @@ enum AXPayload {
     // MARK: - fields
 
     /// Per-node keys `get_ui_tree` emits.
-    static let treeFields: [String] = ["id", "role", "title", "value", "position", "size", "depth", "children"]
+    static let treeFields: [String] = ["id", "role", "title", "value", "position", "size", "depth", "children", "url", "dom_id", "dom_class"]
 
     /// Per-element keys the search tools emit.
-    static let elementFields: [String] = ["id", "role", "title", "value", "position", "size", "depth"]
+    static let elementFields: [String] = ["id", "role", "title", "value", "position", "size", "depth", "url", "dom_id", "dom_class", "matched_field", "match", "rank_reason"]
 
     /// Resolve a `fields` argument. `nil` means "every field" (the
     /// default). Names the caller got wrong come back in `unknown` so a
@@ -97,6 +97,15 @@ enum AXPayload {
             if frame.width == 0 || frame.height == 0, window.contains(frame.origin) { return true }
         }
         return false
+    }
+
+    /// v0.10 B1/B2: only a finite, nonempty frame proves a subtree lies
+    /// outside every clip. Unknown geometry must not hide descendants.
+    static func shouldPrune(frame: CGRect?, clips: [CGRect]) -> Bool {
+        guard let frame, !frame.isEmpty, !frame.isNull, !frame.isInfinite,
+              frame.origin.x.isFinite, frame.origin.y.isFinite,
+              frame.width.isFinite, frame.height.isFinite, !clips.isEmpty else { return false }
+        return !clips.contains { $0.intersects(frame) }
     }
 
     // MARK: - tree shaping
@@ -166,10 +175,49 @@ enum AXPayload {
 
     // MARK: - byte budget
 
-    /// Encoded JSON size in bytes. Uses the same encoder the transport
-    /// uses, so the number an agent sees is the number it paid.
-    static func encodedSize(_ value: JSONValue) -> Int {
-        (try? JSONEncoder().encode(value))?.count ?? 0
+    /// v0.10 B6: count JSON delimiters and escaped UTF-8 directly, so
+    /// reporting `bytes` does not serialize the whole payload again.
+    /// Only number formatting is delegated to the transport's encoder;
+    /// repeated coordinates/depths reuse their scalar count. Bit-pattern
+    /// keys preserve the different encodings of zero and negative zero.
+    /// Keep hand-rolled escaping covered by the JSONEncoder parity test
+    /// `AXPayloadBudgetTests.transportByteCount` (v0.10 B6).
+    static func encodedSize(
+        _ value: JSONValue,
+        using encode: (JSONValue) -> Int = { (try? JSONEncoder().encode($0))?.count ?? 0 }
+    ) -> Int {
+        var numberSizes: [UInt64: Int] = [:]
+        func stringSize(_ string: String) -> Int {
+            var size = 2
+            for byte in string.utf8 {
+                switch byte {
+                case 0x22, 0x5C, 0x2F, 0x08, 0x09, 0x0A, 0x0C, 0x0D: size += 2
+                case 0...0x1F: size += 6
+                default: size += 1
+                }
+            }
+            return size
+        }
+        func count(_ value: JSONValue) -> Int {
+            switch value {
+            case .string(let string): return stringSize(string)
+            case .number(let number):
+                guard number.isFinite else { return 4 }
+                if let size = numberSizes[number.bitPattern] { return size }
+                let size = encode(value)
+                numberSizes[number.bitPattern] = size
+                return size
+            case .bool(let value): return value ? 4 : 5
+            case .null: return 4
+            case .array(let items):
+                return 2 + max(0, items.count - 1) + items.reduce(0) { $0 + count($1) }
+            case .object(let object):
+                return 2 + max(0, object.count - 1) + object.reduce(0) {
+                    $0 + stringSize($1.key) + 1 + count($1.value)
+                }
+            }
+        }
+        return count(value)
     }
 
     /// Append encoded items while they fit in `maxBytes`.
@@ -191,6 +239,12 @@ enum AXPayload {
             kept.append(item)
         }
         return (kept, false)
+    }
+
+    /// v0.10 B1/B3: budget synchronous AX work between reads; one in-flight
+    /// AX IPC can overrun it. Callers report timed_out/truncated explicitly.
+    static func walkBudget(_ arguments: [String: JSONValue], defaultMS: Int) -> TimeInterval {
+        Double(max(1, min(arguments["time_budget_ms"]?.intValue ?? defaultMS, 5000))) / 1000
     }
 
     /// Parse `max_bytes`. Values <= 0 are treated as "no cap" rather than

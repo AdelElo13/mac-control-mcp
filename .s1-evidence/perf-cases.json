@@ -1,0 +1,214 @@
+[
+  [
+    "get_ui_tree/Finder",
+    "get_ui_tree",
+    {
+      "pid": 742
+    }
+  ],
+  [
+    "get_ui_tree(interactive,fields)/Finder",
+    "get_ui_tree",
+    {
+      "pid": 742,
+      "interactive_only": true,
+      "fields": [
+        "id",
+        "role",
+        "title"
+      ]
+    }
+  ],
+  [
+    "find_elements(AXButton,20)/Finder",
+    "find_elements",
+    {
+      "pid": 742,
+      "role": "AXButton",
+      "limit": 20
+    }
+  ],
+  [
+    "query_elements(^Eject$)/Finder",
+    "query_elements",
+    {
+      "pid": 742,
+      "title_regex": "^Eject$"
+    }
+  ],
+  [
+    "list_elements/Finder",
+    "list_elements",
+    {
+      "pid": 742
+    }
+  ],
+  [
+    "element_at_point/Finder",
+    "element_at_point",
+    {
+      "pid": 742,
+      "x": 900,
+      "y": 569
+    }
+  ],
+  [
+    "get_ui_tree/Safari",
+    "get_ui_tree",
+    {
+      "pid": 681
+    }
+  ],
+  [
+    "get_ui_tree(interactive,fields)/Safari",
+    "get_ui_tree",
+    {
+      "pid": 681,
+      "interactive_only": true,
+      "fields": [
+        "id",
+        "role",
+        "title"
+      ]
+    }
+  ],
+  [
+    "find_elements(AXButton,20)/Safari",
+    "find_elements",
+    {
+      "pid": 681,
+      "role": "AXButton",
+      "limit": 20
+    }
+  ],
+  [
+    "query_elements(^Go back$)/Safari",
+    "query_elements",
+    {
+      "pid": 681,
+      "title_regex": "^Go back$"
+    }
+  ],
+  [
+    "list_elements/Safari",
+    "list_elements",
+    {
+      "pid": 681
+    }
+  ],
+  [
+    "element_at_point/Safari",
+    "element_at_point",
+    {
+      "pid": 681,
+      "x": 900,
+      "y": 567
+    }
+  ],
+  [
+    "get_ui_tree/Chrome",
+    "get_ui_tree",
+    {
+      "pid": 41308
+    }
+  ],
+  [
+    "get_ui_tree(interactive,fields)/Chrome",
+    "get_ui_tree",
+    {
+      "pid": 41308,
+      "interactive_only": true,
+      "fields": [
+        "id",
+        "role",
+        "title"
+      ]
+    }
+  ],
+  [
+    "find_elements(AXButton,20)/Chrome",
+    "find_elements",
+    {
+      "pid": 41308,
+      "role": "AXButton",
+      "limit": 20
+    }
+  ],
+  [
+    "query_elements(^Reload$)/Chrome",
+    "query_elements",
+    {
+      "pid": 41308,
+      "title_regex": "^Reload$"
+    }
+  ],
+  [
+    "list_elements/Chrome",
+    "list_elements",
+    {
+      "pid": 41308
+    }
+  ],
+  [
+    "element_at_point/Chrome",
+    "element_at_point",
+    {
+      "pid": 41308,
+      "x": 622,
+      "y": 573
+    }
+  ],
+  [
+    "get_ui_tree/SysSettings",
+    "get_ui_tree",
+    {
+      "pid": 76246
+    }
+  ],
+  [
+    "get_ui_tree(interactive,fields)/SysSettings",
+    "get_ui_tree",
+    {
+      "pid": 76246,
+      "interactive_only": true,
+      "fields": [
+        "id",
+        "role",
+        "title"
+      ]
+    }
+  ],
+  [
+    "find_elements(AXButton,20)/SysSettings",
+    "find_elements",
+    {
+      "pid": 76246,
+      "role": "AXButton",
+      "limit": 20
+    }
+  ],
+  [
+    "query_elements(^Search$)/SysSettings",
+    "query_elements",
+    {
+      "pid": 76246,
+      "title_regex": "^Search$"
+    }
+  ],
+  [
+    "list_elements/SysSettings",
+    "list_elements",
+    {
+      "pid": 76246
+    }
+  ],
+  [
+    "element_at_point/SysSettings",
+    "element_at_point",
+    {
+      "pid": 76246,
+      "x": 800,
+      "y": 573
+    }
+  ]
+]
