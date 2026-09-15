@@ -1,0 +1,3 @@
+Independent code-reviewer, final review: no remaining material findings.
+Verified hit subtree isolation, strong AX anchor filtering, DOM fallback hints, and OCR box deduplication / fast-first coordinator wiring.
+Reviewer did not run tests or live AX checks; local test evidence is green-final.txt.

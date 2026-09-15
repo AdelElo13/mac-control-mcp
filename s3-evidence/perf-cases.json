@@ -1,0 +1,54 @@
+[
+  [
+    "ground(ocr,Downloads)/Finder",
+    "ground",
+    {
+      "target": "Downloads",
+      "strategy": "ocr",
+      "window_id": 31954
+    }
+  ],
+  [
+    "ground(ocr,Manage cookies)/Safari",
+    "ground",
+    {
+      "target": "Manage cookies",
+      "strategy": "ocr",
+      "window_id": 31769
+    }
+  ],
+  [
+    "ground(ocr,Sign in)/Chrome",
+    "ground",
+    {
+      "target": "Sign in",
+      "strategy": "ocr",
+      "window_id": 29665
+    }
+  ],
+  [
+    "ground(ocr,Users)/SysSettings",
+    "ground",
+    {
+      "target": "Users",
+      "strategy": "ocr",
+      "window_id": 29712
+    }
+  ],
+  [
+    "ocr_screen(accurate)/Finder",
+    "ocr_screen",
+    {
+      "window_id": 31954,
+      "level": "accurate"
+    }
+  ],
+  [
+    "ocr_screen(fast)/Finder",
+    "ocr_screen",
+    {
+      "window_id": 31954,
+      "level": "fast"
+    }
+  ]
+]

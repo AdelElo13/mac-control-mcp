@@ -140,11 +140,17 @@ actor BrowserDOMController {
     func domTree(browser browserName: String) async -> DOMResult {
         let b = BrowserController.Browser.detect(browserName)
         let r = await browser.evalJS(browser: b, code: Self.domTreeScript)
+        return Self.domResult(evaluation: r, browser: browserName)
+    }
+
+    static func domResult(evaluation r: BrowserController.EvalResult, browser browserName: String) -> DOMResult {
         guard r.success, let jsonStr = r.value else {
             return DOMResult(ok: false, browser: browserName, root: nil,
                              nodeCount: 0, includeShadow: true,
                              error: r.error ?? "eval failed",
-                             errorCode: r.errorCode ?? "js_error", hint: r.hint, pane: r.pane)
+                             errorCode: r.errorCode ?? "js_error",
+                             hint: r.hint ?? "Check the active page in \(browserName) and retry; if evaluation stays unavailable, check Allow JavaScript from Apple Events in the browser developer menu.",
+                             pane: r.pane)
         }
         return Self.decodeDOM(jsonStr, browser: browserName)
     }

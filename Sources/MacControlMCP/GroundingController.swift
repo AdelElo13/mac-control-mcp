@@ -485,6 +485,7 @@ actor GroundingController {
             throw ScreenController.ScreenError.captureFailed
         }
         let needle = GroundingPolicy.normalize(target)
+        let strongAnchors = anchors.filter { $0.confidence >= 0.8 }
         var out: [Candidate] = []
         for block in result.blocks {
             let text = GroundingPolicy.normalize(block.text)
@@ -501,6 +502,12 @@ actor GroundingController {
                                               points: Double(windowBounds.width))
             let heightPt = Self.pixelsToPoints(block.height, pixels: capture.height,
                                                points: Double(windowBounds.height))
+            // v0.10 A5/B5: apply the same visible-target policy before either
+            // scoring or deciding whether fast OCR can suppress accurate OCR.
+            let frame = CGRect(x: center.x - widthPt / 2, y: center.y - heightPt / 2,
+                               width: widthPt, height: heightPt)
+            guard GroundingPolicy.match(.init(role: nil, title: block.text, value: nil,
+                description: nil, bounds: frame), target: target, displays: displays) != nil else { continue }
             out.append(.init(
                 role: nil,
                 title: block.text,
@@ -510,7 +517,7 @@ actor GroundingController {
                 elementId: nil,
                 source: "ocr",
                 confidence: GroundingPolicy.ocrConfidence(text: block.text, target: target,
-                    recognition: Double(block.confidence), distance: anchors.filter { $0.confidence >= 0.8 }
+                    recognition: Double(block.confidence), distance: strongAnchors
                         .map { hypot($0.x - center.x, $0.y - center.y) }.min()),
                 matchedField: "ocr"
             ))
@@ -518,7 +525,7 @@ actor GroundingController {
         // v0.10 A5: OCR-only substring matches also lose confidence when
         // they disagree spatially with an exact OCR label.
         let exacts = out.filter { GroundingPolicy.normalize($0.title ?? "") == needle }
-        if anchors.isEmpty, !exacts.isEmpty {
+        if strongAnchors.isEmpty, !exacts.isEmpty {
             out = out.map { candidate in
                 guard GroundingPolicy.normalize(candidate.title ?? "") != needle else { return candidate }
                 let distance = exacts.map { hypot($0.x - candidate.x, $0.y - candidate.y) }.min()
@@ -528,7 +535,7 @@ actor GroundingController {
                         recognition: candidate.confidence, distance: distance), matchedField: "ocr")
             }
         }
-        return out
+        return GroundingPolicy.ranked(out)
     }
 
     // MARK: - B2: ax_tree_augmented (single-pass OCR + geometric join)

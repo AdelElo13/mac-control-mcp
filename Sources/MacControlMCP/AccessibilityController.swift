@@ -169,26 +169,21 @@ actor AccessibilityController {
     }
 
     /// v0.10 C2: SwiftUI/Finder can report a whole container for a precise
-    /// point. Search its owning window, so sibling controls remain reachable.
+    /// point. Search inside the actual hit to keep sheets and sibling groups isolated.
     func refinedHit(element: AXUIElement, x: Double, y: Double) -> (element: AXUIElement, quality: String) {
         func frame(_ values: AXAttributeBatch.Values) -> CGRect? {
             guard let position = values.position, let size = values.size else { return nil }
             return CGRect(origin: position, size: size)
         }
-        let attrs = AXAttributeBatch.fetch(element, includeChildren: false)
         let window = ([element] + AXPath.ancestors(of: element, limit: 24)).first {
             AXPath.copyString($0, "AXRole") == "AXWindow"
         }
-        let windowFrame = window.flatMap { frame(AXAttributeBatch.fetch($0, includeChildren: false)) }
-        guard GeometricHitTest.needsSearch(role: attrs.role, frame: frame(attrs), window: windowFrame) else {
-            return (element, "direct")
-        }
-        let root = AXKey(element: window ?? element)
-        let best = GeometricHitTest.search(root: root, point: CGPoint(x: x, y: y)) { key in
+        let refined = GeometricHitTest.refine(hit: AXKey(element: element),
+            window: window.map { AXKey(element: $0) }, point: CGPoint(x: x, y: y)) { key in
             let values = AXAttributeBatch.fetch(key.element, includeChildren: true)
             return .init(role: values.role, frame: frame(values), children: values.children.map { AXKey(element: $0) })
         }
-        return best.map { ($0.element, "geometric") } ?? (element, "container")
+        return (refined.element.element, refined.quality)
     }
 
     /// pid that owns an element handle.
@@ -785,7 +780,7 @@ actor AccessibilityController {
         let displays = groundingTarget == nil ? [] : WindowIdentity.displayBounds().map { $0.rect }
 
         func recurse(element: AXUIElement, depth: Int, parentPath: [AXPathComponent], ordinal: Int) {
-            guard matches.count < limit, depth <= maxDepth, visited.count < 5000 else { return }
+            guard matches.count < limit, depth <= maxDepth else { return }
             guard Date() < deadline else { return }
             // AXKey wraps CFHash + CFEqual — see its definition.
             guard visited.insert(AXKey(element: element)).inserted else { return }

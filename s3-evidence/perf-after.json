@@ -1,0 +1,138 @@
+[
+ {
+  "label": "ground(ocr,Downloads)/Finder",
+  "tool": "ground",
+  "args": {
+   "target": "Downloads",
+   "strategy": "ocr",
+   "window_id": 31954
+  },
+  "n": 7,
+  "p50": 0.2,
+  "p95": 0.3,
+  "min": 0.1,
+  "max": 0.3,
+  "bytes": 205,
+  "errors": 7,
+  "info": {
+   "error_code": "no_such_window"
+  },
+  "err_sample": {
+   "error_code": "no_such_window",
+   "hint": "Call list_windows and use a window_id from its output \u2014 the window may have been closed, or the id may belong to a different session."
+  }
+ },
+ {
+  "label": "ground(ocr,Manage cookies)/Safari",
+  "tool": "ground",
+  "args": {
+   "target": "Manage cookies",
+   "strategy": "ocr",
+   "window_id": 31769
+  },
+  "n": 7,
+  "p50": 0.2,
+  "p95": 0.3,
+  "min": 0.1,
+  "max": 0.3,
+  "bytes": 205,
+  "errors": 7,
+  "info": {
+   "error_code": "no_such_window"
+  },
+  "err_sample": {
+   "error_code": "no_such_window",
+   "hint": "Call list_windows and use a window_id from its output \u2014 the window may have been closed, or the id may belong to a different session."
+  }
+ },
+ {
+  "label": "ground(ocr,Sign in)/Chrome",
+  "tool": "ground",
+  "args": {
+   "target": "Sign in",
+   "strategy": "ocr",
+   "window_id": 29665
+  },
+  "n": 7,
+  "p50": 0.1,
+  "p95": 0.2,
+  "min": 0.1,
+  "max": 0.2,
+  "bytes": 205,
+  "errors": 7,
+  "info": {
+   "error_code": "no_such_window"
+  },
+  "err_sample": {
+   "error_code": "no_such_window",
+   "hint": "Call list_windows and use a window_id from its output \u2014 the window may have been closed, or the id may belong to a different session."
+  }
+ },
+ {
+  "label": "ground(ocr,Users)/SysSettings",
+  "tool": "ground",
+  "args": {
+   "target": "Users",
+   "strategy": "ocr",
+   "window_id": 29712
+  },
+  "n": 7,
+  "p50": 0.1,
+  "p95": 0.2,
+  "min": 0.1,
+  "max": 0.2,
+  "bytes": 205,
+  "errors": 7,
+  "info": {
+   "error_code": "no_such_window"
+  },
+  "err_sample": {
+   "error_code": "no_such_window",
+   "hint": "Call list_windows and use a window_id from its output \u2014 the window may have been closed, or the id may belong to a different session."
+  }
+ },
+ {
+  "label": "ocr_screen(accurate)/Finder",
+  "tool": "ocr_screen",
+  "args": {
+   "window_id": 31954,
+   "level": "accurate"
+  },
+  "n": 7,
+  "p50": 0.1,
+  "p95": 0.2,
+  "min": 0.1,
+  "max": 0.2,
+  "bytes": 205,
+  "errors": 7,
+  "info": {
+   "error_code": "no_such_window"
+  },
+  "err_sample": {
+   "error_code": "no_such_window",
+   "hint": "Call list_windows and use a window_id from its output \u2014 the window may have been closed, or the id may belong to a different session."
+  }
+ },
+ {
+  "label": "ocr_screen(fast)/Finder",
+  "tool": "ocr_screen",
+  "args": {
+   "window_id": 31954,
+   "level": "fast"
+  },
+  "n": 7,
+  "p50": 0.1,
+  "p95": 0.1,
+  "min": 0.1,
+  "max": 0.1,
+  "bytes": 205,
+  "errors": 7,
+  "info": {
+   "error_code": "no_such_window"
+  },
+  "err_sample": {
+   "error_code": "no_such_window",
+   "hint": "Call list_windows and use a window_id from its output \u2014 the window may have been closed, or the id may belong to a different session."
+  }
+ }
+]

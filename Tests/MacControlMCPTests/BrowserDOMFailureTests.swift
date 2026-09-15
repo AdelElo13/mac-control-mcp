@@ -4,6 +4,20 @@ import Testing
 /// v0.10 A7: Safari's empty result and browser policy denials need actionable codes.
 @Suite("Browser DOM failures")
 struct BrowserDOMFailureTests {
+    @Test func evaluationFailuresAlwaysHaveRecoveryHints() {
+        for code in [String?.none, "failed"] {
+            let failure = BrowserDOMController.domResult(evaluation: .init(success: false, value: nil,
+                error: "Evaluation failed", errorCode: code, hint: nil, pane: nil), browser: "Safari")
+            #expect(failure.errorCode != nil)
+            #expect(failure.hint?.isEmpty == false)
+        }
+        let failure = BrowserDOMController.domResult(evaluation: .init(success: false, value: nil,
+            error: "Policy", errorCode: "permission_policy_denied", hint: "Allow JavaScript from Apple Events",
+            pane: nil), browser: "Chrome")
+        #expect(failure.errorCode == "permission_policy_denied")
+        #expect(failure.hint == "Allow JavaScript from Apple Events")
+    }
+
     @Test func missingSafariResultHasCodeAndSetting() {
         let failure = BrowserDOMController.decodeDOM("missing value", browser: "Safari")
         #expect(!failure.ok)

@@ -1,0 +1,523 @@
+initialize: 308 ms, serverInfo={'version': '0.9.0', 'name': 'mac-control-mcp'}
+--- list_apps {} -> 1 ms
+{
+ "ok": true,
+ "apps": [],
+ "count": 0
+}
+--- list_windows {} -> 3 ms
+{
+ "windows": [],
+ "ok": true,
+ "count": 0
+}
+--- permissions_status {} -> 4 ms
+{
+ "contacts": "info_plist_missing",
+ "location": "info_plist_missing",
+ "screen_recording": "not_granted",
+ "reminders": "info_plist_missing",
+ "microphone": "info_plist_missing",
+ "responsible_is_self": false,
+ "server": {
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/arm64-apple-macosx/debug/mac-control-mcp",
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/debug",
+  "pid": 3852
+ },
+ "hint": "For each item in 'missing', call request_permissions (categories=[...]) to trigger the prompt, or open_permission_pane pane=<item> and enable 'claude'. Grants belong to the responsible app 'claude', not to mac-control-mcp alone — launching the server from another client changes which app needs them.",
+ "accessibility": "not_granted",
+ "prompt_blocked_by_missing_entitlement": [],
+ "missing": [
+  "accessibility",
+  "screen_recording",
+  "calendar",
+  "reminders",
+  "contacts",
+  "location",
+  "microphone"
+ ],
+ "responsible_app": {
+  "pid": 71183,
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "bundle_id": "com.anthropic.claude-code",
+  "name": "claude"
+ },
+ "calendar": "info_plist_missing",
+ "launched_by": [
+  "python3.12",
+  "codex",
+  "node",
+  "node"
+ ],
+ "ok": true
+}
+--- ground {"pid": 7018, "target": "Untitled", "strategy": "ax"} -> 1 ms
+{
+ "matched_field": null,
+ "ok": false,
+ "max_depth_used": 24,
+ "error_code": "not_found",
+ "alternatives": [],
+ "result": {
+  "maxDepthUsed": 24,
+  "error": "no AX match at depth 24",
+  "errorCode": "not_found",
+  "ok": false,
+  "confidence": 0,
+  "strategyUsed": "ax",
+  "candidates": []
+ },
+ "pid": 7018
+}
+--- ground {"pid": 7018, "target": "Untitled", "strategy": "ocr"} -> 0 ms
+{
+ "pid": 7018,
+ "matched_field": null,
+ "result": {
+  "error": "OCR capture of pid 7018's window failed: Screen capture failed.",
+  "confidence": 0,
+  "errorCode": "capture_failed",
+  "ok": false,
+  "strategyUsed": "none",
+  "candidates": [],
+  "maxDepthUsed": 24
+ },
+ "max_depth_used": 24,
+ "alternatives": [],
+ "error_code": "capture_failed",
+ "ok": false
+}
+--- ground {"pid": 7018, "target": "Untitled", "strategy": "auto"} -> 1 ms
+{
+ "matched_field": null,
+ "result": {
+  "error": "OCR capture of pid 7018's window failed: Screen capture failed.",
+  "confidence": 0,
+  "errorCode": "capture_failed",
+  "ok": false,
+  "strategyUsed": "none",
+  "candidates": [],
+  "maxDepthUsed": 24
+ },
+ "pid": 7018,
+ "max_depth_used": 24,
+ "alternatives": [],
+ "error_code": "capture_failed",
+ "ok": false
+}
+--- ground {"pid": 681, "target": "Skip to content", "strategy": "ax"} -> 1 ms
+{
+ "pid": 681,
+ "matched_field": null,
+ "result": {
+  "error": "no AX match at depth 24",
+  "confidence": 0,
+  "errorCode": "not_found",
+  "ok": false,
+  "strategyUsed": "ax",
+  "candidates": [],
+  "maxDepthUsed": 24
+ },
+ "max_depth_used": 24,
+ "alternatives": [],
+ "error_code": "not_found",
+ "ok": false
+}
+--- ground {"pid": 681, "target": "Skip to content", "strategy": "ocr"} -> 0 ms
+{
+ "matched_field": null,
+ "result": {
+  "error": "OCR capture of pid 681's window failed: Screen capture failed.",
+  "confidence": 0,
+  "errorCode": "capture_failed",
+  "ok": false,
+  "strategyUsed": "none",
+  "candidates": [],
+  "maxDepthUsed": 24
+ },
+ "pid": 681,
+ "max_depth_used": 24,
+ "alternatives": [],
+ "error_code": "capture_failed",
+ "ok": false
+}
+--- ground {"pid": 681, "target": "Skip to content", "strategy": "auto"} -> 1 ms
+{
+ "pid": 681,
+ "matched_field": null,
+ "result": {
+  "error": "OCR capture of pid 681's window failed: Screen capture failed.",
+  "confidence": 0,
+  "errorCode": "capture_failed",
+  "ok": false,
+  "strategyUsed": "none",
+  "candidates": [],
+  "maxDepthUsed": 24
+ },
+ "max_depth_used": 24,
+ "alternatives": [],
+ "error_code": "capture_failed",
+ "ok": false
+}
+--- ground {"pid": 41308, "target": "Skip to content", "strategy": "ax"} -> 1 ms
+{
+ "matched_field": null,
+ "result": {
+  "error": "no AX match at depth 24",
+  "confidence": 0,
+  "errorCode": "not_found",
+  "ok": false,
+  "strategyUsed": "ax",
+  "candidates": [],
+  "maxDepthUsed": 24
+ },
+ "pid": 41308,
+ "max_depth_used": 24,
+ "alternatives": [],
+ "error_code": "not_found",
+ "ok": false
+}
+--- ground {"pid": 41308, "target": "Skip to content", "strategy": "ocr"} -> 0 ms
+{
+ "pid": 41308,
+ "matched_field": null,
+ "result": {
+  "error": "OCR capture of pid 41308's window failed: Screen capture failed.",
+  "confidence": 0,
+  "errorCode": "capture_failed",
+  "ok": false,
+  "strategyUsed": "none",
+  "candidates": [],
+  "maxDepthUsed": 24
+ },
+ "max_depth_used": 24,
+ "alternatives": [],
+ "error_code": "capture_failed",
+ "ok": false
+}
+--- ground {"pid": 41308, "target": "Skip to content", "strategy": "auto"} -> 1 ms
+{
+ "matched_field": null,
+ "result": {
+  "error": "OCR capture of pid 41308's window failed: Screen capture failed.",
+  "confidence": 0,
+  "errorCode": "capture_failed",
+  "ok": false,
+  "strategyUsed": "none",
+  "candidates": [],
+  "maxDepthUsed": 24
+ },
+ "pid": 41308,
+ "max_depth_used": 24,
+ "alternatives": [],
+ "error_code": "capture_failed",
+ "ok": false
+}
+--- ground {"pid": 742, "target": "Shared", "strategy": "ax"} -> 1 ms
+{
+ "pid": 742,
+ "matched_field": null,
+ "result": {
+  "error": "no AX match at depth 24",
+  "confidence": 0,
+  "errorCode": "not_found",
+  "ok": false,
+  "strategyUsed": "ax",
+  "candidates": [],
+  "maxDepthUsed": 24
+ },
+ "max_depth_used": 24,
+ "alternatives": [],
+ "error_code": "not_found",
+ "ok": false
+}
+--- ground {"pid": 742, "target": "Shared", "strategy": "ocr"} -> 0 ms
+{
+ "matched_field": null,
+ "result": {
+  "error": "OCR capture of pid 742's window failed: Screen capture failed.",
+  "confidence": 0,
+  "errorCode": "capture_failed",
+  "ok": false,
+  "strategyUsed": "none",
+  "candidates": [],
+  "maxDepthUsed": 24
+ },
+ "pid": 742,
+ "max_depth_used": 24,
+ "alternatives": [],
+ "error_code": "capture_failed",
+ "ok": false
+}
+--- ground {"pid": 742, "target": "Shared", "strategy": "auto"} -> 1 ms
+{
+ "pid": 742,
+ "matched_field": null,
+ "result": {
+  "error": "OCR capture of pid 742's window failed: Screen capture failed.",
+  "confidence": 0,
+  "errorCode": "capture_failed",
+  "ok": false,
+  "strategyUsed": "none",
+  "candidates": [],
+  "maxDepthUsed": 24
+ },
+ "max_depth_used": 24,
+ "alternatives": [],
+ "error_code": "capture_failed",
+ "ok": false
+}
+--- ground {"pid": 742, "target": "Recents", "strategy": "ax"} -> 1 ms
+{
+ "matched_field": null,
+ "result": {
+  "error": "no AX match at depth 24",
+  "confidence": 0,
+  "errorCode": "not_found",
+  "ok": false,
+  "strategyUsed": "ax",
+  "candidates": [],
+  "maxDepthUsed": 24
+ },
+ "pid": 742,
+ "max_depth_used": 24,
+ "alternatives": [],
+ "error_code": "not_found",
+ "ok": false
+}
+--- ground {"pid": 742, "target": "Recents", "strategy": "ocr"} -> 0 ms
+{
+ "pid": 742,
+ "matched_field": null,
+ "result": {
+  "error": "OCR capture of pid 742's window failed: Screen capture failed.",
+  "confidence": 0,
+  "errorCode": "capture_failed",
+  "ok": false,
+  "strategyUsed": "none",
+  "candidates": [],
+  "maxDepthUsed": 24
+ },
+ "max_depth_used": 24,
+ "alternatives": [],
+ "error_code": "capture_failed",
+ "ok": false
+}
+--- ground {"pid": 742, "target": "Recents", "strategy": "auto"} -> 1 ms
+{
+ "matched_field": null,
+ "result": {
+  "error": "OCR capture of pid 742's window failed: Screen capture failed.",
+  "confidence": 0,
+  "errorCode": "capture_failed",
+  "ok": false,
+  "strategyUsed": "none",
+  "candidates": [],
+  "maxDepthUsed": 24
+ },
+ "pid": 742,
+ "max_depth_used": 24,
+ "alternatives": [],
+ "error_code": "capture_failed",
+ "ok": false
+}
+--- ground {"pid": 76246, "target": "Add User\u2026", "strategy": "ax"} -> 1 ms
+{
+ "pid": 76246,
+ "matched_field": null,
+ "result": {
+  "error": "no AX match at depth 24",
+  "confidence": 0,
+  "errorCode": "not_found",
+  "ok": false,
+  "strategyUsed": "ax",
+  "candidates": [],
+  "maxDepthUsed": 24
+ },
+ "max_depth_used": 24,
+ "alternatives": [],
+ "error_code": "not_found",
+ "ok": false
+}
+--- ground {"pid": 76246, "target": "Add User\u2026", "strategy": "ocr"} -> 0 ms
+{
+ "matched_field": null,
+ "result": {
+  "error": "OCR capture of pid 76246's window failed: Screen capture failed.",
+  "confidence": 0,
+  "errorCode": "capture_failed",
+  "ok": false,
+  "strategyUsed": "none",
+  "candidates": [],
+  "maxDepthUsed": 24
+ },
+ "pid": 76246,
+ "max_depth_used": 24,
+ "alternatives": [],
+ "error_code": "capture_failed",
+ "ok": false
+}
+--- ground {"pid": 76246, "target": "Add User\u2026", "strategy": "auto"} -> 1 ms
+{
+ "pid": 76246,
+ "matched_field": null,
+ "result": {
+  "error": "OCR capture of pid 76246's window failed: Screen capture failed.",
+  "confidence": 0,
+  "errorCode": "capture_failed",
+  "ok": false,
+  "strategyUsed": "none",
+  "candidates": [],
+  "maxDepthUsed": 24
+ },
+ "max_depth_used": 24,
+ "alternatives": [],
+ "error_code": "capture_failed",
+ "ok": false
+}
+--- ground {"pid": 76246, "target": "account", "strategy": "ax"} -> 1 ms
+{
+ "matched_field": null,
+ "result": {
+  "error": "no AX match at depth 24",
+  "confidence": 0,
+  "errorCode": "not_found",
+  "ok": false,
+  "strategyUsed": "ax",
+  "candidates": [],
+  "maxDepthUsed": 24
+ },
+ "pid": 76246,
+ "max_depth_used": 24,
+ "alternatives": [],
+ "error_code": "not_found",
+ "ok": false
+}
+--- ground {"pid": 76246, "target": "account", "strategy": "ocr"} -> 0 ms
+{
+ "pid": 76246,
+ "matched_field": null,
+ "result": {
+  "error": "OCR capture of pid 76246's window failed: Screen capture failed.",
+  "confidence": 0,
+  "errorCode": "capture_failed",
+  "ok": false,
+  "strategyUsed": "none",
+  "candidates": [],
+  "maxDepthUsed": 24
+ },
+ "max_depth_used": 24,
+ "alternatives": [],
+ "error_code": "capture_failed",
+ "ok": false
+}
+--- ground {"pid": 76246, "target": "account", "strategy": "auto"} -> 1 ms
+{
+ "matched_field": null,
+ "result": {
+  "error": "OCR capture of pid 76246's window failed: Screen capture failed.",
+  "confidence": 0,
+  "errorCode": "capture_failed",
+  "ok": false,
+  "strategyUsed": "none",
+  "candidates": [],
+  "maxDepthUsed": 24
+ },
+ "pid": 76246,
+ "max_depth_used": 24,
+ "alternatives": [],
+ "error_code": "capture_failed",
+ "ok": false
+}
+--- browser_dom_tree {"browser": "Safari"} -> 329 ms
+{
+ "ok": false,
+ "result": {
+  "includeShadow": true,
+  "browser": "Safari",
+  "error": "2026-09-15 17:58:45.252 osascript[3853:23987921] Error received in message reply handler: Connection invalid\n2026-09-15 17:58:45.252 osascript[3853:23987923] Connection Invalid error for service com.apple.hiservices-xpcservice.\n60:70: syntax error: Expected “,” but found identifier. (-2741)",
+  "hint": "Check the active page in Safari and retry; if evaluation stays unavailable, check Allow JavaScript from Apple Events in the browser developer menu.",
+  "error_code": "failed",
+  "ok": false,
+  "nodeCount": 0
+ },
+ "hint": "Check the active page in Safari and retry; if evaluation stays unavailable, check Allow JavaScript from Apple Events in the browser developer menu.",
+ "error_code": "failed"
+}
+--- browser_dom_tree {"browser": "Chrome"} -> 240 ms
+{
+ "ok": false,
+ "result": {
+  "includeShadow": true,
+  "browser": "Chrome",
+  "error": "2026-09-15 17:58:45.493 osascript[3854:23987928] Error received in message reply handler: Connection invalid\n2026-09-15 17:58:45.493 osascript[3854:23987929] Connection Invalid error for service com.apple.hiservices-xpcservice.\n72:78: syntax error: Expected “,” but found identifier. (-2741)",
+  "hint": "Check the active page in Chrome and retry; if evaluation stays unavailable, check Allow JavaScript from Apple Events in the browser developer menu.",
+  "error_code": "failed",
+  "ok": false,
+  "nodeCount": 0
+ },
+ "hint": "Check the active page in Chrome and retry; if evaluation stays unavailable, check Allow JavaScript from Apple Events in the browser developer menu.",
+ "error_code": "failed"
+}
+--- capture_annotated {"pid": 742} -> 0 ms
+{
+ "pid": 742,
+ "ok": false,
+ "error_code": "capture_failed"
+}
+--- element_at_point {"pid": 742, "x": 100, "y": 200} -> 0 ms
+{
+ "server": {
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/arm64-apple-macosx/debug/mac-control-mcp",
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/debug",
+  "pid": 3852
+ },
+ "pane": "accessibility",
+ "responsible_app": {
+  "name": "claude",
+  "bundle_id": "com.anthropic.claude-code",
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "pid": 71183
+ },
+ "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry.",
+ "responsible_is_self": false,
+ "ok": false,
+ "error_code": "permission_missing",
+ "launched_by": [
+  "python3.12",
+  "codex",
+  "node",
+  "node"
+ ]
+}
+--- capture_annotated {"pid": 76246} -> 0 ms
+{
+ "pid": 76246,
+ "ok": false,
+ "error_code": "capture_failed"
+}
+--- element_at_point {"pid": 76246, "x": 100, "y": 200} -> 0 ms
+{
+ "server": {
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/arm64-apple-macosx/debug/mac-control-mcp",
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/.build/debug",
+  "pid": 3852
+ },
+ "pane": "accessibility",
+ "responsible_app": {
+  "name": "claude",
+  "bundle_id": "com.anthropic.claude-code",
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "pid": 71183
+ },
+ "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry.",
+ "responsible_is_self": false,
+ "ok": false,
+ "error_code": "permission_missing",
+ "launched_by": [
+  "python3.12",
+  "codex",
+  "node",
+  "node"
+ ]
+}

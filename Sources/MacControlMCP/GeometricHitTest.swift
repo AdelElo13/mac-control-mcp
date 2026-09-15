@@ -16,6 +16,17 @@ enum GeometricHitTest {
         return frame.width * frame.height >= 0.5 * window.width * window.height
     }
 
+    static func refine<ID: Hashable>(hit: ID, window: ID?, point: CGPoint,
+                                     read: (ID) -> Node<ID>) -> (element: ID, quality: String) {
+        let node = read(hit)
+        let windowFrame = window.flatMap { read($0).frame }
+        guard needsSearch(role: node.role, frame: node.frame, window: windowFrame) else { return (hit, "direct") }
+        // v0.10 C2: overlapping controls in sibling groups or behind a sheet
+        // are not descendants of the hit and must never steal its point.
+        let best = search(root: hit, point: point, read: read)
+        return best.map { ($0, "geometric") } ?? (hit, "container")
+    }
+
     static func search<ID: Hashable>(root: ID, point: CGPoint, nodeCap: Int = 2000,
                                     read: (ID) -> Node<ID>) -> ID? {
         var visited: Set<ID> = []

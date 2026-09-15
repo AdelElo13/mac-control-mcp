@@ -317,7 +317,9 @@ extension ToolRegistry {
         if let raw = arguments["level"], raw != .null {
             switch raw.stringValue?.lowercased() {
             case "accurate": ocrOptions.fast = false
-            case "fast": ocrOptions.fast = true; ocrOptions.languageCorrection = false
+            case "fast":
+                ocrOptions.fast = true
+                ocrOptions.languageCorrection = false
             default: return invalidArgument("ocr_screen: level must be \"accurate\" or \"fast\".")
             }
         }

@@ -18,6 +18,24 @@ struct GeometricHitTestTests {
         #expect(!GeometricHitTest.needsSearch(role: "AXButton", frame: rect.insetBy(dx: 300, dy: 250), window: rect))
     }
 
+    @Test func refinementStaysInHitSubtreeAndReportsQuality() {
+        let frame = CGRect(x: 0, y: 0, width: 800, height: 600)
+        let tree: [Int: GeometricHitTest.Node<Int>] = [
+            0: .init(role: "AXWindow", frame: frame, children: [1, 2]),
+            1: .init(role: "AXGroup", frame: frame, children: [3]),
+            2: .init(role: "AXButton", frame: CGRect(x: 99, y: 99, width: 4, height: 4), children: []),
+            3: .init(role: "AXButton", frame: CGRect(x: 90, y: 90, width: 30, height: 30), children: [])]
+        let hit = GeometricHitTest.refine(hit: 1, window: 0, point: CGPoint(x: 100, y: 100), read: { tree[$0]! })
+        #expect(hit.element == 3)
+        #expect(hit.quality == "geometric")
+        let direct = GeometricHitTest.refine(hit: 3, window: 0, point: CGPoint(x: 100, y: 100), read: { tree[$0]! })
+        #expect(direct.element == 3)
+        #expect(direct.quality == "direct")
+        let empty = GeometricHitTest.refine(hit: 1, window: 0, point: CGPoint(x: 500, y: 500), read: { tree[$0]! })
+        #expect(empty.element == 1)
+        #expect(empty.quality == "container")
+    }
+
     @Test func boundsDepthCyclesAndBudget() {
         var reads = 0
         let result = GeometricHitTest.search(root: 0, point: .zero, nodeCap: 4) { id in

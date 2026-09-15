@@ -545,7 +545,13 @@ actor ScreenController {
 
     static func groundingOCR(capture: CaptureResult, target: String, displays: [CGRect],
                               recognize: (OCRRequestOptions) throws -> OCRResult) throws -> OCRResult {
-        try recognize(OCRRequestOptions())
+        let fast = try recognize(OCRRequestOptions(fast: true, languageCorrection: false))
+        let candidates = try GroundingController.ocrCandidates(capture: capture, result: fast,
+            target: target, anchors: [], displays: displays)
+        guard GroundingPolicy.needsAccurate(confidences: candidates.map(\.confidence)) else { return fast }
+        let accurate = try recognize(OCRRequestOptions())
+        // v0.10 B5: retain fast-only labels; candidate ranking merges duplicate boxes.
+        return OCRResult(blocks: accurate.blocks + fast.blocks, joinedText: accurate.joinedText)
     }
 
     /// v0.9 (C-2/C-3): capture ONE window named by its `CGWindowID`,

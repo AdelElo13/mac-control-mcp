@@ -1,0 +1,34 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ground': failed storing manifest for 'wt10-ground' in cache: attempt to write a readonly database
+Building for debugging...
+[0/5] Write sources
+[1/5] Write swift-version--58304C5D6DBC2206.txt
+[3/5] Emitting module MacControlMCPTests
+[4/5] Compiling MacControlMCPTests GroundingOCRPassTests.swift
+[4/6] Write Objects.LinkFileList
+[5/6] Linking mac-control-mcpPackageTests
+Build complete! (2.68s)
+Test Suite 'Selected tests' started at 2026-09-15 17:57:47.991.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 17:57:47.997.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 17:57:47.997.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 17:57:47.997.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.005) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Grounding OCR passes" started.
+◇ Test strongFastMatchSkipsAccurate() started.
+✔ Test strongFastMatchSkipsAccurate() passed after 0.001 seconds.
+◇ Test weakFastMatchFallsBackAndIsRetained() started.
+✔ Test weakFastMatchFallsBackAndIsRetained() passed after 0.001 seconds.
+◇ Test weakAXCannotDisableOCRDistancePenalty() started.
+✘ Test weakAXCannotDisableOCRDistancePenalty() recorded an issue at GroundingOCRPassTests.swift:45:9: Expectation failed: (candidates.last?.confidence ?? 1 → 0.6) < 0.6
+✘ Test weakAXCannotDisableOCRDistancePenalty() failed after 0.001 seconds with 1 issue.
+◇ Test tinyFastBoxCannotSuppressAccurate() started.
+✔ Test tinyFastBoxCannotSuppressAccurate() passed after 0.001 seconds.
+✘ Suite "Grounding OCR passes" failed after 0.001 seconds with 1 issue.
+↳ /// v0.10 B5: exercise the actual pass coordinator with deterministic OCR results.
+✘ Test run with 4 tests in 1 suite failed after 0.001 seconds with 1 issue.
