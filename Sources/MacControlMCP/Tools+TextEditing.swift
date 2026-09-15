@@ -255,6 +255,10 @@ extension ToolRegistry {
         ]
         if let reason = failure.reason { payload["reason"] = .string(reason) }
         if let hint = failure.hint { payload["hint"] = .string(hint) }
+        // v0.10 A2: the cache owns retention policy, including custom limits.
+        if case .notFound = failure, extra["element_id"] != nil {
+            payload["hint"] = .string(elementCache.retentionHint)
+        }
         payload.merge(extra) { current, _ in current }
         return errorResult("\(tool): \(failure.message)", payload)
     }

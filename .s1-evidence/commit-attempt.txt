@@ -1,0 +1,3 @@
+$ git add Sources/MacControlMCP/ElementCache.swift Sources/MacControlMCP/TextEditingController.swift Sources/MacControlMCP/Tools+TextEditing.swift Tests/MacControlMCPTests/ElementCacheTests.swift Tests/MacControlMCPTests/TextEditingTests.swift
+fatal: Unable to create '/Users/a/projects/mac-control-mcp/.git/worktrees/wt10-ids/index.lock': Operation not permitted
+exit_code=128

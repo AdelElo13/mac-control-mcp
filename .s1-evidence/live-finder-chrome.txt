@@ -1,0 +1,66 @@
+initialize: 320 ms, serverInfo={'version': '0.9.0', 'name': 'mac-control-mcp'}
+--- list_windows {"pid": 742} -> 5 ms
+{
+ "pid": 742,
+ "ok": true,
+ "windows": [],
+ "count": 0
+}
+--- find_elements {"pid": 742, "role": "AXMenuItem", "title": "Minimize", "limit": 20} -> 2 ms
+{
+ "elements": [],
+ "nodes_visited": 1,
+ "count": 0,
+ "limit_reached": false,
+ "bytes": 123,
+ "pid": 742,
+ "ok": true,
+ "max_depth_used": 24,
+ "ax_tree_hint": "This app (unknown) exposes no AX children or windows even after enabling AXManualAccessibility / AXEnhancedUserInterface. It likely does not implement NSAccessibility. Options: (a) use coord-based clicks via the `click` tool with x/y, (b) use `ocr_screen` to locate targets visually, (c) try a web alternative if one exists.",
+ "truncated": false
+}
+--- list_windows {"pid": 41308} -> 1 ms
+{
+ "ok": true,
+ "count": 0,
+ "windows": [],
+ "pid": 41308
+}
+--- find_elements {"pid": 41308, "role": "AXLink", "limit": 20} -> 1 ms
+{
+ "elements": [],
+ "nodes_visited": 1,
+ "count": 0,
+ "limit_reached": false,
+ "ok": true,
+ "pid": 41308,
+ "bytes": 125,
+ "max_depth_used": 24,
+ "ax_tree_hint": "This app (unknown) exposes no AX children or windows even after enabling AXManualAccessibility / AXEnhancedUserInterface. It likely does not implement NSAccessibility. Options: (a) use coord-based clicks via the `click` tool with x/y, (b) use `ocr_screen` to locate targets visually, (c) try a web alternative if one exists.",
+ "truncated": false
+}
+--- element_at_point {"pid": 41308, "x": 622, "y": 573} -> 1 ms
+{
+ "responsible_app": {
+  "name": "claude",
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "pid": 71183,
+  "bundle_id": "com.anthropic.claude-code"
+ },
+ "responsible_is_self": false,
+ "ok": false,
+ "server": {
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/.build/arm64-apple-macosx/debug/mac-control-mcp",
+  "pid": 9165,
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/.build/debug"
+ },
+ "launched_by": [
+  "python3.12",
+  "zsh",
+  "codex",
+  "node"
+ ],
+ "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry.",
+ "pane": "accessibility",
+ "error_code": "permission_missing"
+}

@@ -1,0 +1,35 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ids': failed storing manifest for 'wt10-ids' in cache: attempt to write a readonly database
+Building for debugging...
+[0/4] Write swift-version--58304C5D6DBC2206.txt
+Build complete! (0.10s)
+Test Suite 'Selected tests' started at 2026-09-15 19:38:50.594.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 19:38:50.600.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 19:38:50.600.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 19:38:50.600.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.006) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "AXAttributeBatch" started.
+◇ Test "attribute name order matches decode indices" started.
+✔ Test "attribute name order matches decode indices" passed after 0.001 seconds.
+◇ Test "decodes a fully populated node" started.
+✔ Test "decodes a fully populated node" passed after 0.001 seconds.
+◇ Test "axError slots decode as absent" started.
+✔ Test "axError slots decode as absent" passed after 0.001 seconds.
+◇ Test "title falls back past empty/whitespace AXTitle to AXDescription, then AXIdentifier" started.
+✔ Test "title falls back past empty/whitespace AXTitle to AXDescription, then AXIdentifier" passed after 0.001 seconds.
+◇ Test "value conversions mirror the per-attribute helper" started.
+✔ Test "value conversions mirror the per-attribute helper" passed after 0.001 seconds.
+◇ Test "geometry slots require the matching AXValue type" started.
+✔ Test "geometry slots require the matching AXValue type" passed after 0.001 seconds.
+◇ Test "children are ignored unless requested, and non-elements are filtered" started.
+✔ Test "children are ignored unless requested, and non-elements are filtered" passed after 0.001 seconds.
+◇ Test "live fetch on a non-existent pid degrades to all-absent, not a crash" started.
+✔ Test "live fetch on a non-existent pid degrades to all-absent, not a crash" passed after 0.001 seconds.
+✔ Suite "AXAttributeBatch" passed after 0.001 seconds.
+✔ Test run with 8 tests in 1 suite passed after 0.001 seconds.

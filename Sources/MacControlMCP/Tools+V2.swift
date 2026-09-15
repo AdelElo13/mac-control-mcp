@@ -11,7 +11,7 @@ extension ToolRegistry {
     static let definitionsV2: [MCPToolDefinition] = [
         MCPToolDefinition(
             name: "get_ui_tree",
-            description: "Walk the full accessibility tree of a process and return every node (including containers and static text) with child indices and element IDs for follow-up calls. Element IDs are content-addressed (pid + AX path), so the same node keeps the same id across calls and sessions. Bounded by a 5 s budget and node_cap nodes (= element-cache capacity, 2000 by default, so every returned id stays valid); node_cap_reached=true means the tree was cut off — lower max_depth or use find_elements. "
+            description: "Walk the full accessibility tree of a process and return every node (including containers and static text) with child indices and element IDs for follow-up calls. Element IDs are content-addressed (pid + AX path), so the same node keeps the same id across calls and sessions. Bounded by a 5 s budget and node_cap nodes (\(ElementCache.treeNodeCap) by default; the cache separately retains up to \(ElementCache.defaultMaxEntries) entries for \(ElementCache.defaultTTL) seconds idle); node_cap_reached=true means the tree was cut off — lower max_depth or use find_elements. "
                 + "The heaviest AX tool (hundreds of KB for a browser or Finder window — 327 KB measured) — when you know what you are looking for, find_elements / query_elements are far smaller and also return ids. "
                 + "To make one look affordable, use interactive_only / viewport_only / fields / max_bytes. " + axPayloadBudgetDoc,
             inputSchema: schema(

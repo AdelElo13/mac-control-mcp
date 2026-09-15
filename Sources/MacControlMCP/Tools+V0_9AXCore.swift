@@ -118,6 +118,10 @@ extension ToolRegistry {
                 ])
             })
         ]
+        // v0.10 A8: random ids cannot be correlated with a later tree walk.
+        if hit.path == nil {
+            payload["stable_id_reason"] = .string("No verifiable path to the owning application: the parent chain is incomplete, cyclic, exceeds 32 levels, or a parent does not list its child.")
+        }
         if let position = hit.info.position, let size = hit.info.size {
             payload["bounds"] = .object([
                 "x": .number(position.x),

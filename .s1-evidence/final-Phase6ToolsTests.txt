@@ -1,0 +1,43 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ids': failed storing manifest for 'wt10-ids' in cache: attempt to write a readonly database
+Building for debugging...
+[0/4] Write swift-version--58304C5D6DBC2206.txt
+Build complete! (0.09s)
+Test Suite 'Selected tests' started at 2026-09-15 19:38:51.510.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 19:38:51.515.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 19:38:51.515.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 19:38:51.515.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.005) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Phase 6 tools — control plane + event waits" started.
+◇ Test "all phase 6 tools are registered" started.
+✔ Test "all phase 6 tools are registered" passed after 0.002 seconds.
+◇ Test "grant → check → list → revoke round trip" started.
+✔ Test "grant → check → list → revoke round trip" passed after 0.010 seconds.
+◇ Test "deny beats grant; revoke clears deny" started.
+✔ Test "deny beats grant; revoke clears deny" passed after 0.005 seconds.
+◇ Test "expired grants are rejected" started.
+✔ Test "expired grants are rejected" passed after 1.217 seconds.
+◇ Test "PermissionTier comparison: denied < none < view < click < full" started.
+✔ Test "PermissionTier comparison: denied < none < view < click < full" passed after 0.001 seconds.
+◇ Test "request_access rejects invalid tier" started.
+✔ Test "request_access rejects invalid tier" passed after 0.001 seconds.
+◇ Test "request_access grants and list_granted_applications shows it" started.
+✔ Test "request_access grants and list_granted_applications shows it" passed after 0.005 seconds.
+◇ Test "deny_access records a deny entry" started.
+✔ Test "deny_access records a deny entry" passed after 0.003 seconds.
+◇ Test "unsupported notifications return unsupported status immediately" started.
+✔ Test "unsupported notifications return unsupported status immediately" passed after 0.001 seconds.
+◇ Test "wait_for_ax_notification times out cleanly on invalid pid" started.
+✔ Test "wait_for_ax_notification times out cleanly on invalid pid" passed after 0.002 seconds.
+◇ Test "wait_for_window_state_change validates change argument" started.
+✔ Test "wait_for_window_state_change validates change argument" passed after 0.001 seconds.
+◇ Test "wait_for_window_state_change times out cleanly on fake pid" started.
+✔ Test "wait_for_window_state_change times out cleanly on fake pid" passed after 0.001 seconds.
+✔ Suite "Phase 6 tools — control plane + event waits" passed after 1.251 seconds.
+✔ Test run with 12 tests in 1 suite passed after 1.251 seconds.

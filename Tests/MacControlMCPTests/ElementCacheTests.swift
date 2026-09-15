@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 import ApplicationServices
 @testable import MacControlMCP
 
@@ -285,6 +286,127 @@ struct ElementCacheTests {
             Issue.record("failed AX read was accepted as an AXUnknown fingerprint")
             return
         }
+    }
+
+    // v0.10 A2: quarantine allocates a new random id for every collision,
+    // including repeated paths, so distinct-path counting can under-reserve.
+    @Test("repeated colliding paths cannot overflow the batch capacity")
+    func repeatedCollidingBatchCapacity() async {
+        let cache = ElementCache(maxEntries: 5, identify: Self.collidingIdentify)
+        _ = await cache.storeMany(Array(repeating: AXUIElementCreateSystemWide(), count: 3), pid: 2)
+        let element = AXUIElementCreateSystemWide()
+        let a = [component("AXButton", 0)]
+        let b = [component("AXButton", 1)]
+        _ = await cache.storeMany(withPaths: [a, b, a, b, a].map { (element, $0) }, pid: 1)
+        #expect(await cache.count <= 5)
+    }
+
+    // v0.10 A1: every fake read stays under the lock because cache calls
+    // execute on its actor while the test changes the published label.
+    private final class FakeAX: @unchecked Sendable {
+        private let lock = NSLock()
+        private var title = "Close All Windows"
+        private var reads = 0
+        private var aliveChecks = 0
+        private var repairs = 0
+        private var repairPath: [AXPathComponent]?
+        private var repairPID: pid_t?
+        let replacement: AXUIElement?
+
+        init(replacement: AXUIElement? = nil) { self.replacement = replacement }
+
+        func relabel() { lock.withLock { title = "Close Window" } }
+
+        func fingerprint(_ element: AXUIElement) -> AXFingerprint {
+            lock.withLock {
+                reads += 1
+                let isReplacement = replacement.map { CFEqual($0, element) } ?? false
+                return AXFingerprint(role: "AXMenuItem", identifier: nil,
+                    title: isReplacement ? "Close All Windows" : title, subrole: nil)
+            }
+        }
+
+        func isAlive(_ element: AXUIElement) -> Bool {
+            lock.withLock { aliveChecks += 1 }
+            return true
+        }
+
+        func resolve(_ path: [AXPathComponent], _ pid: pid_t) -> AXUIElement? {
+            lock.withLock {
+                repairs += 1
+                repairPath = path
+                repairPID = pid
+            }
+            return replacement
+        }
+
+        func snapshot() -> (reads: Int, alive: Int, repairs: Int, path: [AXPathComponent]?, pid: pid_t?) {
+            lock.withLock { (reads, aliveChecks, repairs, repairPath, repairPID) }
+        }
+    }
+
+    @Test("fake live menu relabel cannot silently retarget its cached id")
+    func fakeLiveMenuRelabel() async {
+        let fake = FakeAX()
+        let cache = ElementCache(fingerprint: fake.fingerprint, isAlive: fake.isAlive, resolvePath: fake.resolve)
+        let path = [AXPathComponent(role: "AXMenuItem", index: 0, identifier: nil,
+                                    title: "Close All Windows", subrole: nil)]
+        let id = await cache.store(AXUIElementCreateSystemWide(), pid: getpid(), path: path)
+        guard case .resolved = await cache.resolveLive(id) else {
+            Issue.record("intact fake handle must resolve")
+            return
+        }
+        #expect(fake.snapshot().reads == 1)
+        #expect(fake.snapshot().alive == 0)
+        #expect(fake.snapshot().repairs == 0)
+        fake.relabel()
+        guard case .stale = await cache.resolveLive(id) else {
+            Issue.record("v0.10 A1: Close All Windows silently became Close Window")
+            return
+        }
+        #expect(fake.snapshot().reads == 2)
+        #expect(fake.snapshot().repairs == 1)
+        #expect(fake.snapshot().path == path)
+        #expect(fake.snapshot().pid == getpid())
+    }
+
+    @Test("fake mismatched handle repairs and caches the verified replacement")
+    func fakeLiveMenuRepair() async {
+        let replacement = AXUIElementCreateApplication(getpid())
+        let fake = FakeAX(replacement: replacement)
+        fake.relabel()
+        let cache = ElementCache(fingerprint: fake.fingerprint, isAlive: fake.isAlive, resolvePath: fake.resolve)
+        let path = [AXPathComponent(role: "AXMenuItem", index: 0, identifier: nil,
+                                    title: "Close All Windows", subrole: nil)]
+        let id = await cache.store(AXUIElementCreateSystemWide(), pid: getpid(), path: path)
+        guard case .resolved(let repaired) = await cache.resolveLive(id) else {
+            Issue.record("verified path replacement must resolve")
+            return
+        }
+        #expect(CFEqual(repaired, replacement))
+        #expect(await cache.path(for: id) == path)
+        guard case .resolved(let cached) = await cache.resolveLive(id) else {
+            Issue.record("repaired handle must remain usable")
+            return
+        }
+        #expect(CFEqual(cached, replacement))
+        #expect(fake.snapshot().reads == 2)
+        #expect(fake.snapshot().repairs == 1)
+        #expect(fake.snapshot().alive == 0)
+    }
+
+    @Test("fake pathless ids keep the liveness-only contract")
+    func fakePathlessResolution() async {
+        let fake = FakeAX()
+        let cache = ElementCache(fingerprint: fake.fingerprint, isAlive: fake.isAlive, resolvePath: fake.resolve)
+        let id = await cache.store(AXUIElementCreateSystemWide(), pid: getpid())
+        guard case .resolved = await cache.resolveLive(id) else {
+            Issue.record("pathless live handle must resolve")
+            return
+        }
+        #expect(fake.snapshot().alive == 1)
+        #expect(fake.snapshot().reads == 0)
+        #expect(fake.snapshot().repairs == 0)
     }
 
 }

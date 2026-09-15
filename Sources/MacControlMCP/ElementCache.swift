@@ -53,6 +53,11 @@ actor ElementCache {
     /// collision guard below can be tested with a degenerate hash —
     /// SHA-256 collisions are not reachable from a test.
     private let identify: @Sendable (pid_t, [AXPathComponent]) -> String
+    // v0.10 A1: isolate AX reads so relabel and repair behavior can be
+    // reproduced without trusting or modifying a desktop application.
+    private let fingerprint: @Sendable (AXUIElement) -> AXFingerprint
+    private let isAlive: @Sendable (AXUIElement) -> Bool
+    private let resolvePath: @Sendable ([AXPathComponent], pid_t) -> AXUIElement?
     /// Number of id collisions seen since construction (Codex review 3).
     /// Should always be 0 in production; a non-zero value means two
     /// different paths hashed to the same id and both handles were
@@ -72,11 +77,17 @@ actor ElementCache {
     init(
         ttl: TimeInterval = ElementCache.defaultTTL,
         maxEntries: Int = ElementCache.defaultMaxEntries,
-        identify: @escaping @Sendable (pid_t, [AXPathComponent]) -> String = AXPath.identifier
+        identify: @escaping @Sendable (pid_t, [AXPathComponent]) -> String = AXPath.identifier,
+        fingerprint: @escaping @Sendable (AXUIElement) -> AXFingerprint = AXPath.fingerprint,
+        isAlive: @escaping @Sendable (AXUIElement) -> Bool = AXPath.isAlive,
+        resolvePath: @escaping @Sendable ([AXPathComponent], pid_t) -> AXUIElement? = AXPath.resolve
     ) {
         self.ttl = ttl
         self.maxEntries = max(1, maxEntries)
         self.identify = identify
+        self.fingerprint = fingerprint
+        self.isAlive = isAlive
+        self.resolvePath = resolvePath
     }
 
     /// Store `element` and return a new opaque ID. If the random ID happens
@@ -147,17 +158,28 @@ actor ElementCache {
             item.1.map { identify(pid, $0) }
         }
         let protected = Set(incoming)
-        let identities = Set(elements.prefix(storable).compactMap { item in
-            item.1.map { AXPath.identity(pid: pid, path: $0) }
-        })
-        // v0.10 A2: collision quarantine can mint multiple random ids for
-        // one hash; reserve for distinct paths, not just distinct hashes.
-        let refreshed = Set(protected.compactMap { id -> String? in
-            guard let entry = entries[id], let path = entry.path else { return nil }
-            return AXPath.identity(pid: entry.pid, path: path)
-        })
-        let newCount = identities.subtracting(refreshed).count
-            + elements.prefix(storable).filter { $0.1 == nil }.count
+        // v0.10 A2: simulate the hash-slot changes made by insert. Each
+        // collision replaces its hash slot with a random slot; a later
+        // repeat can therefore allocate again despite naming the same path.
+        var projected: [String: String] = [:]
+        for id in protected {
+            if let entry = entries[id] {
+                projected[id] = entry.path.map { AXPath.identity(pid: entry.pid, path: $0) }
+                    ?? "<pathless>"
+            }
+        }
+        var newCount = 0
+        for (_, path) in elements.prefix(storable) {
+            guard let path else { newCount += 1; continue }
+            let id = identify(pid, path)
+            let identity = AXPath.identity(pid: pid, path: path)
+            if let existing = projected[id] {
+                if existing != identity { projected.removeValue(forKey: id) }
+            } else {
+                projected[id] = identity
+                newCount += 1
+            }
+        }
         reserve(newCount: newCount, pid: pid, protecting: protected)
         let now = Date()
         // One identity lookup for the whole batch — they all share a pid.
@@ -251,7 +273,8 @@ actor ElementCache {
     }
 
     /// Resolve an ID to its element. On success, refreshes lastAccess so the
-    /// entry is treated as hot by the LRU eviction policy. Returns nil if
+    /// entry remains within its idle TTL. Capacity uses tree capture age
+    /// (v0.10 A2), independently of these reads. Returns nil if
     /// unknown or expired.
     func resolve(_ id: String) -> AXUIElement? {
         guard var entry = entries[id] else { return nil }
@@ -271,9 +294,9 @@ actor ElementCache {
     /// every subsequent AX call then fails with
     /// `kAXErrorInvalidUIElement` and the agent is told "unknown
     /// element", which is wrong: the id is fine, the handle is stale.
-    /// This variant checks liveness and, when the handle is dead and we
-    /// recorded a path, re-walks that path from the application root and
-    /// caches the repaired handle under the same id.
+    /// v0.10 A1: this variant verifies the live leaf fingerprint, then
+    /// re-walks the recorded path if the handle changed or died. Only a
+    /// verified replacement is cached under the same id.
     /// Repair is strictly verified (review fixes 1 + 2):
     ///   * the owning process must still be the same process — a
     ///     recycled pid is `stale`, never a silent retarget;
@@ -302,8 +325,8 @@ actor ElementCache {
         // v0.10 A1: AppKit can reuse a live positional handle for another
         // menu item. Verify the leaf in one batch before trusting that handle.
         if let leaf = entry.path?.last {
-            if AXPath.fingerprint(of: element).matches(leaf) { return .resolved(element) }
-        } else if AXPath.isAlive(element) {
+            if fingerprint(element).matches(leaf) { return .resolved(element) }
+        } else if isAlive(element) {
             return .resolved(element)
         }
 
@@ -311,7 +334,7 @@ actor ElementCache {
             entries.removeValue(forKey: id)
             return .stale("the element is gone and no AX path was recorded for it")
         }
-        guard let repaired = AXPath.resolve(path: path, pid: entry.pid) else {
+        guard let repaired = resolvePath(path, entry.pid) else {
             entries.removeValue(forKey: id)
             return .stale("the element changed or is gone and its AX path no longer matches any element in the app")
         }

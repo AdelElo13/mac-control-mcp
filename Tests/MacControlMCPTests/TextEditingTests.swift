@@ -352,4 +352,18 @@ struct TextEditingTests {
         #expect(r.isError == true)
         #expect(r.structuredContent.objectValue?["error_code"]?.stringValue == "invalid_argument")
     }
+    // v0.10 A2: an unknown text handle must not promise a fixed lifetime.
+    @Test("unknown text ids describe the configured cache retention")
+    func unknownIDRetentionHint() async {
+        let registry = ToolRegistry(accessibility: AccessibilityController(),
+                                    elementCache: ElementCache(ttl: 17, maxEntries: 2))
+        let result = await registry.callTool(name: "text_get_value", arguments: [
+            "element_id": .string("el_unknown")
+        ])
+        let payload = result.structuredContent.objectValue
+        #expect(payload?["error_code"]?.stringValue == "not_found")
+        #expect(payload?["hint"]?.stringValue?.contains("17.0 seconds") == true)
+        #expect(payload?["hint"]?.stringValue?.contains("2 entries") == true)
+    }
+
 }
