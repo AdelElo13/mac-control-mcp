@@ -118,7 +118,7 @@ extension ToolRegistry {
 
     func callMcpServerInfo() async -> ToolCallResult {
         let pid = ProcessInfo.processInfo.processIdentifier
-        let version = "0.9.0"
+        let version = "0.10.0"
         let executablePath = Bundle.main.executablePath ?? ProcessInfo.processInfo.arguments.first ?? "unknown"
         let uptime = ProcessInfo.processInfo.systemUptime  // not process uptime, but close enough for diagnosis
 
