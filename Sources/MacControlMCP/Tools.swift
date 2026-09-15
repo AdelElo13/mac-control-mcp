@@ -507,22 +507,15 @@ final class ToolRegistry: @unchecked Sendable {
         if let dead = noSuchProcessResult(pid: pid, tool: "list_elements") { return dead }
 
         let maxDepth = AXDepth.resolve(arguments["max_depth"]?.intValue)
-        let elements = await accessibility.listElements(pid: pid, maxDepth: maxDepth)
         let budget = PayloadOptions(arguments, known: AXPayload.elementFields)
-
-        // list_elements is already role-filtered to actionable controls,
-        // so `interactive_only` is a no-op here; `viewport_only`,
-        // `fields` and `max_bytes` still apply (v0.9 C-9).
+        let includeMenus = AXPayload.flag(arguments["include_menus"])
+        let nodeCap = max(1, min(arguments["node_cap"]?.intValue ?? elementCache.maxEntries, elementCache.maxEntries))
         let windows = budget.viewportOnly ? await accessibility.windowFrames(pid: pid) : []
-        let visible = budget.viewportOnly
-            ? elements.filter {
-                AXPayload.isInViewport(
-                    frame: ToolRegistry.frame(position: $0.position, size: $0.size),
-                    windows: windows
-                )
-            }
-            : elements
-        let encoded = visible.map { encodeElement(info: $0, id: nil, fields: budget.fields) }
+        let walk = await accessibility.search(pid: pid, maxDepth: maxDepth, nodeCap: nodeCap,
+                                              includeMenus: includeMenus, clipRects: windows,
+                                              viewportOnly: budget.viewportOnly, interactiveOnly: true)
+        let elements = walk.matches.map(\.info)
+        let encoded = elements.map { encodeElement(info: $0, id: nil, fields: budget.fields) }
         let budgeted = AXPayload.applyByteBudget(encoded, maxBytes: budget.maxBytes)
 
         var payload: [String: JSONValue] = [
@@ -530,13 +523,16 @@ final class ToolRegistry: @unchecked Sendable {
             "pid": .number(Double(pid)),
             "max_depth": .number(Double(maxDepth)),
             "count": .number(Double(budgeted.items.count)),
-            "elements": .array(budgeted.items)
+            "elements": .array(budgeted.items),
+            "menus_excluded": .bool(!includeMenus),
+            "node_cap": .number(Double(nodeCap)),
+            "node_cap_reached": .bool(walk.nodeCapReached)
         ]
         budget.annotate(
             &payload,
             maxDepthUsed: maxDepth,
-            nodesVisited: elements.count,
-            truncated: budgeted.truncated
+            nodesVisited: walk.nodesVisited,
+            truncated: budgeted.truncated || walk.nodeCapReached || walk.timedOut
         )
         if let hint = await axEmptyHint(pid: pid, whenEmpty: elements.isEmpty) {
             payload["ax_tree_hint"] = .string(hint)
@@ -556,8 +552,10 @@ final class ToolRegistry: @unchecked Sendable {
         let exact = AXPayload.flag(arguments["exact"])
         let maxDepth = AXDepth.resolve(arguments["max_depth"]?.intValue)
 
+        let includeMenus = AXPayload.flag(arguments["include_menus"])
+
         guard let hit = await accessibility.findElementWithPath(
-            pid: pid, role: role, title: title, exact: exact, maxDepth: maxDepth
+            pid: pid, role: role, title: title, exact: exact, maxDepth: maxDepth, includeMenus: includeMenus
         ) else {
             var payload: [String: JSONValue] = [
                 "ok": .bool(false),
@@ -565,6 +563,7 @@ final class ToolRegistry: @unchecked Sendable {
                 "role": role.map(JSONValue.string) ?? .null,
                 "title": title.map(JSONValue.string) ?? .null,
                 "exact": .bool(exact),
+                "menus_excluded": .bool(!includeMenus),
                 "max_depth_used": .number(Double(maxDepth))
             ]
             if let hint = await axEmptyHint(pid: pid, whenEmpty: true) {
@@ -585,6 +584,7 @@ final class ToolRegistry: @unchecked Sendable {
                 "pid": .number(Double(pid)),
                 "element_id": .string(id),
                 "exact": .bool(exact),
+                "menus_excluded": .bool(!includeMenus),
                 "max_depth_used": .number(Double(maxDepth)),
                 "element": encodeAsJSONValue(info)
             ]

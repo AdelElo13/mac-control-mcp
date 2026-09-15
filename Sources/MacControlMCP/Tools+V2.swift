@@ -270,14 +270,17 @@ extension ToolRegistry {
         // a live id. (Before v0.8.3 the walk allowed 5000 nodes but the
         // 2000-entry cache evicted the first nodes' ids while storing the
         // rest, so ids beyond 2000 nodes were already dangling.)
-        let nodeCap = elementCache.maxEntries
-        let nodes = await accessibility.treeWalk(pid: pid, maxDepth: maxDepth, nodeCap: nodeCap)
+        let nodeCap = max(1, min(arguments["node_cap"]?.intValue ?? elementCache.maxEntries, elementCache.maxEntries))
         let budget = PayloadOptions(arguments, known: AXPayload.treeFields)
+        let includeMenus = AXPayload.flag(arguments["include_menus"])
+        let windows = budget.viewportOnly ? await accessibility.windowFrames(pid: pid) : []
+        let walk = await accessibility.treeWalkResult(pid: pid, maxDepth: maxDepth, nodeCap: nodeCap,
+                                                      includeMenus: includeMenus, clipRects: windows)
+        let nodes = walk.nodes
 
         // v0.9 (C-9): interactive_only / viewport_only shape the tree
         // BEFORE ids are minted, so the cache isn't filled with nodes the
         // caller will never see.
-        let windows = budget.viewportOnly ? await accessibility.windowFrames(pid: pid) : []
         let shape = nodes.map {
             AXPayload.ShapeNode(role: $0.role, frame: Self.frame(position: $0.position, size: $0.size), childIndices: $0.childIndices)
         }
@@ -321,14 +324,15 @@ extension ToolRegistry {
             "max_depth": .number(Double(maxDepth)),
             "count": .number(Double(emitted.count)),
             "node_cap": .number(Double(nodeCap)),
-            "node_cap_reached": .bool(nodes.count >= nodeCap),
+            "node_cap_reached": .bool(walk.nodeCapReached),
+            "menus_excluded": .bool(!includeMenus),
             "nodes": .array(emitted)
         ]
         budget.annotate(
             &payload,
             maxDepthUsed: maxDepth,
-            nodesVisited: nodes.count,
-            truncated: budgeted.truncated || nodes.count >= nodeCap
+            nodesVisited: walk.nodesVisited,
+            truncated: budgeted.truncated || walk.nodeCapReached || walk.timedOut
         )
         return successResult(
             "Walked \(nodes.count) nodes (max_depth=\(maxDepth)), returned \(emitted.count).",
@@ -355,9 +359,12 @@ extension ToolRegistry {
         let exact = AXPayload.flag(arguments["exact"])
         let budget = PayloadOptions(arguments, known: AXPayload.elementFields)
 
+        let includeMenus = AXPayload.flag(arguments["include_menus"])
+        let windows = budget.viewportOnly ? await accessibility.windowFrames(pid: pid) : []
         let matches = await accessibility.findElements(
             pid: pid, role: role, title: title, value: value,
-            exact: exact, maxDepth: maxDepth, limit: limit
+            exact: exact, maxDepth: maxDepth, limit: limit, includeMenus: includeMenus,
+            clipRects: windows, viewportOnly: budget.viewportOnly, interactiveOnly: budget.interactiveOnly
         )
 
         let encoded = await encodeMatches(matches, pid: pid, budget: budget)
@@ -367,6 +374,7 @@ extension ToolRegistry {
             "ok": .bool(true),
             "pid": .number(Double(pid)),
             "count": .number(Double(budgeted.items.count)),
+            "menus_excluded": .bool(!includeMenus),
             "limit_reached": .bool(matches.count >= limit),
             "elements": .array(budgeted.items)
         ]
@@ -388,13 +396,17 @@ extension ToolRegistry {
         let limit = max(1, min(arguments["limit"]?.intValue ?? 200, 500))
         let budget = PayloadOptions(arguments, known: AXPayload.elementFields)
 
+        let includeMenus = AXPayload.flag(arguments["include_menus"])
+        let nodeCap = max(1, min(arguments["node_cap"]?.intValue ?? elementCache.maxEntries, elementCache.maxEntries))
+        let windows = budget.viewportOnly ? await accessibility.windowFrames(pid: pid) : []
         let result = await accessibility.queryElements(
             pid: pid,
             rolePattern: rolePattern,
             titlePattern: titlePattern,
             valuePattern: valuePattern,
             maxDepth: maxDepth,
-            limit: limit
+            limit: limit, nodeCap: nodeCap, includeMenus: includeMenus,
+            clipRects: windows, viewportOnly: budget.viewportOnly, interactiveOnly: budget.interactiveOnly
         )
         let matches = result.matches
 
@@ -405,9 +417,14 @@ extension ToolRegistry {
             "ok": .bool(true),
             "pid": .number(Double(pid)),
             "count": .number(Double(budgeted.items.count)),
-            "elements": .array(budgeted.items)
+            "elements": .array(budgeted.items),
+            "menus_excluded": .bool(!includeMenus),
+            "node_cap": .number(Double(nodeCap)),
+            "node_cap_reached": .bool(result.walk.nodeCapReached),
+            "limit_reached": .bool(matches.count >= limit)
         ]
-        budget.annotate(&payload, maxDepthUsed: maxDepth, nodesVisited: matches.count, truncated: budgeted.truncated)
+        budget.annotate(&payload, maxDepthUsed: maxDepth, nodesVisited: result.walk.nodesVisited,
+                        truncated: budgeted.truncated || result.walk.nodeCapReached || result.walk.timedOut)
         // v0.9 (A-13): surface exactly which pattern(s) failed to
         // compile as regex and fell back to substring matching, so a
         // typo'd pattern isn't indistinguishable from a genuine no-match.
@@ -863,19 +880,9 @@ extension ToolRegistry {
         pid: pid_t,
         budget: PayloadOptions
     ) async -> [JSONValue] {
-        let filtered = matches.filter { match in
-            let passesRole = !budget.interactiveOnly || AXPayload.isInteractive(role: match.info.role)
-            return passesRole
-        }
-        let windows = budget.viewportOnly ? await accessibility.windowFrames(pid: pid) : []
-        let visible = budget.viewportOnly
-            ? filtered.filter {
-                AXPayload.isInViewport(
-                    frame: Self.frame(position: $0.info.position, size: $0.info.size),
-                    windows: windows
-                )
-            }
-            : filtered
+        // v0.10 A4: the walker already filtered before applying limit.
+        // Filtering here would race a second window-frame snapshot.
+        let visible = matches
         let ids = await elementCache.storeMany(withPaths: visible.map { ($0.element, $0.path) }, pid: pid)
         return zip(visible, ids).map { match, id in
             encodeElement(info: match.info, id: id, fields: budget.fields)

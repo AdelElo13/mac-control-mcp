@@ -99,6 +99,15 @@ enum AXPayload {
         return false
     }
 
+    /// v0.10 B1/B2: only a finite, nonempty frame proves a subtree lies
+    /// outside every clip. Unknown geometry must not hide descendants.
+    static func shouldPrune(frame: CGRect?, clips: [CGRect]) -> Bool {
+        guard let frame, !frame.isEmpty, !frame.isNull, !frame.isInfinite,
+              frame.origin.x.isFinite, frame.origin.y.isFinite,
+              frame.width.isFinite, frame.height.isFinite, !clips.isEmpty else { return false }
+        return !clips.contains { $0.intersects(frame) }
+    }
+
     // MARK: - tree shaping
 
     /// The minimum a shaper needs to know about a node.

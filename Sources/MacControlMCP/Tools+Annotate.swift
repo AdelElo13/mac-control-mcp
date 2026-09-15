@@ -275,7 +275,8 @@ extension ToolRegistry {
                 root: walkRoot,
                 maxDepth: maxDepth,
                 nodeCap: elementCache.maxEntries,
-                pruneRoles: ["AXMenuBar"]
+                pruneRoles: ["AXMenuBar"],
+                clipRects: [selected?.bounds ?? CGDisplayBounds(CGMainDisplayID())]
             )
         } else {
             nodes = []
