@@ -175,7 +175,7 @@ struct AXPayloadBudgetTests {
             return result.structuredContent.objectValue ?? [:]
         }
 
-        let full = await tree([:])
+        let full = await tree(["include_menus": .bool(true)])
         #expect(full["max_depth_used"]?.intValue == AXDepth.default)
         #expect(full["nodes_visited"]?.intValue ?? 0 > 0)
         #expect(full["truncated"]?.boolValue != nil)
@@ -194,7 +194,7 @@ struct AXPayloadBudgetTests {
             #expect(keys.isSubset(of: ["id", "role", "title"]))
         }
 
-        let capped = await tree(["max_bytes": .number(2_000)])
+        let capped = await tree(["max_bytes": .number(2_000), "include_menus": .bool(true)])
         #expect(capped["truncated"]?.boolValue == true)
         #expect((capped["bytes"]?.intValue ?? .max) < fullBytes)
     }
