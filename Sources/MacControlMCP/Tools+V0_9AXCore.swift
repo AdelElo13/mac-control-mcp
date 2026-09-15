@@ -10,7 +10,7 @@ extension ToolRegistry {
             name: "element_at_point",
             description: "AX hit-test: what accessibility element is under a global screen coordinate? "
                 + "The inverse of `ground` — use it to verify a coordinate BEFORE clicking it, to turn an OCR/vision box into a real AX element (with an element_id for perform_element_action / get_element_attributes), and to diagnose a click that did nothing. "
-                + "Returns role, title, value, bounds, enabled, owning pid + app name, a stable element_id, hit_test_quality (direct, geometric, or container), and the ancestor chain (nearest first, up to 8) so you can see which container you actually hit. "
+                + "Returns role, title, value, bounds, enabled, owning pid + app name, a stable element_id, hit_test_quality (direct, geometric, container, or direct_out_of_frame when an inconsistent direct hit could not be resolved), and the ancestor chain (nearest first, up to 8) so you can see which container you actually hit. "
                 + "Omit pid to hit-test the whole screen (the topmost window wins); pass pid to ask that application specifically, which is the only way to hit-test a window another app is covering. "
                 + "Coordinates are global screen points, top-left origin — the same space find_elements' position/size and ground's x/y use.",
             inputSchema: schema(

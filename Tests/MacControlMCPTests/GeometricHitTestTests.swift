@@ -6,6 +6,45 @@ import CoreGraphics
 /// v0.10 C2: a fake tree reproduces window-sized SwiftUI hits without IPC.
 @Suite("Geometric hit test")
 struct GeometricHitTestTests {
+    @Test func interactiveOutOfFrameHitSearchesWindowForContainingHeader() {
+        let tree: [Int: GeometricHitTest.Node<Int>] = [
+            0: .init(role: "AXWindow", frame: CGRect(x: 200, y: 30, width: 1600, height: 900), children: [1, 2]),
+            1: .init(role: "AXButton", frame: CGRect(x: 1333, y: 39, width: 41, height: 52), children: []),
+            2: .init(role: "AXButton", frame: CGRect(x: 213, y: 96, width: 1193, height: 28), children: [])]
+        let hit = GeometricHitTest.refine(hit: 1, window: 0, point: CGPoint(x: 809.5, y: 105), read: { tree[$0]! })
+        #expect(hit.element == 2)
+        #expect(hit.quality == "geometric")
+    }
+
+    @Test func outOfFrameHitWithoutReplacementIsLabelledHonestly() {
+        let hit = GeometricHitTest.refine(hit: 1, window: nil, point: CGPoint(x: 809.5, y: 105)) { _ in
+            .init(role: "AXButton", frame: CGRect(x: 1333, y: 39, width: 41, height: 52), children: [])
+        }
+        #expect(hit.element == 1)
+        #expect(hit.quality == "direct_out_of_frame")
+    }
+
+    @Test func directHitFrameToleranceIsOnePointAndRequiresUsableGeometry() {
+        let frame = CGRect(x: 10, y: 10, width: 20, height: 20)
+        for point in [CGPoint(x: 9, y: 20), CGPoint(x: 31, y: 20),
+                      CGPoint(x: 20, y: 9), CGPoint(x: 20, y: 31)] {
+            let hit = GeometricHitTest.refine(hit: 1, window: nil, point: point) { _ in
+                .init(role: "AXButton", frame: frame, children: [])
+            }
+            #expect(hit.quality == "direct")
+        }
+        let beyond = GeometricHitTest.refine(hit: 1, window: nil, point: CGPoint(x: 31.01, y: 20)) { _ in
+            .init(role: "AXButton", frame: frame, children: [])
+        }
+        #expect(beyond.quality == "direct_out_of_frame")
+        for missing in [CGRect?.none, .zero] {
+            let hit = GeometricHitTest.refine(hit: 1, window: nil, point: CGPoint(x: 200, y: 200)) { _ in
+                .init(role: "AXButton", frame: missing, children: [])
+            }
+            #expect(hit.quality == "direct")
+        }
+    }
+
     @Test func smallestInteractiveDescendantWins() {
         let rect = CGRect(x: 0, y: 0, width: 800, height: 600)
         let tree: [Int: GeometricHitTest.Node<Int>] = [
@@ -174,6 +213,23 @@ struct GeometricHitTestTests {
                 #expect(readLeaf == !usable)
                 #expect(result == (usable ? nil : 1))
             }
+        }
+    }
+
+    @Test func outOfFrameRecoveryStaysInsideOverlay() {
+        let windowFrame = CGRect(x: 0, y: 0, width: 500, height: 500)
+        let controlFrame = CGRect(x: 100, y: 100, width: 80, height: 30)
+        for role in ["AXSheet", "AXPopover", "AXDialog"] {
+            let tree: [Int: GeometricHitTest.Node<Int>] = [
+                0: .init(role: "AXWindow", frame: windowFrame, children: [1, 2]),
+                1: .init(role: "AXButton", frame: CGRect(x: 110, y: 110, width: 10, height: 10), children: []),
+                2: .init(role: role, frame: windowFrame, children: [3, 4]),
+                3: .init(role: "AXButton", frame: CGRect(x: 300, y: 300, width: 30, height: 30), children: []),
+                4: .init(role: "AXButton", frame: controlFrame, children: [])]
+            let result = GeometricHitTest.refine(hit: 3, window: 0, point: CGPoint(x: 115, y: 115),
+                recoveryRoot: 2, read: { tree[$0]! })
+            #expect(result.element == 4)
+            #expect(result.quality == "geometric")
         }
     }
 

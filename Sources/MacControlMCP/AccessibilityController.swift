@@ -183,12 +183,16 @@ actor AccessibilityController {
         // context even though the bounded search starts below that ancestor.
         let localAncestors = lineage.prefix { !["AXSheet", "AXPopover", "AXDialog", "AXWindow"].contains($0.role) }
         let inCollection = localAncestors.contains { $0.role == "AXOutline" || $0.role == "AXTable" }
+        // v0.10 C2 round 3: inconsistent direct hits can need a wider search,
+        // but an enclosing overlay must still exclude background controls.
+        let recoveryRoot = lineage.first { ["AXSheet", "AXPopover", "AXDialog", "AXWindow"].contains($0.role) }?.element
         // v0.10 C2 review: scrollbar siblings share this scroll area. Never
-        // broaden through a sheet/popover boundary or to the owning window.
+        // broaden the scroll scope through a sheet/popover boundary.
         let scrollContainer = localAncestors.first { $0.role == "AXScrollArea" }?.element
         let refined = GeometricHitTest.refine(hit: AXKey(element: element),
             window: window.map { AXKey(element: $0) }, point: CGPoint(x: x, y: y), inCollection: inCollection,
-            scrollContainer: scrollContainer.map { AXKey(element: $0) }) { key in
+            scrollContainer: scrollContainer.map { AXKey(element: $0) },
+            recoveryRoot: recoveryRoot.map { AXKey(element: $0) }) { key in
             let values = AXAttributeBatch.fetch(key.element, includeChildren: true)
             return .init(role: values.role, frame: frame(values), children: values.children.map { AXKey(element: $0) })
         }

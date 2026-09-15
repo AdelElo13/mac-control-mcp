@@ -16,23 +16,36 @@ enum GeometricHitTest {
         return frame.width * frame.height >= 0.5 * window.width * window.height
     }
 
-    static func refine<ID: Hashable>(hit: ID, window: ID?, point: CGPoint, inCollection: Bool = false, scrollContainer: ID? = nil,
+    static func refine<ID: Hashable>(hit: ID, window: ID?, point: CGPoint, inCollection: Bool = false, scrollContainer: ID? = nil, recoveryRoot: ID? = nil,
                                      read: (ID) -> Node<ID>) -> (element: ID, quality: String) {
         let node = read(hit)
         let windowFrame = window.flatMap { read($0).frame }
-        guard needsSearch(role: node.role, frame: node.frame, window: windowFrame) else { return (hit, "direct") }
+        // v0.10 C2 round 3: a fresh AX connection can return an unrelated
+        // interactive control. Role alone is not evidence that it owns the point.
+        let outOfFrame = node.frame.map { frame in
+            guard frame.width >= 2, frame.height >= 2,
+                  frame.origin.x.isFinite, frame.origin.y.isFinite,
+                  frame.width.isFinite, frame.height.isFinite else { return false }
+            return point.x < frame.minX - 1 || point.x > frame.maxX + 1
+                || point.y < frame.minY - 1 || point.y > frame.maxY + 1
+        } ?? false
+        guard outOfFrame || needsSearch(role: node.role, frame: node.frame, window: windowFrame) else {
+            return (hit, "direct")
+        }
         // v0.10 C2 review: AX can name the sidebar cell/outline when the
-        // point lies on its sibling scrollbar. Only collection hits may use
-        // their nearest containing scroll area; overlays keep their own subtree.
-        var root = hit
+        // point lies on its sibling scrollbar. Consistent non-collection hits
+        // keep their subtree; out-of-frame hits require a wider recovery scope.
+        // v0.10 C2 round 3: recovery must stay inside an enclosing overlay;
+        // smaller background controls do not own points in that overlay.
+        var root = outOfFrame ? (recoveryRoot ?? window ?? hit) : hit
         let collection = inCollection || node.role == "AXOutline" || node.role == "AXTable"
-        if collection, ["AXOutline", "AXTable", "AXRow", "AXCell"].contains(node.role),
+        if outOfFrame || (collection && ["AXOutline", "AXTable", "AXRow", "AXCell"].contains(node.role)),
            let scrollContainer {
             let scroll = read(scrollContainer)
             if scroll.role == "AXScrollArea", scroll.frame?.contains(point) == true { root = scrollContainer }
         }
         let best = search(root: root, point: point, inCollection: inCollection, read: read)
-        return best.map { ($0, "geometric") } ?? (hit, "container")
+        return best.map { ($0, "geometric") } ?? (hit, outOfFrame ? "direct_out_of_frame" : "container")
     }
 
     static func search<ID: Hashable>(root: ID, point: CGPoint, nodeCap: Int = 2000, inCollection: Bool = false, now: () -> Date = { Date() },

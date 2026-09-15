@@ -1,0 +1,92 @@
+[
+  {
+    "probe": "element_at_point {\"pid\": 742, \"x\": 809.5, \"y\": 105} -> 2 ms",
+    "ok": false,
+    "error_code": "permission_missing"
+  },
+  {
+    "probe": "element_at_point {\"pid\": 742, \"x\": 809.5, \"y\": 105} -> 0 ms",
+    "ok": false,
+    "error_code": "permission_missing"
+  },
+  {
+    "probe": "element_at_point {\"pid\": 742, \"x\": 1444.5, \"y\": 105} -> 0 ms",
+    "ok": false,
+    "error_code": "permission_missing"
+  },
+  {
+    "probe": "element_at_point {\"pid\": 742, \"x\": 1550.5, \"y\": 105} -> 0 ms",
+    "ok": false,
+    "error_code": "permission_missing"
+  },
+  {
+    "probe": "element_at_point {\"pid\": 742, \"x\": 1444.5, \"y\": 105} -> 0 ms",
+    "ok": false,
+    "error_code": "permission_missing"
+  },
+  {
+    "probe": "element_at_point {\"pid\": 742, \"x\": 1550.5, \"y\": 105} -> 0 ms",
+    "ok": false,
+    "error_code": "permission_missing"
+  },
+  {
+    "probe": "element_at_point {\"pid\": 742, \"x\": 1444.5, \"y\": 105} -> 0 ms",
+    "ok": false,
+    "error_code": "permission_missing"
+  },
+  {
+    "probe": "element_at_point {\"pid\": 742, \"x\": 1550.5, \"y\": 105} -> 0 ms",
+    "ok": false,
+    "error_code": "permission_missing"
+  },
+  {
+    "probe": "element_at_point {\"pid\": 742, \"x\": 1444.5, \"y\": 105} -> 0 ms",
+    "ok": false,
+    "error_code": "permission_missing"
+  },
+  {
+    "probe": "element_at_point {\"pid\": 742, \"x\": 1550.5, \"y\": 105} -> 0 ms",
+    "ok": false,
+    "error_code": "permission_missing"
+  },
+  {
+    "probe": "element_at_point {\"pid\": 742, \"x\": 1444.5, \"y\": 105} -> 0 ms",
+    "ok": false,
+    "error_code": "permission_missing"
+  },
+  {
+    "probe": "element_at_point {\"pid\": 742, \"x\": 1550.5, \"y\": 105} -> 0 ms",
+    "ok": false,
+    "error_code": "permission_missing"
+  },
+  {
+    "probe": "element_at_point {\"pid\": 742, \"x\": 1444.5, \"y\": 105} -> 0 ms",
+    "ok": false,
+    "error_code": "permission_missing"
+  },
+  {
+    "probe": "element_at_point {\"pid\": 742, \"x\": 1550.5, \"y\": 105} -> 0 ms",
+    "ok": false,
+    "error_code": "permission_missing"
+  },
+  {
+    "probe": "element_at_point {\"pid\": 742, \"x\": 1444.5, \"y\": 105} -> 0 ms",
+    "ok": false,
+    "error_code": "permission_missing"
+  },
+  {
+    "probe": "element_at_point {\"pid\": 742, \"x\": 1550.5, \"y\": 105} -> 0 ms",
+    "ok": false,
+    "error_code": "permission_missing"
+  },
+  {
+    "probe": "element_at_point {\"pid\": 742, \"x\": 1444.5, \"y\": 105} -> 0 ms",
+    "ok": false,
+    "error_code": "permission_missing"
+  },
+  {
+    "probe": "element_at_point {\"pid\": 742, \"x\": 1550.5, \"y\": 105} -> 0 ms",
+    "ok": false,
+    "error_code": "permission_missing"
+  }
+]
