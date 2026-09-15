@@ -16,13 +16,33 @@ struct ServerLifecycleTests {
 
     @Test("tool timeout honours defaults, per-tool limits, requested durations and the env override")
     func toolTimeoutLimits() {
-        #expect(ToolTimeouts.limit(for: "list_windows", arguments: [:], environment: [:]) == ToolTimeouts.defaultLimit)
+        #expect(ToolTimeouts.limit(for: "list_windows", arguments: [:], environment: [:]) == 10)
         #expect(ToolTimeouts.limit(for: "record_screen", arguments: ["seconds": .number(120)], environment: [:]) == 135)
-        #expect(ToolTimeouts.limit(for: "wait_for_app", arguments: ["timeout_seconds": .number(5)], environment: [:]) == ToolTimeouts.defaultLimit)
+        #expect(ToolTimeouts.limit(for: "wait_for_app", arguments: ["timeout_seconds": .number(5)], environment: [:]) == 20)
         let env = [ToolTimeouts.environmentKey: "30"]
         #expect(ToolTimeouts.limit(for: "list_windows", arguments: [:], environment: env) == 30)
         #expect(ToolTimeouts.limit(for: "wait_for_app", arguments: ["timeout_seconds": .number(40)], environment: env) == 55)
-        #expect(ToolTimeouts.limit(for: "list_windows", arguments: [:], environment: [ToolTimeouts.environmentKey: "nonsense"]) == ToolTimeouts.defaultLimit)
+        #expect(ToolTimeouts.limit(for: "list_windows", arguments: [:], environment: [ToolTimeouts.environmentKey: "nonsense"]) == 10)
+    }
+
+    // v0.10 A3: capture aliases and cheap system reads need the same budgets.
+    @Test("capture and read aliases fit realistic budgets")
+    func allBoundedToolsBudgeted() {
+        for name in ["capture_display", "capture_screen_v2", "ocr_screen"] {
+            #expect(ToolTimeouts.limit(for: name, arguments: [:], environment: [:]) == 30)
+        }
+        for name in ["battery_status", "system_load", "disk_usage", "clipboard_read", "list_audio_devices", "list_dock_items", "agent_memory_recall", "ax_snapshot_capture"] {
+            #expect(ToolTimeouts.limit(for: name, arguments: [:], environment: [:]) == 10)
+        }
+        #expect(ToolTimeouts.limit(for: "wait_for", arguments: ["timeout_seconds": .number(0)], environment: [:]) == 15)
+    }
+
+    @Test("key sequence budget covers every requested delay plus posting and slack")
+    func keySequenceBudget() {
+        let args: [String: JSONValue] = ["steps": .array(Array(repeating: .object(["key": .string("a")]), count: 3)), "delay_ms": .number(5000)]
+        #expect(ToolTimeouts.limit(for: "press_key_sequence", arguments: args, environment: [:]) >= 30)
+        let batch: [String: JSONValue] = ["calls": .array([.object(["name": .string("press_key_sequence"), "arguments": .object(args)])])]
+        #expect(ToolTimeouts.limit(for: "batch", arguments: batch, environment: [:]) >= 35)
     }
 
     // MARK: - v0.9 review follow-up (MEDIUM, #8): batch outer/inner timeout race
@@ -30,7 +50,7 @@ struct ServerLifecycleTests {
     @Test("the outer batch timeout always exceeds the summed inner per-call budgets")
     func batchOuterTimeoutExceedsInnerSum() {
         let calls: JSONValue = .array([
-            .object(["name": .string("focused_app")]),
+            .object(["name": .string("list_apps")]),
             .object(["name": .string("list_windows")]),
             .object(["name": .string("wait_for_app"), "arguments": .object(["timeout_seconds": .number(40)])])
         ])
@@ -58,7 +78,7 @@ struct ServerLifecycleTests {
         let effectiveCap = ToolTimeouts.batchCap - ToolTimeouts.batchHandlerSlack
         let perCall = effectiveCap / 5
         let registry = ToolRegistry(accessibility: AccessibilityController())
-        let calls: JSONValue = .array((0..<5).map { _ in .object(["name": .string("focused_app")]) })
+        let calls: JSONValue = .array((0..<5).map { _ in .object(["name": .string("list_apps")]) })
 
         let result = await registry.callTool(
             name: "batch",
@@ -83,7 +103,7 @@ struct ServerLifecycleTests {
         let effectiveCap = ToolTimeouts.batchCap - ToolTimeouts.batchHandlerSlack
         let perCall = (effectiveCap / 5) + 1
         let registry = ToolRegistry(accessibility: AccessibilityController())
-        let calls: JSONValue = .array((0..<5).map { _ in .object(["name": .string("focused_app")]) })
+        let calls: JSONValue = .array((0..<5).map { _ in .object(["name": .string("list_apps")]) })
 
         let result = await registry.callTool(
             name: "batch",

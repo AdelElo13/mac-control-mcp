@@ -4,6 +4,17 @@ import CoreGraphics
 /// Low-level mouse input via CGEvent. Positions are in the global Quartz
 /// coordinate space (origin top-left, matches AX position attributes).
 actor MouseController {
+    // v0.10 C1: clip each display separately so a monitor gap is never a click point.
+    nonisolated static func visibleCenter(frame: CGRect, window: CGRect, displays: [CGRect]) -> CGPoint? {
+        guard [frame.origin.x, frame.origin.y, frame.width, frame.height,
+               window.origin.x, window.origin.y, window.width, window.height].allSatisfy(\.isFinite) else { return nil }
+        let visible = displays.filter { rect in
+            [rect.origin.x, rect.origin.y, rect.width, rect.height].allSatisfy(\.isFinite)
+        }.compactMap { ScreenAnnotator.visibleRect(of: frame, clippedTo: [window, $0]) }
+            .max { $0.width * $0.height < $1.width * $1.height }
+        return visible.map { CGPoint(x: $0.midX, y: $0.midY) }
+    }
+
     enum Button: String, Sendable {
         case left, right, center
 
@@ -40,111 +51,103 @@ actor MouseController {
         }
     }
 
+    // v0.10 C1: transport takes plain event data so fakes never create
+    // CGEventSource, which itself can block outside a desktop session.
+    struct Event: Sendable {
+        let type: CGEventType
+        let point: CGPoint?
+        var button: Button = .left
+        var clickCount: Int64 = 0
+        var deltaX: Int = 0
+        var deltaY: Int = 0
+        var delayAfter: Double = 0
+    }
+
+    private let postEvents: @Sendable ([Event]) -> Bool
+
+    init(postEvent: @escaping @Sendable ([Event]) -> Bool = MouseController.postLive) {
+        self.postEvents = postEvent
+    }
+
+    // v0.10 C1: prepare the whole gesture before its first down event so a
+    // failure to construct mouseUp cannot leave the user's button held down.
+    nonisolated static func prepareAndPost(_ events: [Event], prepare: (Event) -> (() -> Void)?) -> Bool {
+        var prepared: [() -> Void] = []
+        for event in events {
+            guard let post = prepare(event) else { return false }
+            prepared.append(post)
+        }
+        for (event, post) in zip(events, prepared) {
+            post()
+            if event.delayAfter > 0 { Thread.sleep(forTimeInterval: event.delayAfter) }
+        }
+        return true
+    }
+
+    nonisolated private static func postLive(_ events: [Event]) -> Bool {
+        guard let source = CGEventSource(stateID: .hidSystemState) else { return false }
+        return prepareAndPost(events) { data in
+            let event: CGEvent?
+            if data.type == .scrollWheel {
+                event = CGEvent(scrollWheelEvent2Source: source, units: .pixel, wheelCount: 2,
+                                wheel1: Int32(clamping: data.deltaY), wheel2: Int32(clamping: data.deltaX), wheel3: 0)
+                if let point = data.point { event?.location = point }
+            } else {
+                guard let point = data.point else { return nil }
+                event = CGEvent(mouseEventSource: source, mouseType: data.type, mouseCursorPosition: point, mouseButton: data.button.cgButton)
+                if data.clickCount > 0 { event?.setIntegerValueField(.mouseEventClickState, value: data.clickCount) }
+            }
+            guard let event else { return nil }
+            return { event.post(tap: .cghidEventTap) }
+        }
+    }
+
     /// Move the cursor without clicking.
     func move(to point: CGPoint) -> Bool {
-        guard let source = CGEventSource(stateID: .hidSystemState),
-              let event = CGEvent(mouseEventSource: source, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)
-        else { return false }
-        event.post(tap: .cghidEventTap)
-        return true
+        postEvents([Event(type: .mouseMoved, point: point)])
     }
 
     /// Single click at a point with a specific button.
     func click(at point: CGPoint, button: Button = .left) -> Bool {
-        guard let source = CGEventSource(stateID: .hidSystemState),
-              let down = CGEvent(mouseEventSource: source, mouseType: button.downType, mouseCursorPosition: point, mouseButton: button.cgButton),
-              let up = CGEvent(mouseEventSource: source, mouseType: button.upType, mouseCursorPosition: point, mouseButton: button.cgButton)
-        else { return false }
-        down.post(tap: .cghidEventTap)
-        Thread.sleep(forTimeInterval: 0.01)
-        up.post(tap: .cghidEventTap)
-        return true
+        postEvents([
+            Event(type: button.downType, point: point, button: button, delayAfter: 0.01),
+            Event(type: button.upType, point: point, button: button)
+        ])
     }
 
-    /// Multi-click at a point. `count` = 2 is a standard double-click
-    /// ("select word" in text surfaces); `count` = 3 is a triple-click
-    /// ("select line / paragraph"). Uses the CGEvent click-count field
-    /// so macOS recognises the clicks as a single gesture rather than
-    /// three independent clicks.
-    ///
-    /// BUG-FIX v0.2.6 #10: we previously only exposed `doubleClick`,
-    /// which Telegram-style "select word" uses but which fails for
-    /// range-select on code-block tokens that span >1 visual line or
-    /// cross a word boundary. Adding triple-click covers those cases.
+    /// The click-count field makes consecutive clicks a single gesture
+    /// (v0.2.6 #10), rather than unrelated clicks in text surfaces.
     func multiClick(at point: CGPoint, count: Int, button: Button = .left) -> Bool {
-        let clicks = max(1, min(count, 5))
-        guard let source = CGEventSource(stateID: .hidSystemState) else { return false }
-
-        for i in 1...clicks {
-            guard let down = CGEvent(mouseEventSource: source, mouseType: button.downType, mouseCursorPosition: point, mouseButton: button.cgButton),
-                  let up = CGEvent(mouseEventSource: source, mouseType: button.upType, mouseCursorPosition: point, mouseButton: button.cgButton)
-            else { return false }
-            down.setIntegerValueField(.mouseEventClickState, value: Int64(i))
-            up.setIntegerValueField(.mouseEventClickState, value: Int64(i))
-            down.post(tap: .cghidEventTap)
-            up.post(tap: .cghidEventTap)
-            Thread.sleep(forTimeInterval: 0.02)
-        }
-        return true
+        let events = (1...max(1, min(count, 5))).flatMap { count in [
+            Event(type: button.downType, point: point, button: button, clickCount: Int64(count)),
+            Event(type: button.upType, point: point, button: button, clickCount: Int64(count), delayAfter: 0.02)
+        ] }
+        return postEvents(events)
     }
 
-    /// Double-click at a point. Uses the CGEvent click count mechanism so
-    /// macOS recognises the pair as a genuine double-click.
     func doubleClick(at point: CGPoint, button: Button = .left) -> Bool {
         multiClick(at: point, count: 2, button: button)
     }
 
-    /// Triple-click at a point. Selects the line/paragraph in most text
-    /// surfaces. Public in v0.2.6 (#10).
     func tripleClick(at point: CGPoint, button: Button = .left) -> Bool {
         multiClick(at: point, count: 3, button: button)
     }
 
-    /// Click-and-drag from one point to another with the given button held.
-    /// `steps` controls smoothness — more steps = slower, more natural drag.
+    /// Prepare the drag and its button release together before posting.
     func drag(from start: CGPoint, to end: CGPoint, button: Button = .left, steps: Int = 20) -> Bool {
         let stepCount = max(1, steps)
-        guard let source = CGEventSource(stateID: .hidSystemState),
-              let down = CGEvent(mouseEventSource: source, mouseType: button.downType, mouseCursorPosition: start, mouseButton: button.cgButton)
-        else { return false }
-
-        down.post(tap: .cghidEventTap)
-        Thread.sleep(forTimeInterval: 0.02)
-
+        var events = [Event(type: button.downType, point: start, button: button, delayAfter: 0.02)]
         for i in 1...stepCount {
             let t = Double(i) / Double(stepCount)
-            let p = CGPoint(
-                x: start.x + (end.x - start.x) * t,
-                y: start.y + (end.y - start.y) * t
-            )
-            guard let moved = CGEvent(mouseEventSource: source, mouseType: button.dragType, mouseCursorPosition: p, mouseButton: button.cgButton)
-            else { continue }
-            moved.post(tap: .cghidEventTap)
-            Thread.sleep(forTimeInterval: 0.01)
+            let point = CGPoint(x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t)
+            events.append(Event(type: button.dragType, point: point, button: button, delayAfter: 0.01))
         }
-
-        guard let up = CGEvent(mouseEventSource: source, mouseType: button.upType, mouseCursorPosition: end, mouseButton: button.cgButton)
-        else { return false }
-        up.post(tap: .cghidEventTap)
-        return true
+        events.append(Event(type: button.upType, point: end, button: button))
+        return postEvents(events)
     }
 
-    /// Scroll wheel event. Positive deltaY = scroll up, negative = down.
-    /// deltaX moves sideways where the device supports it.
+    /// Positive deltaY scrolls up; the point is inside the element's visible frame.
     func scroll(deltaX: Int, deltaY: Int, at point: CGPoint? = nil) -> Bool {
-        guard let source = CGEventSource(stateID: .hidSystemState),
-              let event = CGEvent(
-                scrollWheelEvent2Source: source,
-                units: .pixel,
-                wheelCount: 2,
-                wheel1: Int32(clamping: deltaY),
-                wheel2: Int32(clamping: deltaX),
-                wheel3: 0
-              )
-        else { return false }
-
-        if let point { event.location = point }
-        event.post(tap: .cghidEventTap)
-        return true
+        postEvents([Event(type: .scrollWheel, point: point, deltaX: deltaX, deltaY: deltaY)])
     }
 }

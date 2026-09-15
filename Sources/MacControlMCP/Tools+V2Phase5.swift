@@ -705,42 +705,7 @@ extension ToolRegistry {
     }
 
     func callWaitForWindow(_ arguments: [String: JSONValue]) async -> ToolCallResult {
-        guard let pid = parsePID(arguments["pid"]) else {
-            return invalidArgument("wait_for_window requires a positive integer pid.")
-        }
-        let titleFilter = arguments["title_contains"]?.stringValue?.lowercased()
-        let timeout = min(max(arguments["timeout_seconds"]?.doubleValue ?? 5.0, 0.1), 60.0)
-        let intervalMs = min(max(arguments["poll_interval_ms"]?.intValue ?? 250, 50), 60_000)
-        let deadline = Date().addingTimeInterval(timeout)
-
-        while Date() < deadline {
-            let list = await windows.listAppWindows(pid: pid)
-            if let match = list.first(where: { w in
-                guard let filter = titleFilter, !filter.isEmpty else { return true }
-                return w.title.lowercased().contains(filter)
-            }) {
-                return successResult(
-                    "Window appeared.",
-                    [
-                        "ok": .bool(true),
-                        "pid": .number(Double(pid)),
-                        "window": encodeAsJSONValue(match)
-                    ]
-                )
-            }
-            do {
-                try await Task.sleep(nanoseconds: UInt64(intervalMs) * 1_000_000)
-            } catch {
-                return errorResult(
-                    "Cancelled during poll.",
-                    ["ok": .bool(false), "cancelled": .bool(true)]
-                )
-            }
-        }
-        return errorResult(
-            "Timed out after \(timeout)s.",
-            ["ok": .bool(false), "timed_out": .bool(true)]
-        )
+        await callLegacyWait(arguments, window: true)
     }
 
     func callWaitForApp(_ arguments: [String: JSONValue]) async -> ToolCallResult {

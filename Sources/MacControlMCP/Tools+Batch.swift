@@ -34,7 +34,7 @@ extension ToolRegistry {
                 exactly as if called standalone). Nesting a "batch" call \
                 inside calls is rejected, as is more than 50 calls, and a \
                 batch whose calls' combined timeout budget would exceed \
-                300s (rejected up front with invalid_argument — never \
+                300s including handler slack (cheap reads/input 10s, capture/OCR 30s, waits their timeout plus slack; rejected up front with invalid_argument — never \
                 silently truncated). stop_on_error (default true) halts \
                 after the first failing call; set false to run every \
                 call regardless of earlier failures. A sub-call TIMEOUT \
