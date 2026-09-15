@@ -7,13 +7,17 @@ import AppKit
 /// Shared tail for every tool that honours the v0.9 payload budget.
 let axPayloadBudgetDoc = "Every response also reports bytes (encoded size), max_depth_used, nodes_visited and truncated."
 
+// v0.10 C5: keep both search tools' heuristic contract identical.
+let axSemanticDoc = "Semantic targets use role/attribute heuristics (English and Dutch labels): search_field prefers a named text/combo field or an untitled field beside a Search button; falls back to Finder's Search activation button. back/forward match navigation buttons; close matches AXCloseButton subrole or a Close button; ok/cancel match button labels. sidebar_item(title) matches rows/cells inside an outline/source list using descendant static-text values. tab(title) matches AXTab or buttons/radio buttons inside AXTabGroup. link(text) matches AXLink labels or descendant text. No control is clicked."
+let axSearchDoc = "Search title across AXTitle, AXDescription, AXValue and AXIdentifier independently. Migration: roles now use exact case-insensitive normalized names instead of substrings (Button means AXButton, never AXRadioButton); use query_elements role_regex for broader role matching. Without semantic, keep a running ranked top-limit and stop once limit non-menu hits match every supplied title/value filter exactly; role-only hits qualify immediately. interactive_only/viewport_only are applied before hits count toward the limit. Results rank exact before prefix before substring, then window content before menus, interactive controls before containers, and smaller areas first. Early exit ranks only visited hits: later equally exact, smaller or more interactive controls may be missed. Semantic queries, menu-only matches and queries without enough exact hits continue within the 5000-node / 5 s budget; query_elements provides full bounded ranking. Each result includes matched_field, match (exact|prefix|substring) and rank_reason. nodes_visited counts actual reads; search_stopped_early reports the exact-hit shortcut. "
+
 extension ToolRegistry {
     static let definitionsV2: [MCPToolDefinition] = [
         MCPToolDefinition(
             name: "get_ui_tree",
             description: "Walk the full accessibility tree of a process and return every node (including containers and static text) with child indices and element IDs for follow-up calls. Element IDs are content-addressed (pid + AX path), so the same node keeps the same id across calls and sessions. Bounded by a 5 s budget and node_cap nodes (= element-cache capacity, 2000 by default, so every returned id stays valid); node_cap_reached=true means the tree was cut off — lower max_depth or use find_elements. "
                 + "The heaviest AX tool (hundreds of KB for a browser or Finder window — 327 KB measured) — when you know what you are looking for, find_elements / query_elements are far smaller and also return ids. "
-                + "To make one look affordable, use interactive_only / viewport_only / fields / max_bytes. " + axPayloadBudgetDoc,
+                + "Nodes below AXWebArea additionally emit url, dom_id and dom_class when present. To make one look affordable, use interactive_only / viewport_only / fields / max_bytes. " + axPayloadBudgetDoc,
             inputSchema: schema(
                 properties: [
                     "pid": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Target process ID.")]),
@@ -41,26 +45,24 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "find_elements",
-            description: "Find ALL matching elements (up to limit) by case-insensitive substring on role / title / value (title = AXTitle → AXDescription → AXIdentifier; unlike find_element it does not fall back to AXValue — use the value filter). "
-                + "Each match carries an element id for perform_element_action / get_element_attributes / set_element_attribute. "
-                + "Use find_element for a cheap first-match check, query_elements when you need regex (anchors, alternation). "
-                + "IDs are content-addressed (pid + AX path): the same element keeps the same id across calls and sessions. " + axPayloadBudgetDoc,
+            description: "Find matching elements with stable element ids. " + axSearchDoc + axSemanticDoc + " " + axPayloadBudgetDoc,
             inputSchema: schema(
                 properties: [
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
+                    "semantic": .object(["type": .string("string"), "description": .string(axSemanticDoc)]),
                     "role": .object(["type": .string("string")]),
                     "title": .object(["type": .string("string")]),
                     "value": .object(["type": .string("string")]),
                     "exact": .object([
                         "type": .string("boolean"),
-                        "description": .string("Match role/title/value by case-insensitive EQUALITY instead of substring. Default false — beware that role \"Button\" substring-matches AXRadioButton, AXMenuButton and AXPopUpButton.")
+                        "description": .string("Match title/value by case-insensitive equality. Roles always use exact normalized names.")
                     ]),
                     "max_depth": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Traversal depth limit. Default 24 (project-wide AX default), max 64.")]),
                     "limit": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Max matches to return (default 100).")]),
                     "fields": .object([
                         "type": .string("array"),
                         "items": .object(["type": .string("string")]),
-                        "description": .string("Payload budget (v0.9): only emit these per-node keys. Default: all of id, role, title, value, position, size, depth.")
+                        "description": .string("Payload budget (v0.9): only emit these per-node keys. Default: all standard fields plus available web metadata and search match/rank metadata.")
                     ]),
                     "interactive_only": .object([
                         "type": .string("boolean"),
@@ -80,7 +82,7 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "query_elements",
-            description: "Like find_elements, but role_regex / title_regex / value_regex are case-insensitive regular expressions (e.g. title_regex \"^Save$\" for an exact label, \"Save|Opslaan\" for alternatives). Invalid regex falls back to case-insensitive substring. Returns element ids. "
+            description: "Like find_elements, but role_regex / title_regex / value_regex are case-insensitive regular expressions (e.g. title_regex \"^Save$\" for an exact label, \"Save|Opslaan\" for alternatives). Invalid regex falls back to case-insensitive substring. Returns ranked element ids with matched_field, match and rank_reason; title_regex searches title, description, value and identifier. Role regex remains a regular expression. "
                 + "Prefer find_elements for plain substring matches. " + axPayloadBudgetDoc,
             inputSchema: schema(
                 properties: [
@@ -93,7 +95,7 @@ extension ToolRegistry {
                     "fields": .object([
                         "type": .string("array"),
                         "items": .object(["type": .string("string")]),
-                        "description": .string("Payload budget (v0.9): only emit these per-node keys. Default: all of id, role, title, value, position, size, depth.")
+                        "description": .string("Payload budget (v0.9): only emit these per-node keys. Default: all standard fields plus available web metadata and search match/rank metadata.")
                     ]),
                     "interactive_only": .object([
                         "type": .string("boolean"),
@@ -342,11 +344,21 @@ extension ToolRegistry {
         return CGRect(x: position.x, y: position.y, width: size.width, height: size.height)
     }
 
+    // v0.10 C5: reject misspelled semantic targets instead of returning broad hits.
+    func validateSemantic(_ arguments: [String: JSONValue]) -> ToolCallResult? {
+        guard let raw = arguments["semantic"] else { return nil }
+        guard let target = raw.stringValue, AXSearch.validSemantic(target) else {
+            return invalidArgument("semantic must be search_field, back, forward, close, ok, cancel, sidebar_item(title), tab(title), or link(text).")
+        }
+        return nil
+    }
+
     func callFindElements(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         guard let pid = parsePID(arguments["pid"]) else {
             return invalidArgument("find_elements requires a positive integer pid.")
         }
         if let dead = noSuchProcessResult(pid: pid, tool: "find_elements") { return dead }
+        if let error = validateSemantic(arguments) { return error }
         let role = arguments["role"]?.stringValue
         let title = arguments["title"]?.stringValue
         let value = arguments["value"]?.stringValue
@@ -355,12 +367,14 @@ extension ToolRegistry {
         let exact = AXPayload.flag(arguments["exact"])
         let budget = PayloadOptions(arguments, known: AXPayload.elementFields)
 
-        let matches = await accessibility.findElements(
+        let search = await accessibility.findElementsWithStats(
             pid: pid, role: role, title: title, value: value,
-            exact: exact, maxDepth: maxDepth, limit: limit
+            exact: exact, maxDepth: maxDepth, limit: limit, semantic: arguments["semantic"]?.stringValue,
+            interactiveOnly: budget.interactiveOnly, viewportOnly: budget.viewportOnly
         )
 
-        let encoded = await encodeMatches(matches, pid: pid, budget: budget)
+        let matches = search.matches
+        let encoded = await encodeMatches(matches, pid: pid, budget: budget, filtersApplied: true)
         let budgeted = AXPayload.applyByteBudget(encoded, maxBytes: budget.maxBytes)
 
         var payload: [String: JSONValue] = [
@@ -368,9 +382,10 @@ extension ToolRegistry {
             "pid": .number(Double(pid)),
             "count": .number(Double(budgeted.items.count)),
             "limit_reached": .bool(matches.count >= limit),
+            "search_stopped_early": .bool(search.stoppedEarly),
             "elements": .array(budgeted.items)
         ]
-        budget.annotate(&payload, maxDepthUsed: maxDepth, nodesVisited: matches.count, truncated: budgeted.truncated)
+        budget.annotate(&payload, maxDepthUsed: maxDepth, nodesVisited: search.nodesVisited, truncated: budgeted.truncated || search.truncated)
         if let hint = await axEmptyHint(pid: pid, whenEmpty: matches.isEmpty) {
             payload["ax_tree_hint"] = .string(hint)
         }
@@ -394,11 +409,13 @@ extension ToolRegistry {
             titlePattern: titlePattern,
             valuePattern: valuePattern,
             maxDepth: maxDepth,
-            limit: limit
+            limit: limit,
+            interactiveOnly: budget.interactiveOnly,
+            viewportOnly: budget.viewportOnly
         )
         let matches = result.matches
 
-        let encoded = await encodeMatches(matches, pid: pid, budget: budget)
+        let encoded = await encodeMatches(matches, pid: pid, budget: budget, filtersApplied: true)
         let budgeted = AXPayload.applyByteBudget(encoded, maxBytes: budget.maxBytes)
 
         var payload: [String: JSONValue] = [
@@ -407,7 +424,7 @@ extension ToolRegistry {
             "count": .number(Double(budgeted.items.count)),
             "elements": .array(budgeted.items)
         ]
-        budget.annotate(&payload, maxDepthUsed: maxDepth, nodesVisited: matches.count, truncated: budgeted.truncated)
+        budget.annotate(&payload, maxDepthUsed: maxDepth, nodesVisited: result.nodesVisited, truncated: budgeted.truncated || result.truncated)
         // v0.9 (A-13): surface exactly which pattern(s) failed to
         // compile as regex and fell back to substring matching, so a
         // typo'd pattern isn't indistinguishable from a genuine no-match.
@@ -861,14 +878,15 @@ extension ToolRegistry {
     func encodeMatches(
         _ matches: [AccessibilityController.Match],
         pid: pid_t,
-        budget: PayloadOptions
+        budget: PayloadOptions,
+        filtersApplied: Bool = false
     ) async -> [JSONValue] {
-        let filtered = matches.filter { match in
+        let filtered = filtersApplied ? matches : matches.filter { match in
             let passesRole = !budget.interactiveOnly || AXPayload.isInteractive(role: match.info.role)
             return passesRole
         }
-        let windows = budget.viewportOnly ? await accessibility.windowFrames(pid: pid) : []
-        let visible = budget.viewportOnly
+        let windows = !filtersApplied && budget.viewportOnly ? await accessibility.windowFrames(pid: pid) : []
+        let visible = !filtersApplied && budget.viewportOnly
             ? filtered.filter {
                 AXPayload.isInViewport(
                     frame: Self.frame(position: $0.info.position, size: $0.info.size),
@@ -878,7 +896,11 @@ extension ToolRegistry {
             : filtered
         let ids = await elementCache.storeMany(withPaths: visible.map { ($0.element, $0.path) }, pid: pid)
         return zip(visible, ids).map { match, id in
-            encodeElement(info: match.info, id: id, fields: budget.fields)
+            var object = encodeElement(info: match.info, id: id).objectValue ?? [:]
+            object["matched_field"] = .string(match.matchedField)
+            object["match"] = .string(match.match)
+            object["rank_reason"] = .string(match.rankReason)
+            return .object(AXPayload.project(object, fields: budget.fields))
         }
     }
 
@@ -901,6 +923,7 @@ extension ToolRegistry {
         if let s = info.size {
             dict["size"] = .object(["width": .number(s.width), "height": .number(s.height)])
         }
+        for (key, value) in info.web { dict[key] = .string(value) }
         if let d = info.depth {
             dict["depth"] = .number(Double(d))
         }
@@ -921,6 +944,7 @@ extension ToolRegistry {
             "depth": .number(Double(node.depth)),
             "children": .array(childIndices.map { .number(Double($0)) })
         ]
+        for (key, value) in node.web { dict[key] = .string(value) }
         if let p = node.position {
             dict["position"] = .object(["x": .number(p.x), "y": .number(p.y)])
         }

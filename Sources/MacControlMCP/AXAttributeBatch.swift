@@ -62,14 +62,20 @@ enum AXAttributeBatch {
         /// AXChildren followed by AXSheets. Empty when children were not
         /// requested.
         let children: [AXUIElement]
+        var rawTitle: String? = nil
+        var description: String? = nil
+        var web: [String: String] = [:]
     }
 
     /// Fetch `nodeAttributes` (when `includeChildren`) or
     /// `infoAttributes` in one IPC round trip. Falls back to one call per
     /// attribute if the batched call itself fails, so behaviour never
     /// regresses below the old per-attribute path.
-    static func fetch(_ element: AXUIElement, includeChildren: Bool) -> Values {
-        let names = includeChildren ? nodeAttributes : infoAttributes
+    // v0.10 C6: append web metadata only below AXWebArea, in the same IPC.
+    static let webAttributes = ["AXURL", "AXDOMIdentifier", "AXDOMClassList"]
+
+    static func fetch(_ element: AXUIElement, includeChildren: Bool, insideWebArea: Bool = false) -> Values {
+        let names = (includeChildren ? nodeAttributes : infoAttributes) + (insideWebArea ? webAttributes : [])
         var raw: CFArray?
         let status = AXUIElementCopyMultipleAttributeValues(element, names as CFArray, [], &raw)
         if status == .success, let array = raw as? [AnyObject], array.count == names.count {
@@ -97,6 +103,16 @@ enum AXAttributeBatch {
         let children: [AXUIElement] = includeChildren
             ? elements(slot(8)) + elements(slot(9))
             : []
+        let webOffset = includeChildren ? 10 : 8
+        var web: [String: String] = [:]
+        if let url = slot(webOffset) as? URL { web["url"] = url.absoluteString }
+        else if let url = string(slot(webOffset)) { web["url"] = url }
+        if let id = nonEmpty(webOffset + 1) { web["dom_id"] = id }
+        // v0.10 C6: an absent DOM identity is not an empty identity.
+        if let classes = slot(webOffset + 2) as? [String] {
+            let joined = classes.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.joined(separator: " ")
+            if !joined.isEmpty { web["dom_class"] = joined }
+        } else if let classes = nonEmpty(webOffset + 2) { web["dom_class"] = classes }
         return Values(
             role: string(slot(0)),
             title: nonEmpty(1) ?? nonEmpty(2) ?? nonEmpty(3),
@@ -105,7 +121,10 @@ enum AXAttributeBatch {
             value: string(slot(4)),
             position: point(slot(5)),
             size: size(slot(6)),
-            children: children
+            children: children,
+            rawTitle: nonEmpty(1),
+            description: nonEmpty(2),
+            web: web
         )
     }
 

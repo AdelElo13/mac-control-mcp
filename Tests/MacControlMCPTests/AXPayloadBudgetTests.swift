@@ -10,6 +10,14 @@ import ApplicationServices
 @Suite("AX payload budget (C-9)")
 struct AXPayloadBudgetTests {
 
+    // v0.10 C6: requested web metadata must survive field projection.
+    @Test("web metadata is selectable in tree payloads")
+    func webFields() {
+        let result = AXPayload.resolveFields(.array([.string("url"), .string("dom_id"), .string("dom_class")]), known: AXPayload.treeFields)
+        #expect(result.unknown.isEmpty)
+        #expect(AXPayload.project(["url": .string("https://example.org")], fields: result.fields)["url"] == .string("https://example.org"))
+    }
+
     // MARK: - fields
 
     @Test("omitted fields means every field")

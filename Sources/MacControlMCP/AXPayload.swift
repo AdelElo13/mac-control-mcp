@@ -27,10 +27,10 @@ enum AXPayload {
     // MARK: - fields
 
     /// Per-node keys `get_ui_tree` emits.
-    static let treeFields: [String] = ["id", "role", "title", "value", "position", "size", "depth", "children"]
+    static let treeFields: [String] = ["id", "role", "title", "value", "position", "size", "depth", "children", "url", "dom_id", "dom_class"]
 
     /// Per-element keys the search tools emit.
-    static let elementFields: [String] = ["id", "role", "title", "value", "position", "size", "depth"]
+    static let elementFields: [String] = ["id", "role", "title", "value", "position", "size", "depth", "url", "dom_id", "dom_class", "matched_field", "match", "rank_reason"]
 
     /// Resolve a `fields` argument. `nil` means "every field" (the
     /// default). Names the caller got wrong come back in `unknown` so a
