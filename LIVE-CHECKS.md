@@ -175,7 +175,15 @@ def check_chrome(chrome):
     listed = success("list_windows", {"pid": chrome})
     windows = [w for w in listed["windows"] if w.get("window_id") and not w.get("minimized")]
     require(windows, "Chrome has no identifiable non-minimized window")
-    found = success("find_elements", {"pid": chrome, "role": "AXLink", "exact": True, "max_depth": 32, "limit": 500})
+    find_args = {"pid": chrome, "role": "AXLink", "exact": True, "max_depth": 32, "limit": 500}
+    text_args = dict(find_args, role="AXStaticText")
+    tree_args = {"pid": chrome, "max_depth": 32, "fields": ["id", "role", "children"]}
+    found = success("find_elements", find_args)
+    texts = success("find_elements", text_args)
+    nodes = success("get_ui_tree", tree_args)["nodes"]
+    tree_by_id = {node["id"]: node for node in nodes}
+    by_id = {row["id"]: row for row in found["elements"] + texts["elements"]}
+    warmed = False
     for row in found["elements"]:
         pos, size = row.get("position", {}), row.get("size", {})
         if size.get("width", 0) < 2 or size.get("height", 0) < 2:
@@ -184,21 +192,33 @@ def check_chrome(chrome):
         owners = [w for w in windows if w["x"] <= x <= w["x"] + w["width"] and w["y"] <= y <= w["y"] + w["height"]]
         if not owners:
             continue
+        # v0.10 A8 R2: rendered text belongs to a link but has its own id.
+        child_ids = {nodes[i]["id"] for i in tree_by_id.get(row["id"], {}).get("children", [])}
+        expected = [by_id[i] for i in {row["id"]} | child_ids if i in by_id]
         hit_args = {"pid": chrome, "x": x, "y": y}
+        if not warmed:
+            success("element_at_point", hit_args)  # Chrome may initially return AXWebArea.
+            warmed = True
         hit = success("element_at_point", hit_args)
-        if hit.get("role") != "AXLink" or hit.get("title") != row.get("title"):
-            continue  # Hit testing may return a parent; this is not identity evidence.
-        if not hit.get("stable_id"):
-            require(bool(hit.get("stable_id_reason")), "A8: random id has no reason")
-            raise RuntimeError(f"A8 fallback still needed; report exact reason and ancestor chain: {hit}")
-        require(hit["element_id"] == row["id"], f"A8 search/hit ids differ: {row} vs {hit}")
+        matches = [candidate for candidate in expected
+                   if hit.get("role") == candidate.get("role") and hit.get("title") == candidate.get("title")
+                   and hit.get("bounds") == dict(candidate.get("position", {}), **candidate.get("size", {}))]
+        if not matches or hit.get("pid") != chrome:
+            continue
+        require(hit.get("stable_id") is True and hit.get("element_id") in {m["id"] for m in matches},
+                f"A8: web hit differs from link or direct child identity: {hit}")
         again = success("element_at_point", hit_args)
-        require(again.get("stable_id") is True and again["element_id"] == hit["element_id"], "A8 repeated hit changed its id")
-        calls = [["list_windows", {"pid": chrome}], ["find_elements", {"pid": chrome, "role": "AXLink", "exact": True, "max_depth": 32, "limit": 500}], ["element_at_point", hit_args], ["element_at_point", hit_args]]
+        require(again.get("stable_id") is True and again.get("element_id") == hit["element_id"]
+                and all(again.get(k) == hit.get(k) for k in ("pid", "role", "title", "bounds")),
+                "A8 repeated hit changed its identity")
+        calls = [["list_windows", {"pid": chrome}], ["find_elements", find_args],
+                 ["find_elements", text_args], ["get_ui_tree", tree_args],
+                 ["element_at_point", hit_args], ["element_at_point", hit_args], ["element_at_point", hit_args]]
         (out / "chrome-probe-calls.json").write_text(json.dumps(calls))
-        print(json.dumps({"check": "A8", "window_id": owners[0]["window_id"], "id": row["id"], "stable_id": True}), flush=True)
-        return row["id"], attributes(row["id"])["values"]
-    raise RuntimeError("INCONCLUSIVE A8: no visible Chrome link returned a matching AXLink hit; do not navigate or click a user tab")
+        print(json.dumps({"check": "A8", "window_id": owners[0]["window_id"], "link_id": row["id"],
+                          "id": hit["element_id"], "child_ids": sorted(child_ids), "stable_id": True}), flush=True)
+        return hit["element_id"], attributes(hit["element_id"])["values"]
+    raise RuntimeError("INCONCLUSIVE A8: no visible Chrome link or direct text child matched; do not navigate or click a user tab")
 
 
 def check_retention(finder, other):
@@ -255,7 +275,18 @@ def measure(finder, chrome):
     for label, name, args in cases:
         warm = success(name, args)
         if name == "element_at_point":
-            require(warm.get("role") == "AXLink", "benchmark point no longer hits a Chrome link")
+            # v0.10 A8 R2: first Chrome hit may be AXWebArea; compare a
+            # second hit to its own AXStaticText/AXLink search identity.
+            warm = success(name, args)
+            require(warm.get("role") in ("AXLink", "AXStaticText", "AXImage"), "benchmark point no longer hits web content")
+            reference = success("find_elements", {"pid": chrome, "role": warm["role"],
+                "title": warm.get("title"), "exact": True, "max_depth": 32, "limit": 500})["elements"]
+            matches = [row for row in reference if row.get("role") == warm.get("role")
+                       and row.get("title") == warm.get("title")
+                       and dict(row.get("position", {}), **row.get("size", {})) == warm.get("bounds")]
+            require(matches, "benchmark hit is absent from fresh find_elements")
+            if warm.get("stable_id"):
+                require(warm.get("element_id") in {row["id"] for row in matches}, "benchmark id differs from search")
         samples = []
         for _ in range(7):
             value, elapsed = tool(name, args)
@@ -263,7 +294,9 @@ def measure(finder, chrome):
             if name == "get_element_attributes":
                 require(value.get("values") == expected_fingerprint, "benchmark handle changed title or role")
             if name == "element_at_point":
-                require(all(value.get(key) == warm.get(key) for key in ("role", "title", "bounds")), "benchmark link moved or changed")
+                require(all(value.get(key) == warm.get(key) for key in ("pid", "role", "title", "bounds")), "benchmark link moved or changed")
+                if warm.get("stable_id"):
+                    require(value.get("stable_id") is True and value.get("element_id") == warm["element_id"], "benchmark id changed")
             if name == "get_ui_tree":
                 require(value["nodes_visited"] > 1, "unreadable/empty tree cannot be benchmarked")
             samples.append(elapsed)
@@ -408,20 +441,23 @@ Deze check is toegevoegd na de review waarin native toolbar-hits wel stabiel war
 maar vier hits op drie webtargets geen pad kregen. A1/A2/A6 zijn volgens die review
 afgerond. **Onderstaande A8-run is nog niet door Codex live uitgevoerd.**
 
-De nieuwe reconstructie probeert eerst de parent-chain (`parent_chain`), met per
-niveau `cf_equal` of een unieke `fingerprint_frame`-match. Bij ontbrekende/virtuele
-parents volgt `top_down`, maximaal 32 niveaus en 2.000 unieke node-reads over beide
-strategieën samen. Niet uitsluitend uit eerste kinderen bestaande parent-paden
-worden ook tegen de eerste DFS-vindplaats gecontroleerd: gedeelde handles kunnen
-anders een ander id krijgen dan de gewone walk. De top-down stappenlijst bevat
-de uiteindelijke target-match.
-Frames bevestigen aliasmatches; ze sluiten geen takken uit: overflow kan een
-webchild buiten zijn parent-frame plaatsen. Een fingerprint-match wordt alleen
-geaccepteerd na een volledige, niet-ambigue zoekactie binnen de limieten. Een
-exact gelijke handle kan direct worden herkend. Specifieke fouten combineren de
-parent-oorzaak met de fallback-oorzaak, bijvoorbeeld
-`parent_chain_break_at_depth_4;top_down_node_cap` of
-`no_app_root;top_down_ambiguous`.
+De reconstructie probeert eerst de parent-chain (`parent_chain`). Bij gebroken
+parents volgt `top_down`: eerst geometrisch begrensd, daarna onbegrensd door
+geometrie als de eerste poging geen verifieerbare hit oplevert. Kinderen houden
+hun originele AXChildren/AXSheets-ordinals; alleen bevattende frames en ontbrekende
+of zero-size frames worden in de eerste poging verder doorzocht. CFEqual heeft
+voorrang. Een alias na uitgesloten takken vereist de volledige fallback om verborgen
+duplicaten/overflow te controleren. Maximaal 32 niveaus en 12.000 unieke node-reads
+over alle pogingen samen; de memo wordt tussen pogingen hergebruikt. Een gedeeltelijke
+of ambigue aliaszoekactie blijft `stable_id:false`, met bijvoorbeeld
+`no_app_root;top_down_node_cap` of `parent_chain_break_at_depth_4;top_down_ambiguous`.
+
+De snelle route veronderstelt dat een exacte hit niet ook onder een eerder,
+geometrisch uitgesloten parent hangt. Bij zulke gedeelde overflow-handles met
+ontbrekende parent-chain kan het gevonden pad afwijken van de eerste volledige
+DFS-vindplaats. De handle is dan exact dezelfde, maar globale id-pariteit kan zonder
+het doorzoeken van die uitgesloten takken niet worden gegarandeerd. Bekende
+parent-paden met gedeelde handles behouden hun volledige canonieke DFS-controle.
 
 Voer dit uit in de huidige worktree met dezelfde reeds geopende Hacker News-pagina
 als bij de vorige review. De helper navigeert, klikt, scrollt of typt niet. Hij
@@ -481,8 +517,10 @@ require(windows, 'INCONCLUSIVE: no Chrome window')
 link_args = {'pid': pid, 'role': 'AXLink', 'exact': True, 'max_depth': 32, 'limit': 500,
              'fields': ['id', 'role', 'title', 'position', 'size'], 'max_bytes': 100000}
 image_args = dict(link_args, role='AXImage')
+text_args = dict(link_args, role='AXStaticText')
+tree_args = {'pid': pid, 'max_depth': 32, 'fields': ['id', 'role', 'children'], 'max_bytes': 180000}
 tree, links, images = run('targets', [
-    ['get_ui_tree', {'pid': pid, 'max_depth': 32, 'fields': ['id', 'role', 'children'], 'max_bytes': 180000}],
+    ['get_ui_tree', tree_args],
     ['find_elements', link_args], ['find_elements', image_args]])
 nodes = tree['nodes']
 web_ids = set()
@@ -529,39 +567,50 @@ hn = select(links['elements'], 'Hacker News')
 new = select(links['elements'], 'new')
 image = select(images['elements'])
 plan = [(hn, 0.25), (hn, 0.75), (new, 0.5), (image, 0.5)]
-calls = [['find_elements', link_args], ['find_elements', image_args]]
+calls = [['get_ui_tree', tree_args], ['find_elements', link_args],
+         ['find_elements', image_args], ['find_elements', text_args]]
+# v0.10 A8 R2: discard exactly the first hit after this server starts.
+calls.append(['element_at_point', point(plan[0][0], plan[0][1])[0]])
 for row, fraction in plan:
     chosen = point(row, fraction)
     require(chosen, 'INCONCLUSIVE: target point outside current window')
     calls.extend([['element_at_point', chosen[0]], ['element_at_point', chosen[0]]])
 responses = run('identity', calls)
-current = {r['id']: r for p in responses[:2] for r in p['elements']}
+current = {r['id']: r for p in responses[1:4] for r in p['elements']}
+current_nodes = responses[0]['nodes']
+current_tree = {node['id']: node for node in current_nodes}
 report = []
 for index, (row, fraction) in enumerate(plan):
-    first, second = responses[2 + 2 * index:4 + 2 * index]
+    first, second = responses[5 + 2 * index:7 + 2 * index]
     args, window_id = point(row, fraction)
     live_row = current.get(row['id'])
-    # A different role/title/frame is a different hit target, not A8 identity evidence.
+    # v0.10 A8 R2: verify link OR direct child against its own search metadata.
     pos, size = row['position'], row['size']
-    bounds = dict(pos, **size)
+    allowed = {row['id']} | {current_nodes[i]['id'] for i in current_tree.get(row['id'], {}).get('children', [])}
+    expected = [current[i] for i in allowed if i in current]
+
+    def matching(hit):
+        return [r for r in expected if hit.get('pid') == pid and hit.get('role') == r.get('role')
+                and hit.get('title') == r.get('title')
+                and hit.get('bounds') == dict(r.get('position', {}), **r.get('size', {}))]
+
     valid_target = bool(live_row and live_row.get('position') == pos and live_row.get('size') == size
                         and live_row.get('title') == row.get('title') and live_row.get('role') == row.get('role')
-                        and all(h.get('pid') == pid and h.get('role') == row.get('role')
-                                and h.get('title') == row.get('title') and h.get('bounds') == bounds
-                                for h in (first, second)))
-    passed = valid_target and all(h.get('stable_id') is True and h.get('element_id') == row['id']
-                                 and h.get('stable_id_strategy') in ('parent_chain', 'top_down')
-                                 and isinstance(h.get('stable_id_steps'), list) and bool(h['stable_id_steps'])
-                                 and all(step in ('cf_equal', 'fingerprint_frame') for step in h['stable_id_steps'])
-                                 and 'stable_id_reason' not in h for h in (first, second))
+                        and all(matching(h) for h in (first, second)))
+    passed = valid_target and first.get('element_id') == second.get('element_id') and all(
+        h.get('stable_id') is True and h.get('element_id') in {r['id'] for r in matching(h)}
+        and h.get('stable_id_strategy') in ('parent_chain', 'top_down')
+        and isinstance(h.get('stable_id_steps'), list) and bool(h['stable_id_steps'])
+        and all(step in ('cf_equal', 'fingerprint_frame') for step in h['stable_id_steps'])
+        and 'stable_id_reason' not in h for h in (first, second))
     entry = {'window_id': window_id, 'point': args, 'web_target': row,
-             'valid_target': valid_target, 'passed': passed, 'hits': [first, second]}
+             'allowed_ids': sorted(allowed), 'valid_target': valid_target, 'passed': passed, 'hits': [first, second]}
     report.append(entry)
     print(json.dumps(entry, ensure_ascii=False))
 (out / 'comparison.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))
 require(all(r['valid_target'] for r in report), 'INCONCLUSIVE: page changed or point hit a different/covered target; inspect full outputs')
 require(all(r['passed'] for r in report), 'FAIL A8: web hit is unstable or differs from find_elements id')
-print('PASS A8: 4 points / 3 web targets / 8 hits, all stable_id:true and same id as find_elements')
+print('PASS A8: 4 points / 3 web targets / 8 hits, all stable_id:true and same id as link/direct-child find_elements')
 PY
 swift build
 PROBE_MAX=300000 python3 .s1-evidence/reviewer/a8-web/check.py
@@ -577,7 +626,11 @@ PROBE_MAX=300000 python3 "$S1_SCRATCH/probe.py" .build/debug/mac-control-mcp "$(
 ```
 
 **Acceptatie:** vier punten op drie webtargets, ieder twee keer: `stable_id:true`,
-`element_id` gelijk aan het id van dezelfde rol/titel/bounds uit `find_elements`.
+`element_id` gelijk aan het link-id of een **direct child-id** uit de actuele
+`get_ui_tree`-childrenlijst. Bij een AXStaticText-child worden rol/titel/bounds
+vergeleken met diens eigen `find_elements(role=AXStaticText)`-resultaat. De eerste
+hit na de processtart is een apart gelogde warm-up; daarna moeten beide hits
+per punt hetzelfde id geven.
 `stable_id_strategy` moet `parent_chain` of `top_down` zijn; `stable_id_steps`
 registreert `cf_equal`/`fingerprint_frame`. Bij stabiele ids ontbreekt
 `stable_id_reason`. Bij falen stuur de volledige specifieke reden en de ancestors
@@ -603,3 +656,149 @@ ids stabiel en gelijk aan hun eigen voorafgaande `find_elements`-resultaat. Laat
 de pagina tussen runs ongemoeid. Bewaar de `--- tool ... -> N ms` regels; deze
 losse timings bewijzen geen p50-prestatieverbetering. De herhaalde performanceprobe
 uit §5 blijft beschikbaar voor een echte voor/na-meting.
+
+## 9. Review ronde 2 — dezelfde Chrome-hits vóór/na de pruning
+
+**Nog uit te voeren door de desktopreviewer.** Codex kan de ≤40 ms-doelstelling
+niet meten. De Swift fake-tree-test gebruikt pagina's van 5.000 en 10.000 nodes;
+een echte 10k-pagina is daarmee niet live geverifieerd. Gebruik hieronder de
+reeds gemeten webpunten uit `reviewer2-check.jsonl`. De selectie neemt drie snelle
+en drie trage verschillende punten; bij een gewijzigde pagina stopt de verse
+`find_elements(role=AXStaticText)`-controle. Geen navigatie, scroll of andere
+wijziging aan een bestaande tab uitvoeren. Ontbreekt een zichtbare 10k-pagina,
+rapporteer die live-dekking als niet geverifieerd.
+
+De scripts bewaren de exacte calllijst, alle stock-probe-antwoorden en timings.
+Ze vergelijken de AXStaticText-hit met diens eigen zoek-id. De eerste hit per
+proces en één hit vóór elke zeven samples zijn apart gelogde warm-ups. Zo wordt
+Chrome's mogelijke eerste AXWebArea-hit niet als regressie of timing gebruikt.
+
+```sh
+export S1_SCRATCH=/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad
+mkdir -p .s1-evidence/reviewer/r2-perf
+python3 - <<'PY'
+import json
+from pathlib import Path
+rows = [json.loads(line) for line in Path('.s1-evidence/reviewer2-check.jsonl').read_text().splitlines()]
+pids = {app['pid'] for r in rows for app in r.get('response', {}).get('result', {}).get('structuredContent', {}).get('apps', [])
+        if (app.get('bundleIdentifier') or app.get('bundle_id')) == 'com.google.Chrome'}
+assert len(pids) == 1, 'INCONCLUSIVE: no unique Chrome pid in previous trace'
+pid = next(iter(pids))
+points = {}
+for row in rows:
+    params = row.get('request', {}).get('params', {})
+    hit = row.get('response', {}).get('result', {}).get('structuredContent', {})
+    if params.get('name') != 'element_at_point' or params.get('arguments', {}).get('pid') != pid:
+        continue
+    if hit.get('role') != 'AXStaticText' or not hit.get('stable_id'):
+        continue
+    if not any(a.get('role') == 'AXLink' for a in hit.get('ancestors', [])):
+        continue
+    args = params['arguments']
+    points[(args['x'], args['y'])] = {'args': args, 'expected': {k: hit.get(k) for k in ('pid', 'role', 'title', 'bounds')},
+                                   'previous_ms': row['ms']}
+ordered = sorted(points.values(), key=lambda p: p['previous_ms'])
+assert len(ordered) >= 6, 'INCONCLUSIVE: fewer than six previously verified text-link points'
+selected = ordered[:3] + ordered[-3:]
+Path('.s1-evidence/reviewer/r2-perf/cases.json').write_text(json.dumps(selected, indent=2))
+print(json.dumps(selected, indent=2))
+PY
+cat > .s1-evidence/reviewer/r2-perf/measure.py <<'PY'
+import json
+import os
+import re
+import statistics
+import subprocess
+import sys
+from pathlib import Path
+
+binary, label = sys.argv[1:]
+root = Path('.s1-evidence/reviewer/r2-perf')
+cases = json.loads((root / 'cases.json').read_text())
+calls = []
+for case in cases:
+    expected = case['expected']
+    calls.append(['find_elements', {'pid': expected['pid'], 'role': expected['role'], 'title': expected['title'],
+        'exact': True, 'max_depth': 32, 'limit': 500, 'fields': ['id', 'role', 'title', 'position', 'size'], 'max_bytes': 100000}])
+calls.append(['element_at_point', cases[0]['args']])
+for case in cases:
+    calls.extend([['element_at_point', case['args']]] * 8)
+(root / (label + '-calls.json')).write_text(json.dumps(calls, indent=2))
+probe = str(Path(os.environ['S1_SCRATCH']) / 'probe.py')
+completed = subprocess.run(['python3', probe, binary, json.dumps(calls)],
+    env=dict(os.environ, PROBE_MAX='300000'), text=True, capture_output=True, timeout=1800, check=True)
+(root / (label + '-raw.txt')).write_text(completed.stdout)
+(root / (label + '-stderr.txt')).write_text(completed.stderr)
+headers = list(re.finditer(r'^--- [^\n]+ -> ([0-9.]+) ms\n', completed.stdout, re.MULTILINE))
+assert len(headers) == len(calls), 'missing stock-probe replies'
+results = []
+for index, header in enumerate(headers):
+    end = headers[index + 1].start() if index + 1 < len(headers) else len(completed.stdout)
+    payload = json.loads(completed.stdout[header.end():end])
+    results.append((payload, float(header.group(1))))
+report = []
+for index, case in enumerate(cases):
+    expected = case['expected']
+    found = results[index][0]
+    assert isinstance(found, dict) and found.get('ok'), f'INCONCLUSIVE: search failed: {found}'
+    matches = [row for row in found.get('elements', []) if row.get('role') == expected['role']
+               and row.get('title') == expected['title']
+               and dict(row.get('position', {}), **row.get('size', {})) == expected['bounds']]
+    assert len(matches) == 1, 'INCONCLUSIVE: point no longer names one fresh search result'
+    wanted = matches[0]['id']
+    start = len(cases) + 1 + index * 8
+    reference, _ = results[start]
+    samples = results[start + 1:start + 8]
+    same_target = all(isinstance(hit, dict) and hit.get('ok') and
+                      all(hit.get(k) == v for k, v in expected.items()) for hit, _ in samples)
+    stable = same_target and all(hit.get('stable_id') is True and hit.get('element_id') == wanted for hit, _ in samples)
+    times = [ms for _, ms in samples]
+    report.append({'case': case, 'expected_id': wanted, 'warmup': reference, 'same_target': same_target,
+                   'stable': stable, 'samples_ms': times, 'p50_ms': statistics.median(times),
+                   'max_ms': max(times), 'payloads': [hit for hit, _ in samples]})
+(root / (label + '-measurements.json')).write_text(json.dumps(report, indent=2))
+for row in report:
+    print(json.dumps({k: row[k] for k in ('case', 'expected_id', 'same_target', 'stable', 'samples_ms', 'p50_ms', 'max_ms')}))
+assert all(row['same_target'] for row in report), 'INCONCLUSIVE: hit target changed; inspect raw output'
+if label == 'after':
+    assert all(row['stable'] for row in report), 'FAIL A8: unstable or different search id'
+    assert all(row['max_ms'] <= 40 for row in report), 'FAIL performance target: a measured sample exceeded 40 ms'
+print('PASS', label)
+PY
+mkdir -p .build/s1-r2-before
+test ! -e .build/s1-r2-before/Package.swift
+git archive 08fb0d3 | tar -x -C .build/s1-r2-before
+swift build --package-path .build/s1-r2-before
+swift build
+PROBE_MAX=300000 python3 .s1-evidence/reviewer/r2-perf/measure.py .build/s1-r2-before/.build/debug/mac-control-mcp before
+PROBE_MAX=300000 python3 .s1-evidence/reviewer/r2-perf/measure.py .build/debug/mac-control-mcp after
+python3 - <<'PY'
+import json
+from pathlib import Path
+root = Path('.s1-evidence/reviewer/r2-perf')
+assert json.loads((root / 'before-calls.json').read_text()) == json.loads((root / 'after-calls.json').read_text())
+before = json.loads((root / 'before-measurements.json').read_text())
+after = json.loads((root / 'after-measurements.json').read_text())
+for old, new in zip(before, after):
+    assert old['case'] == new['case'] and old['expected_id'] == new['expected_id'], 'page or canonical path changed'
+    print(json.dumps({'title': new['case']['expected']['title'], 'point': new['case']['args'],
+        'p50_before_ms': old['p50_ms'], 'p50_after_ms': new['p50_ms'],
+        'max_before_ms': old['max_ms'], 'max_after_ms': new['max_ms'], 'stable_after': new['stable']}))
+PY
+```
+
+De onderliggende calls zijn zonder de helper exact te herhalen:
+
+```sh
+PROBE_MAX=300000 python3 "$S1_SCRATCH/probe.py" .build/s1-r2-before/.build/debug/mac-control-mcp "$(cat .s1-evidence/reviewer/r2-perf/before-calls.json)"
+PROBE_MAX=300000 python3 "$S1_SCRATCH/probe.py" .build/debug/mac-control-mcp "$(cat .s1-evidence/reviewer/r2-perf/after-calls.json)"
+```
+
+Verwacht na: zeven identieke content-addressed hit-ids per punt, gelijk aan de
+AXStaticText-zoekresultaten, `stable_id:true`, geen `top_down_node_cap`, alle gemeten
+samples ≤40 ms. Stock-probe-tijden zijn afgerond op milliseconden; rapporteer alle
+samples, p50 en maximum zonder preciezere timing te suggereren. De verhoogde limiet
+van 12.000 node-reads is geen onbegrensde garantie: ontbrekende geometrie, veel
+siblings, aliases en overflow kunnen nog de fallback of die limiet raken. Een
+10k-node live-case mag alleen als geverifieerd worden gemeld met bewijs van die
+paginagrootte en echte meetoutput; de synthetische test bewijst alleen het algoritme.

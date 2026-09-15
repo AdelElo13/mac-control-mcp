@@ -1,0 +1,34 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ids': failed storing manifest for 'wt10-ids' in cache: attempt to write a readonly database
+Building for debugging...
+[0/4] Write swift-version--58304C5D6DBC2206.txt
+Build complete! (0.09s)
+Test Suite 'Selected tests' started at 2026-09-15 20:25:32.800.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 20:25:32.806.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 20:25:32.806.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 20:25:32.806.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.005) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "capture_annotated element identity (C-5)" started.
+◇ Test "every drawn element carries a unique, well-formed element id" started.
+[annotated-identity] skipped: no Accessibility trust
+✔ Test "every drawn element carries a unique, well-formed element id" passed after 0.002 seconds.
+◇ Test "the same element keeps its id across two capture_annotated calls" started.
+[annotated-identity] skipped: no Accessibility trust
+✔ Test "the same element keeps its id across two capture_annotated calls" passed after 0.001 seconds.
+◇ Test "capture_annotated and find_elements agree on the id of the same element" started.
+[annotated-identity] skipped: no Accessibility trust
+✔ Test "capture_annotated and find_elements agree on the id of the same element" passed after 0.001 seconds.
+◇ Test "pruning AXMenuBar drops menu items without moving any other element's id" started.
+[annotated-identity] skipped: no AX trust / no Finder
+✔ Test "pruning AXMenuBar drops menu items without moving any other element's id" passed after 0.001 seconds.
+◇ Test "an id from capture_annotated resolves for a follow-up call" started.
+[annotated-identity] skipped: no Accessibility trust
+✔ Test "an id from capture_annotated resolves for a follow-up call" passed after 0.001 seconds.
+✔ Suite "capture_annotated element identity (C-5)" passed after 0.003 seconds.
+✔ Test run with 5 tests in 1 suite passed after 0.003 seconds.

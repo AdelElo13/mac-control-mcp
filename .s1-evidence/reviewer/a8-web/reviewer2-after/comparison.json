@@ -1,0 +1,558 @@
+[
+  {
+    "window_id": 29665,
+    "point": {
+      "pid": 41308,
+      "x": 733.5,
+      "y": 194.0
+    },
+    "web_target": {
+      "title": "Hacker News",
+      "size": {
+        "height": 16,
+        "width": 98
+      },
+      "role": "AXLink",
+      "id": "el_e0e588fb7deb8beb2e4212b52bd9642d",
+      "position": {
+        "x": 709,
+        "y": 186
+      }
+    },
+    "valid_target": false,
+    "passed": false,
+    "hits": [
+      {
+        "enabled": true,
+        "stable_id_strategy": "top_down",
+        "ancestors": [
+          {
+            "role": "AXScrollArea",
+            "title": null
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": "New Links | Hacker News - Part of group ✅Neuromcp - Google Chrome - John (Persoon 1)"
+          }
+        ],
+        "element_id": "el_a9827eedf29913d0a489320746ff8e86",
+        "x": 733.5,
+        "y": 194,
+        "title": "New Links | Hacker News",
+        "pid": 41308,
+        "role": "AXWebArea",
+        "app_name": "Google Chrome",
+        "bounds": {
+          "x": 585,
+          "y": 174,
+          "width": 1200,
+          "height": 937
+        },
+        "ok": true,
+        "stable_id_steps": [
+          "cf_equal"
+        ],
+        "value": "",
+        "stable_id": true
+      },
+      {
+        "enabled": true,
+        "stable_id_strategy": "top_down",
+        "ancestors": [
+          {
+            "role": "AXLink",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": "Hacker Newsnew | threads | past | comments | ask | show | jobs | submit"
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": "Hacker Newsnew | threads | past | comments | ask | show | jobs | submit adelelo13 (2) | logout"
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXWebArea",
+            "title": "New Links | Hacker News"
+          }
+        ],
+        "element_id": "el_0c0587ece906e6dc3083da745ba853d0",
+        "x": 733.5,
+        "y": 194,
+        "title": null,
+        "pid": 41308,
+        "role": "AXStaticText",
+        "app_name": "Google Chrome",
+        "bounds": {
+          "x": 709,
+          "y": 186,
+          "width": 98,
+          "height": 16
+        },
+        "ok": true,
+        "stable_id_steps": [
+          "cf_equal"
+        ],
+        "value": "Hacker News",
+        "stable_id": true
+      }
+    ]
+  },
+  {
+    "window_id": 29665,
+    "point": {
+      "pid": 41308,
+      "x": 782.5,
+      "y": 194.0
+    },
+    "web_target": {
+      "title": "Hacker News",
+      "size": {
+        "height": 16,
+        "width": 98
+      },
+      "role": "AXLink",
+      "id": "el_e0e588fb7deb8beb2e4212b52bd9642d",
+      "position": {
+        "x": 709,
+        "y": 186
+      }
+    },
+    "valid_target": false,
+    "passed": false,
+    "hits": [
+      {
+        "enabled": true,
+        "stable_id_strategy": "top_down",
+        "ancestors": [
+          {
+            "role": "AXLink",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": "Hacker Newsnew | threads | past | comments | ask | show | jobs | submit"
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": "Hacker Newsnew | threads | past | comments | ask | show | jobs | submit adelelo13 (2) | logout"
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXWebArea",
+            "title": "New Links | Hacker News"
+          }
+        ],
+        "element_id": "el_0c0587ece906e6dc3083da745ba853d0",
+        "x": 782.5,
+        "y": 194,
+        "title": null,
+        "pid": 41308,
+        "role": "AXStaticText",
+        "app_name": "Google Chrome",
+        "bounds": {
+          "x": 709,
+          "y": 186,
+          "width": 98,
+          "height": 16
+        },
+        "ok": true,
+        "stable_id_steps": [
+          "cf_equal"
+        ],
+        "value": "Hacker News",
+        "stable_id": true
+      },
+      {
+        "enabled": true,
+        "stable_id_strategy": "top_down",
+        "ancestors": [
+          {
+            "role": "AXLink",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": "Hacker Newsnew | threads | past | comments | ask | show | jobs | submit"
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": "Hacker Newsnew | threads | past | comments | ask | show | jobs | submit adelelo13 (2) | logout"
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXWebArea",
+            "title": "New Links | Hacker News"
+          }
+        ],
+        "element_id": "el_0c0587ece906e6dc3083da745ba853d0",
+        "x": 782.5,
+        "y": 194,
+        "title": null,
+        "pid": 41308,
+        "role": "AXStaticText",
+        "app_name": "Google Chrome",
+        "bounds": {
+          "x": 709,
+          "y": 186,
+          "width": 98,
+          "height": 16
+        },
+        "ok": true,
+        "stable_id_steps": [
+          "cf_equal"
+        ],
+        "value": "Hacker News",
+        "stable_id": true
+      }
+    ]
+  },
+  {
+    "window_id": 29665,
+    "point": {
+      "pid": 41308,
+      "x": 826.0,
+      "y": 194.0
+    },
+    "web_target": {
+      "role": "AXLink",
+      "size": {
+        "height": 16,
+        "width": 28
+      },
+      "title": "new",
+      "id": "el_638aadce8599b339ccdd920f09f4da3c",
+      "position": {
+        "x": 812,
+        "y": 186
+      }
+    },
+    "valid_target": false,
+    "passed": false,
+    "hits": [
+      {
+        "ancestors": [
+          {
+            "role": "AXLink",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": "Hacker Newsnew | threads | past | comments | ask | show | jobs | submit"
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": "Hacker Newsnew | threads | past | comments | ask | show | jobs | submit adelelo13 (2) | logout"
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXWebArea",
+            "title": "New Links | Hacker News"
+          }
+        ],
+        "app_name": "Google Chrome",
+        "element_id": "el_fbfa4506dab2d3b50c16587b64bbfd3d",
+        "stable_id": true,
+        "title": null,
+        "bounds": {
+          "x": 812,
+          "y": 186,
+          "width": 28,
+          "height": 16
+        },
+        "role": "AXStaticText",
+        "enabled": true,
+        "pid": 41308,
+        "x": 826,
+        "ok": true,
+        "stable_id_strategy": "top_down",
+        "y": 194,
+        "value": "new",
+        "stable_id_steps": [
+          "cf_equal"
+        ]
+      },
+      {
+        "ancestors": [
+          {
+            "role": "AXLink",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": "Hacker Newsnew | threads | past | comments | ask | show | jobs | submit"
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": "Hacker Newsnew | threads | past | comments | ask | show | jobs | submit adelelo13 (2) | logout"
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXWebArea",
+            "title": "New Links | Hacker News"
+          }
+        ],
+        "app_name": "Google Chrome",
+        "element_id": "el_fbfa4506dab2d3b50c16587b64bbfd3d",
+        "title": null,
+        "bounds": {
+          "height": 16,
+          "x": 812,
+          "width": 28,
+          "y": 186
+        },
+        "role": "AXStaticText",
+        "stable_id": true,
+        "enabled": true,
+        "x": 826,
+        "pid": 41308,
+        "ok": true,
+        "stable_id_strategy": "top_down",
+        "y": 194,
+        "value": "new",
+        "stable_id_steps": [
+          "cf_equal"
+        ]
+      }
+    ]
+  },
+  {
+    "window_id": 29665,
+    "point": {
+      "pid": 41308,
+      "x": 694.0,
+      "y": 194.0
+    },
+    "web_target": {
+      "role": "AXImage",
+      "title": "To get missing image descriptions, open the context menu.",
+      "size": {
+        "height": 20,
+        "width": 20
+      },
+      "id": "el_e41f2f750a9e70dc72187a0e26ff9731",
+      "position": {
+        "x": 684,
+        "y": 184
+      }
+    },
+    "valid_target": true,
+    "passed": true,
+    "hits": [
+      {
+        "ancestors": [
+          {
+            "role": "AXLink",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": "Hacker Newsnew | threads | past | comments | ask | show | jobs | submit adelelo13 (2) | logout"
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXWebArea",
+            "title": "New Links | Hacker News"
+          }
+        ],
+        "app_name": "Google Chrome",
+        "element_id": "el_e41f2f750a9e70dc72187a0e26ff9731",
+        "title": "To get missing image descriptions, open the context menu.",
+        "bounds": {
+          "height": 20,
+          "x": 684,
+          "width": 20,
+          "y": 184
+        },
+        "role": "AXImage",
+        "stable_id": true,
+        "enabled": true,
+        "x": 694,
+        "pid": 41308,
+        "ok": true,
+        "stable_id_strategy": "top_down",
+        "y": 194,
+        "value": "",
+        "stable_id_steps": [
+          "cf_equal"
+        ]
+      },
+      {
+        "ancestors": [
+          {
+            "role": "AXLink",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": "Hacker Newsnew | threads | past | comments | ask | show | jobs | submit adelelo13 (2) | logout"
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXGroup",
+            "title": ""
+          },
+          {
+            "role": "AXWebArea",
+            "title": "New Links | Hacker News"
+          }
+        ],
+        "app_name": "Google Chrome",
+        "element_id": "el_e41f2f750a9e70dc72187a0e26ff9731",
+        "title": "To get missing image descriptions, open the context menu.",
+        "bounds": {
+          "height": 20,
+          "x": 684,
+          "width": 20,
+          "y": 184
+        },
+        "role": "AXImage",
+        "stable_id": true,
+        "enabled": true,
+        "x": 694,
+        "pid": 41308,
+        "ok": true,
+        "stable_id_strategy": "top_down",
+        "y": 194,
+        "value": "",
+        "stable_id_steps": [
+          "cf_equal"
+        ]
+      }
+    ]
+  }
+]

@@ -1,0 +1,14 @@
+test_measure_accepts_warmed_static_text_reference (__main__.ChromeProbeTests.test_measure_accepts_warmed_static_text_reference) ... ok
+test_persistent_probe_accepts_static_text_child_after_warmup (__main__.ChromeProbeTests.test_persistent_probe_accepts_static_text_child_after_warmup) ... ok
+test_persistent_probe_rejects_unrelated_child_id (__main__.ChromeProbeTests.test_persistent_probe_rejects_unrelated_child_id) ... ok
+test_round2_measure_accepts_six_warmed_child_cases (__main__.ChromeProbeTests.test_round2_measure_accepts_six_warmed_child_cases) ... ok
+test_round2_measure_rejects_samples_over_40ms (__main__.ChromeProbeTests.test_round2_measure_rejects_samples_over_40ms) ... ok
+test_round2_measure_rejects_unstable_identity (__main__.ChromeProbeTests.test_round2_measure_rejects_unstable_identity) ... ok
+test_stock_probe_accepts_static_text_children_after_warmup (__main__.ChromeProbeTests.test_stock_probe_accepts_static_text_children_after_warmup) ... ok
+test_stock_probe_rejects_unrelated_child_id (__main__.ChromeProbeTests.test_stock_probe_rejects_unrelated_child_id) ... ok
+test_stock_probe_rejects_unstable_child (__main__.ChromeProbeTests.test_stock_probe_rejects_unstable_child) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.020s
+
+OK

@@ -21,6 +21,11 @@ struct AXPathTree<Node: Hashable> {
 }
 
 extension AXPath {
+    // v0.10 A8 R2: leave room for a 10k-node page plus native app ancestors
+    // while still bounding fallback work when geometry cannot narrow the tree.
+    static let reconstructionNodeCap = 12_000
+    static let reconstructionDepthLimit = 32
+
     struct Reconstruction: Sendable {
         let path: [AXPathComponent]?
         let strategy: String?
@@ -29,9 +34,9 @@ extension AXPath {
     }
 
     static func reconstruct<Node>(element: Node, tree: AXPathTree<Node>,
-                                  limit: Int = 32, nodeCap: Int = 2_000) -> Reconstruction {
-        let depthLimit = min(32, max(0, limit))
-        let budget = min(2_000, max(0, nodeCap))
+                                  limit: Int = AXPath.reconstructionDepthLimit, nodeCap: Int = AXPath.reconstructionNodeCap) -> Reconstruction {
+        let depthLimit = min(reconstructionDepthLimit, max(0, limit))
+        let budget = min(reconstructionNodeCap, max(0, nodeCap))
         var snapshots: [Node: AXPathTree<Node>.Snapshot] = [:]
         var exhausted = false
         func snapshot(_ node: Node) -> AXPathTree<Node>.Snapshot? {
@@ -63,59 +68,82 @@ extension AXPath {
             }
             let searchElement = canonicalTarget ?? element
             guard let target = snapshot(searchElement) else { return failed("top_down_node_cap") }
-            var seen = Set<Node>()
-            var candidate: [AXPathComponent]?
-            var exact: [AXPathComponent]?
-            var ambiguous = false
-            var depthExceeded = false
-            var unreadable = false
-            func visit(_ node: Node, path: [AXPathComponent]) {
-                guard exact == nil, !exhausted, seen.insert(node).inserted,
-                      let value = snapshot(node) else { return }
-                guard node == tree.root || value.fingerprint.role != "AXUnknown" else {
-                    unreadable = true
-                    return
+            func search(pruned: Bool) -> Reconstruction {
+                // v0.10 A8 R2: a previous pass may exhaust new reads, but
+                // fallback can still reach an overflow target using the memo.
+                exhausted = false
+                var skippedGeometry = false
+                var seen = Set<Node>()
+                var candidate: [AXPathComponent]?
+                var exact: [AXPathComponent]?
+                var ambiguous = false
+                var depthExceeded = false
+                var unreadable = false
+                func visit(_ node: Node, path: [AXPathComponent]) {
+                    guard exact == nil, !exhausted, seen.insert(node).inserted,
+                          let value = snapshot(node) else { return }
+                    // v0.10 A8 R2: read siblings to preserve their ordinals, but
+                    // avoid their descendants when the hit cannot fit their frame.
+                    // Missing/zero-size frames cannot rule out hidden children.
+                    if pruned, node != tree.root, let frame = usable(value.frame),
+                       let targetFrame = usable(target.frame), !frame.contains(targetFrame) {
+                        skippedGeometry = true
+                        return
+                    }
+                    guard node == tree.root || value.fingerprint.role != "AXUnknown" else {
+                        unreadable = true
+                        return
+                    }
+                    if node == searchElement {
+                        exact = path
+                        return
+                    }
+                    if canonicalTarget == nil, same(value, target) {
+                        if candidate != nil { ambiguous = true } else { candidate = path }
+                    }
+                    // v0.10 A8 R2: the fallback retains unpruned tree-walk order
+                    // for overflow and globally ambiguous fingerprint aliases.
+                    if path.count >= depthLimit {
+                        if !value.children.isEmpty { depthExceeded = true }
+                        return
+                    }
+                    for (index, child) in value.children.enumerated() {
+                        guard exact == nil, !exhausted else { break }
+                        guard !seen.contains(child), let childValue = snapshot(child) else { continue }
+                        visit(child, path: path + [childValue.component(index: index)])
+                    }
                 }
-                if node == searchElement {
-                    exact = path
-                    return
+                visit(tree.root, path: [])
+                if let exact {
+                    // v0.10 A8: an unreadable earlier subtree may hide the first
+                    // occurrence of this handle, so its DFS ordinal is unverified.
+                    if unreadable { return failed("top_down_unreadable_node") }
+                    if exact == verifiedPath {
+                        return Reconstruction(path: exact, strategy: "parent_chain", steps: verifiedSteps, reason: nil)
+                    }
+                    return Reconstruction(path: exact, strategy: "top_down", steps: ["cf_equal"], reason: nil)
                 }
-                if canonicalTarget == nil, same(value, target) {
-                    if candidate != nil { ambiguous = true } else { candidate = path }
-                }
-                // v0.10 A8: frames verify alias candidates, but cannot prune
-                // branches: overflow and virtual parents need not contain their
-                // descendants. Preserve tree-walk order and prove uniqueness
-                // across the bounded tree before accepting a geometric match.
-                if path.count >= depthLimit {
-                    if !value.children.isEmpty { depthExceeded = true }
-                    return
-                }
-                for (index, child) in value.children.enumerated() {
-                    guard exact == nil, !exhausted else { break }
-                    guard !seen.contains(child), let childValue = snapshot(child) else { continue }
-                    visit(child, path: path + [childValue.component(index: index)])
-                }
-            }
-            visit(tree.root, path: [])
-            if let exact {
-                // v0.10 A8: an unreadable earlier subtree may hide the first
-                // occurrence of this handle, so its DFS ordinal is unverified.
+                // v0.10 A8 R2: a pruned alias is not proof of global uniqueness;
+                // an excluded branch may also contain the exact handle.
+                if pruned, skippedGeometry { return failed("top_down_pruned_incomplete") }
+                // v0.10 A8: a partially searched tree cannot prove an alias unique.
+                if exhausted { return failed("top_down_node_cap") }
+                if depthExceeded { return failed("top_down_depth_limit") }
                 if unreadable { return failed("top_down_unreadable_node") }
-                if exact == verifiedPath {
-                    return Reconstruction(path: exact, strategy: "parent_chain", steps: verifiedSteps, reason: nil)
+                if ambiguous { return failed("top_down_ambiguous") }
+                if let candidate {
+                    return Reconstruction(path: candidate, strategy: "top_down", steps: ["fingerprint_frame"], reason: nil)
                 }
-                return Reconstruction(path: exact, strategy: "top_down", steps: ["cf_equal"], reason: nil)
+                return failed(usable(target.frame) == nil ? "top_down_no_target_frame" : "top_down_not_found")
             }
-            // v0.10 A8: a partially searched tree cannot prove an alias unique.
-            if exhausted { return failed("top_down_node_cap") }
-            if depthExceeded { return failed("top_down_depth_limit") }
-            if unreadable { return failed("top_down_unreadable_node") }
-            if ambiguous { return failed("top_down_ambiguous") }
-            if let candidate {
-                return Reconstruction(path: candidate, strategy: "top_down", steps: ["fingerprint_frame"], reason: nil)
+            // v0.10 A8 R2: canonical checks of known multi-parent handles
+            // still need the first full-DFS occurrence. Web hits with broken
+            // parent chains first try the cheap geometrically selected path.
+            if canonicalTarget == nil, usable(target.frame) != nil {
+                let geometric = search(pruned: true)
+                if geometric.path != nil { return geometric }
             }
-            return failed(usable(target.frame) == nil ? "top_down_no_target_frame" : "top_down_not_found")
+            return search(pruned: false)
         }
         if element == tree.root {
             return Reconstruction(path: [], strategy: "parent_chain", steps: [], reason: nil)

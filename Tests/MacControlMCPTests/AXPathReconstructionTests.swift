@@ -280,4 +280,110 @@ extension AXPathTests {
         #expect(result.reason == "parent_chain_canonical_check;top_down_unreadable_node")
     }
 
+    // v0.10 A8 R2: off-target rows must cost one read each, not a walk
+    // through their rendered descendants before reaching the final link.
+    @Test("A8 geometric reconstruction bounds reads on 5000/10000-node pages", arguments: [5_000, 10_000])
+    func webWidePageReads(pageNodes: Int) {
+        typealias Snapshot = AXPathTree<Int>.Snapshot
+        var nodes: [Int: Snapshot] = [:]
+        let groups = 100
+        let leaves = pageNodes / groups - 1
+        let target = 1_000 + (groups - 1) * leaves + leaves - 1
+        nodes[0] = FakeWebTree.snapshot("AXApplication", children: [1])
+        nodes[1] = FakeWebTree.snapshot("AXWebArea",
+            frame: CGRect(x: 0, y: 0, width: 1000, height: 10000), children: Array(2..<(2 + groups)))
+        for group in 0..<groups {
+            let children = (0..<leaves).map { 1_000 + group * leaves + $0 }
+            nodes[2 + group] = FakeWebTree.snapshot("AXGroup",
+                frame: CGRect(x: 0, y: group * 100, width: 1000, height: 100), children: children)
+            for (index, child) in children.enumerated() {
+                nodes[child] = FakeWebTree.snapshot("AXStaticText", title: "Link \(child)",
+                    frame: CGRect(x: index * 5, y: group * 100 + 10, width: 4, height: 10))
+            }
+        }
+        var reads = 0
+        let tree = AXPathTree(root: 0, parent: { _ in nil }, read: {
+            reads += 1
+            return nodes[$0]!
+        })
+        let result = AXPath.reconstruct(element: target, tree: tree)
+        let expected = [nodes[1]!.component(index: 0), nodes[101]!.component(index: 99),
+            nodes[target]!.component(index: leaves - 1)]
+        print("[A8 R2 wide] page_nodes=\(pageNodes) reads=\(reads) stable=\(result.path != nil)")
+        #expect(result.path == expected)
+        #expect(result.steps == ["cf_equal"])
+        #expect(reads <= 205)
+    }
+
+    @Test("A8 pruned search falls back for overflowing exact handles")
+    func webPrunedOverflowFallback() {
+        var fake = FakeWebTree()
+        fake.parents.removeValue(forKey: 3)
+        fake.nodes[2] = FakeWebTree.snapshot("AXWebArea",
+            frame: CGRect(x: 500, y: 500, width: 10, height: 10), children: [3])
+        #expect(AXPath.reconstruct(element: 3, tree: fake.tree).path == fake.canonicalPath)
+    }
+
+    @Test("A8 zero-size containers may hide the target")
+    func webZeroSizeContainer() {
+        var fake = FakeWebTree()
+        fake.parents.removeValue(forKey: 3)
+        fake.nodes[2] = FakeWebTree.snapshot("AXWebArea", frame: .zero, children: [3])
+        #expect(AXPath.reconstruct(element: 3, tree: fake.tree).path == fake.canonicalPath)
+    }
+
+    @Test("A8 an exact overflow handle wins over a visible fingerprint alias")
+    func webPrunedAliasCannotHideExact() {
+        var fake = FakeWebTree()
+        fake.parents.removeValue(forKey: 3)
+        fake.nodes[4] = fake.nodes[3]
+        fake.nodes[5] = FakeWebTree.snapshot("AXGroup",
+            frame: CGRect(x: 500, y: 500, width: 10, height: 10), children: [3])
+        fake.nodes[2] = FakeWebTree.snapshot("AXWebArea", children: [4, 5])
+        let expected = [fake.nodes[1]!.component(index: 0), fake.nodes[2]!.component(index: 0),
+            fake.nodes[5]!.component(index: 1), fake.nodes[3]!.component(index: 0)]
+        let result = AXPath.reconstruct(element: 3, tree: fake.tree)
+        #expect(result.path == expected)
+        #expect(result.steps == ["cf_equal"])
+    }
+
+    @Test("A8 exhausted pruned pass can fall back through cached overflow nodes")
+    func webPrunedBudgetCachedFallback() {
+        let target = FakeWebTree.snapshot("AXLink", title: "Target",
+            frame: CGRect(x: 10, y: 10, width: 20, height: 20))
+        let nodes = [0: FakeWebTree.snapshot("AXApplication", children: [1, 2]),
+            1: FakeWebTree.snapshot("AXGroup", frame: CGRect(x: 500, y: 500, width: 10, height: 10), children: [3]),
+            2: FakeWebTree.snapshot("AXGroup", children: [4]), 3: target,
+            4: FakeWebTree.snapshot("AXButton")]
+        var reads = 0
+        let tree = AXPathTree(root: 0, parent: { _ in nil }, read: {
+            reads += 1
+            return nodes[$0]!
+        })
+        let result = AXPath.reconstruct(element: 3, tree: tree, nodeCap: 4)
+        #expect(result.path == [nodes[1]!.component(index: 0), target.component(index: 0)])
+        #expect(reads == 4)
+    }
+
+    @Test("A8 fallback supports a 10k flat tree but enforces the documented read cap", arguments: [10_000, 12_500])
+    func webFlatFallbackCap(nodes: Int) {
+        var reads = 0
+        let tree = AXPathTree(root: 0, parent: { _ in nil }, read: { node in
+            reads += 1
+            return FakeWebTree.snapshot(node == 0 ? "AXApplication" : "AXStaticText",
+                title: "Node \(node)", children: node == 0 ? Array(1...nodes) : [])
+        })
+        let result = AXPath.reconstruct(element: nodes, tree: tree, nodeCap: 50_000)
+        print("[A8 R2 flat] nodes=\(nodes) reads=\(reads) stable=\(result.path != nil)")
+        if nodes == 10_000 {
+            #expect(result.path == [AXPathComponent(role: "AXStaticText", index: nodes - 1,
+                identifier: nil, title: "Node \(nodes)")])
+            #expect(reads == nodes + 1)
+        } else {
+            #expect(result.path == nil)
+            #expect(result.reason == "no_app_root;top_down_node_cap")
+            #expect(reads == AXPath.reconstructionNodeCap)
+        }
+    }
+
 }

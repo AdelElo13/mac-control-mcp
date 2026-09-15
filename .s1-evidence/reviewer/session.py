@@ -153,7 +153,15 @@ def check_chrome(chrome):
     listed = success("list_windows", {"pid": chrome})
     windows = [w for w in listed["windows"] if w.get("window_id") and not w.get("minimized")]
     require(windows, "Chrome has no identifiable non-minimized window")
-    found = success("find_elements", {"pid": chrome, "role": "AXLink", "exact": True, "max_depth": 32, "limit": 500})
+    find_args = {"pid": chrome, "role": "AXLink", "exact": True, "max_depth": 32, "limit": 500}
+    text_args = dict(find_args, role="AXStaticText")
+    tree_args = {"pid": chrome, "max_depth": 32, "fields": ["id", "role", "children"]}
+    found = success("find_elements", find_args)
+    texts = success("find_elements", text_args)
+    nodes = success("get_ui_tree", tree_args)["nodes"]
+    tree_by_id = {node["id"]: node for node in nodes}
+    by_id = {row["id"]: row for row in found["elements"] + texts["elements"]}
+    warmed = False
     for row in found["elements"]:
         pos, size = row.get("position", {}), row.get("size", {})
         if size.get("width", 0) < 2 or size.get("height", 0) < 2:
@@ -162,21 +170,33 @@ def check_chrome(chrome):
         owners = [w for w in windows if w["x"] <= x <= w["x"] + w["width"] and w["y"] <= y <= w["y"] + w["height"]]
         if not owners:
             continue
+        # v0.10 A8 R2: rendered text belongs to a link but has its own id.
+        child_ids = {nodes[i]["id"] for i in tree_by_id.get(row["id"], {}).get("children", [])}
+        expected = [by_id[i] for i in {row["id"]} | child_ids if i in by_id]
         hit_args = {"pid": chrome, "x": x, "y": y}
+        if not warmed:
+            success("element_at_point", hit_args)  # Chrome may initially return AXWebArea.
+            warmed = True
         hit = success("element_at_point", hit_args)
-        if hit.get("role") != "AXLink" or hit.get("title") != row.get("title"):
-            continue  # Hit testing may return a parent; this is not identity evidence.
-        if not hit.get("stable_id"):
-            require(bool(hit.get("stable_id_reason")), "A8: random id has no reason")
-            raise RuntimeError(f"A8 fallback still needed; report exact reason and ancestor chain: {hit}")
-        require(hit["element_id"] == row["id"], f"A8 search/hit ids differ: {row} vs {hit}")
+        matches = [candidate for candidate in expected
+                   if hit.get("role") == candidate.get("role") and hit.get("title") == candidate.get("title")
+                   and hit.get("bounds") == dict(candidate.get("position", {}), **candidate.get("size", {}))]
+        if not matches or hit.get("pid") != chrome:
+            continue
+        require(hit.get("stable_id") is True and hit.get("element_id") in {m["id"] for m in matches},
+                f"A8: web hit differs from link or direct child identity: {hit}")
         again = success("element_at_point", hit_args)
-        require(again.get("stable_id") is True and again["element_id"] == hit["element_id"], "A8 repeated hit changed its id")
-        calls = [["list_windows", {"pid": chrome}], ["find_elements", {"pid": chrome, "role": "AXLink", "exact": True, "max_depth": 32, "limit": 500}], ["element_at_point", hit_args], ["element_at_point", hit_args]]
+        require(again.get("stable_id") is True and again.get("element_id") == hit["element_id"]
+                and all(again.get(k) == hit.get(k) for k in ("pid", "role", "title", "bounds")),
+                "A8 repeated hit changed its identity")
+        calls = [["list_windows", {"pid": chrome}], ["find_elements", find_args],
+                 ["find_elements", text_args], ["get_ui_tree", tree_args],
+                 ["element_at_point", hit_args], ["element_at_point", hit_args], ["element_at_point", hit_args]]
         (out / "chrome-probe-calls.json").write_text(json.dumps(calls))
-        print(json.dumps({"check": "A8", "window_id": owners[0]["window_id"], "id": row["id"], "stable_id": True}), flush=True)
-        return row["id"], attributes(row["id"])["values"]
-    raise RuntimeError("INCONCLUSIVE A8: no visible Chrome link returned a matching AXLink hit; do not navigate or click a user tab")
+        print(json.dumps({"check": "A8", "window_id": owners[0]["window_id"], "link_id": row["id"],
+                          "id": hit["element_id"], "child_ids": sorted(child_ids), "stable_id": True}), flush=True)
+        return hit["element_id"], attributes(hit["element_id"])["values"]
+    raise RuntimeError("INCONCLUSIVE A8: no visible Chrome link or direct text child matched; do not navigate or click a user tab")
 
 
 def check_retention(finder, other):
@@ -233,7 +253,18 @@ def measure(finder, chrome):
     for label, name, args in cases:
         warm = success(name, args)
         if name == "element_at_point":
-            require(warm.get("role") == "AXLink", "benchmark point no longer hits a Chrome link")
+            # v0.10 A8 R2: first Chrome hit may be AXWebArea; compare a
+            # second hit to its own AXStaticText/AXLink search identity.
+            warm = success(name, args)
+            require(warm.get("role") in ("AXLink", "AXStaticText", "AXImage"), "benchmark point no longer hits web content")
+            reference = success("find_elements", {"pid": chrome, "role": warm["role"],
+                "title": warm.get("title"), "exact": True, "max_depth": 32, "limit": 500})["elements"]
+            matches = [row for row in reference if row.get("role") == warm.get("role")
+                       and row.get("title") == warm.get("title")
+                       and dict(row.get("position", {}), **row.get("size", {})) == warm.get("bounds")]
+            require(matches, "benchmark hit is absent from fresh find_elements")
+            if warm.get("stable_id"):
+                require(warm.get("element_id") in {row["id"] for row in matches}, "benchmark id differs from search")
         samples = []
         for _ in range(7):
             value, elapsed = tool(name, args)
@@ -241,7 +272,9 @@ def measure(finder, chrome):
             if name == "get_element_attributes":
                 require(value.get("values") == expected_fingerprint, "benchmark handle changed title or role")
             if name == "element_at_point":
-                require(all(value.get(key) == warm.get(key) for key in ("role", "title", "bounds")), "benchmark link moved or changed")
+                require(all(value.get(key) == warm.get(key) for key in ("pid", "role", "title", "bounds")), "benchmark link moved or changed")
+                if warm.get("stable_id"):
+                    require(value.get("stable_id") is True and value.get("element_id") == warm["element_id"], "benchmark id changed")
             if name == "get_ui_tree":
                 require(value["nodes_visited"] > 1, "unreadable/empty tree cannot be benchmarked")
             samples.append(elapsed)
