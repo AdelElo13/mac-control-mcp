@@ -31,6 +31,12 @@ extension ToolRegistry {
                 Strategy: 'ax' (fastest, structured), 'ocr' (OCRs the target \
                 app's own window — works on Electron/Canvas and on windows that \
                 are covered by other windows), 'auto' (AX first, OCR fallback). \
+                AX searches depth 8 first, then the full max_depth only if \
+                no usable candidate is found, within one 5 s budget. This \
+                prefers shallow candidates over earlier deep descendants; \
+                confidence ranking applies within the successful pass. \
+                AXMenuBar subtrees are excluded by default (menus_excluded=true); \
+                pass include_menus:true to include them. \
                 Returns (x,y) plus the match's bounds, element_id and \
                 max_depth_used, with confidence 0..1 + candidate list.
                 Pass window_id (from list_windows) to scope BOTH strategies \
@@ -57,9 +63,13 @@ extension ToolRegistry {
                         "type": .string("string"),
                         "description": .string("ax | ocr | auto (default auto)")
                     ]),
+                    "include_menus": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Include the AXMenuBar subtree. Default false; responses report menus_excluded. Dedicated menu tools are unaffected.")
+                    ]),
                     "max_depth": .object([
                         "type": .array([.string("integer"), .string("string")]),
-                        "description": .string("AX search depth. Default 32 (same as find_elements), clamped 1-64.")
+                        "description": .string("AX search depth. Default 24 (same as find_elements), clamped 1-64.")
                     ])
                 ]),
                 required: ["target"]
@@ -278,11 +288,13 @@ extension ToolRegistry {
         }
         let r = await grounding.ground(target: target, pid: pid, strategy: strategy,
                                        maxDepth: arguments["max_depth"]?.intValue,
-                                       window: scope)
+                                       window: scope,
+                                       includeMenus: AXPayload.flag(arguments["include_menus"]))
         var payload: [String: JSONValue] = [
             "ok": .bool(r.ok),
             "result": encodeAsJSONValue(r),
             "pid": .number(Double(pid)),
+            "menus_excluded": .bool(!AXPayload.flag(arguments["include_menus"])),
             // Snake-case echoes alongside the nested camelCase result, so a
             // caller does not have to know both spellings (A-2 / A-14 / D-4).
             "max_depth_used": .number(Double(r.maxDepthUsed))

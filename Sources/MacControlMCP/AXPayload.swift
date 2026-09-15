@@ -175,10 +175,47 @@ enum AXPayload {
 
     // MARK: - byte budget
 
-    /// Encoded JSON size in bytes. Uses the same encoder the transport
-    /// uses, so the number an agent sees is the number it paid.
-    static func encodedSize(_ value: JSONValue) -> Int {
-        (try? JSONEncoder().encode(value))?.count ?? 0
+    /// v0.10 B6: count JSON delimiters and escaped UTF-8 directly, so
+    /// reporting `bytes` does not serialize the whole payload again.
+    /// Only number formatting is delegated to the transport's encoder;
+    /// repeated coordinates/depths reuse their scalar count. Bit-pattern
+    /// keys preserve the different encodings of zero and negative zero.
+    static func encodedSize(
+        _ value: JSONValue,
+        using encode: (JSONValue) -> Int = { (try? JSONEncoder().encode($0))?.count ?? 0 }
+    ) -> Int {
+        var numberSizes: [UInt64: Int] = [:]
+        func stringSize(_ string: String) -> Int {
+            var size = 2
+            for byte in string.utf8 {
+                switch byte {
+                case 0x22, 0x5C, 0x2F, 0x08, 0x09, 0x0A, 0x0C, 0x0D: size += 2
+                case 0...0x1F: size += 6
+                default: size += 1
+                }
+            }
+            return size
+        }
+        func count(_ value: JSONValue) -> Int {
+            switch value {
+            case .string(let string): return stringSize(string)
+            case .number(let number):
+                guard number.isFinite else { return 4 }
+                if let size = numberSizes[number.bitPattern] { return size }
+                let size = encode(value)
+                numberSizes[number.bitPattern] = size
+                return size
+            case .bool(let value): return value ? 4 : 5
+            case .null: return 4
+            case .array(let items):
+                return 2 + max(0, items.count - 1) + items.reduce(0) { $0 + count($1) }
+            case .object(let object):
+                return 2 + max(0, object.count - 1) + object.reduce(0) {
+                    $0 + stringSize($1.key) + 1 + count($1.value)
+                }
+            }
+        }
+        return count(value)
     }
 
     /// Append encoded items while they fit in `maxBytes`.

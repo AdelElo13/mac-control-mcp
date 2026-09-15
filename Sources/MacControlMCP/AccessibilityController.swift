@@ -142,7 +142,6 @@ actor AccessibilityController {
     // v0.9: single source of truth lives in `AXPayload.interactiveRoles`
     // so `list_elements` and the new `interactive_only` budget filter can
     // never disagree about what "actionable" means.
-    private var actionableRoles: Set<String> { AXPayload.interactiveRoles }
 
     func checkPermission() -> Bool {
         AXIsProcessTrusted()
@@ -152,19 +151,19 @@ actor AccessibilityController {
     /// the `viewport_only` payload filter (v0.9 C-9) as "the app's
     /// on-screen window bounds": a node whose frame intersects none of
     /// these is not visible in any of this app's windows.
-    func windowFrames(pid: pid_t) -> [CGRect] {
-        if let readWindowFrames { return readWindowFrames(pid) }
-        enableManualAccessibility(pid: pid)
-        let app = AXUIElementCreateApplication(pid)
-        return AXPath.copyElements(app, kAXWindowsAttribute as String).compactMap { window in
-            // A minimized window still publishes a frame, but nothing in
-            // it is on screen — counting it would let viewport_only keep
-            // controls the user cannot see (review fix 4).
-            if let minimized = AXPath.copyString(window, kAXMinimizedAttribute as String),
-               minimized == "1" || minimized.lowercased() == "true" { return nil }
-            let attrs = AXAttributeBatch.fetch(window, includeChildren: false)
-            guard let origin = attrs.position, let size = attrs.size else { return nil }
-            return CGRect(origin: origin, size: size)
+    func windowFrames(pid: pid_t) async -> [CGRect] {
+        let readWindows = readWindowFrames
+        return await withWalkQueue(pid: pid) {
+            if let readWindows { return readWindows(pid) }
+            let app = AXUIElementCreateApplication(pid)
+            return AXPath.copyElements(app, kAXWindowsAttribute as String).compactMap { window in
+                // v0.10 B1: minimized windows cannot make descendants visible.
+                if let minimized = AXPath.copyString(window, kAXMinimizedAttribute as String),
+                   minimized == "1" || minimized.lowercased() == "true" { return nil }
+                let attrs = AXAttributeBatch.fetch(window, includeChildren: false)
+                guard let origin = attrs.position, let size = attrs.size else { return nil }
+                return CGRect(origin: origin, size: size)
+            }
         }
     }
 
@@ -175,13 +174,18 @@ actor AccessibilityController {
     /// whichever app owns that point; a pid restricts the hit-test to
     /// that application, which is what you want when a window is
     /// occluded by another app.
-    func elementAtPoint(x: Double, y: Double, pid: pid_t?) -> AXUIElement? {
-        if let pid { enableManualAccessibility(pid: pid) }
-        let root = pid.map { AXUIElementCreateApplication($0) } ?? AXUIElementCreateSystemWide()
-        var element: AXUIElement?
-        let status = AXUIElementCopyElementAtPosition(root, Float(x), Float(y), &element)
-        guard status == .success else { return nil }
-        return element
+    func elementAtPoint(x: Double, y: Double, pid: pid_t?) async -> AXUIElement? {
+        let read: @Sendable () -> AXUIElement? = {
+            let root = pid.map { AXUIElementCreateApplication($0) } ?? AXUIElementCreateSystemWide()
+            var element: AXUIElement?
+            let status = AXUIElementCopyElementAtPosition(root, Float(x), Float(y), &element)
+            guard status == .success else { return nil }
+            return element
+        }
+        // v0.10 B7: a pid-scoped hit test must wait for that pid's queued
+        // preparation just like a tree walk; queued does not mean ready.
+        if let pid { return await withWalkQueue(pid: pid, work: read) }
+        return read()
     }
 
     /// pid that owns an element handle.
@@ -228,7 +232,7 @@ actor AccessibilityController {
 
     /// PIDs for which we've already flipped AXManualAccessibility on.
     /// Used to avoid paying the IPC cost on every AX call.
-    private var manualAccessibilityEnabled: Set<pid_t> = []
+    private var preparationQueuedPIDs: Set<pid_t> = []
 
     /// For Chromium/Electron apps (VS Code, Slack, Discord, Cursor,
     /// 1Password, Obsidian, Postman, …) and iWork apps (Pages, Keynote,
@@ -245,12 +249,6 @@ actor AccessibilityController {
     ///
     /// Called automatically the first time any AX walk touches a given
     /// pid. Cached so subsequent calls are a free HashSet lookup.
-    func enableManualAccessibility(pid: pid_t) {
-        guard !manualAccessibilityEnabled.contains(pid) else { return }
-        prepareAccessibility(pid)
-        manualAccessibilityEnabled.insert(pid)
-    }
-
     private nonisolated static func prepareApplication(pid: pid_t) {
         let app = AXUIElementCreateApplication(pid)
         // Attribute name is private — pass as CFString literal. Setting
@@ -298,8 +296,8 @@ actor AccessibilityController {
     /// full depth using the same deadline. Paths retain original ordinals.
     func findElementWithPath(
         pid: pid_t, role: String?, title: String?, exact: Bool = false,
-        maxDepth: Int = AXDepth.default, includeMenus: Bool = false,
-        shallowFirst: Bool = true
+        maxDepth: Int = AXDepth.default, includeMenus: Bool = true,
+        shallowFirst: Bool = false
     ) async -> (element: AXUIElement, path: [AXPathComponent])? {
         let result = await search(
             pid: pid, maxDepth: maxDepth, limit: 1, includeMenus: includeMenus,
@@ -616,14 +614,39 @@ actor AccessibilityController {
     /// subsequent walk of the same pid.
     func search(
         pid: pid_t, root axRoot: WalkRoot? = nil, maxDepth: Int = AXDepth.default,
-        nodeCap: Int = 2000, limit: Int = .max, includeMenus: Bool = false,
+        nodeCap: Int = .max, limit: Int = .max, includeMenus: Bool = false,
         clipRects: [CGRect] = [], viewportOnly: Bool = false, interactiveOnly: Bool = false,
         pruneRoles: Set<String> = [], collectNodes: Bool = false, shallowFirst: Bool = false,
         predicate: @escaping @Sendable (AXAttributeBatch.Values) -> Bool = { _ in true }
     ) async -> WalkResult {
-        enableManualAccessibility(pid: pid)
         let root = axRoot ?? WalkRoot(element: AXUIElementCreateApplication(pid), path: [])
         let fetch = readAttributes
+        return await withWalkQueue(pid: pid) {
+            let deadline = Date().addingTimeInterval(5)
+            let depths = shallowFirst && maxDepth > 8 ? [8, maxDepth] : [maxDepth]
+            var totalVisited = 0
+            var result = WalkResult()
+            for depth in depths {
+                result = Self.walkTree(
+                    root: root, maxDepth: depth, nodeCap: max(1, nodeCap), limit: max(1, limit),
+                    includeMenus: includeMenus, clipRects: clipRects, viewportOnly: viewportOnly,
+                    interactiveOnly: interactiveOnly, pruneRoles: pruneRoles,
+                    collectNodes: collectNodes, deadline: deadline, fetch: fetch, predicate: predicate
+                )
+                totalVisited += result.nodesVisited
+                if !result.matches.isEmpty || result.timedOut { break }
+            }
+            result.nodesVisited = totalVisited
+            return result
+        }
+    }
+
+    /// v0.10 B7: preparation is AX IPC too. Queue it before the first
+    /// walk for this pid, without keeping the controller actor blocked.
+    private func withWalkQueue<Value: Sendable>(
+        pid: pid_t, work: @escaping @Sendable () -> Value
+    ) async -> Value {
+        let prepare = preparationQueuedPIDs.insert(pid).inserted ? prepareAccessibility : nil
         let queue: DispatchQueue
         if let existing = walkQueues[pid] {
             queue = existing
@@ -634,22 +657,8 @@ actor AccessibilityController {
         }
         return await withCheckedContinuation { continuation in
             queue.async {
-                let deadline = Date().addingTimeInterval(5)
-                let depths = shallowFirst && maxDepth > 8 ? [8, maxDepth] : [maxDepth]
-                var totalVisited = 0
-                var result = WalkResult()
-                for depth in depths {
-                    result = Self.walkTree(
-                        root: root, maxDepth: depth, nodeCap: max(1, nodeCap), limit: max(1, limit),
-                        includeMenus: includeMenus, clipRects: clipRects, viewportOnly: viewportOnly,
-                        interactiveOnly: interactiveOnly, pruneRoles: pruneRoles,
-                        collectNodes: collectNodes, deadline: deadline, fetch: fetch, predicate: predicate
-                    )
-                    totalVisited += result.nodesVisited
-                    if !result.matches.isEmpty || result.timedOut { break }
-                }
-                result.nodesVisited = totalVisited
-                continuation.resume(returning: result)
+                prepare?(pid)
+                continuation.resume(returning: work())
             }
         }
     }
@@ -740,7 +749,7 @@ actor AccessibilityController {
     func findElements(
         pid: pid_t, root axRoot: WalkRoot? = nil, role: String?, title: String?, value: String?,
         exact: Bool = false, maxDepth: Int = AXDepth.default, limit: Int = 100,
-        includeMenus: Bool = false, clipRects: [CGRect] = [],
+        includeMenus: Bool = true, clipRects: [CGRect] = [],
         viewportOnly: Bool = false, interactiveOnly: Bool = false
     ) async -> [Match] {
         await search(pid: pid, root: axRoot, maxDepth: maxDepth, limit: limit,
@@ -814,7 +823,7 @@ actor AccessibilityController {
     /// empty result — indistinguishable from "no match for your
     /// filter" — and the agent would retry the same query forever.
     ///
-    /// Heuristic: after enableManualAccessibility(), if the root app
+    /// Heuristic: after AX preparation, if the root app
     /// element has zero AXChildren AND zero AXWindows exposed via AX,
     /// the app is effectively headless to the accessibility API. We
     /// return a hint so callers can surface "try a web alternative /
@@ -829,38 +838,41 @@ actor AccessibilityController {
         let hint: String?
     }
 
-    func probeAXTree(pid: pid_t) -> AXTreeHealth {
-        enableManualAccessibility(pid: pid)
-        let app = AXUIElementCreateApplication(pid)
-        let children = axElementArray(of: app, attribute: kAXChildrenAttribute as CFString)
-        let windows = axElementArray(of: app, attribute: kAXWindowsAttribute as CFString)
+    func probeAXTree(pid: pid_t) async -> AXTreeHealth {
+        // v0.10 B7: health reads share the queue so they cannot observe
+        // the app before its pending AX preparation has completed.
+        await withWalkQueue(pid: pid) {
+            let app = AXUIElementCreateApplication(pid)
+            let children = AXPath.copyElements(app, kAXChildrenAttribute as String)
+            let windows = AXPath.copyElements(app, kAXWindowsAttribute as String)
 
-        if children.isEmpty && windows.isEmpty {
-            // Look up the bundle ID so we can surface an app-specific hint.
-            let bundle = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "unknown"
-            let hint: String
-            switch bundle {
-            case "ru.keepcoder.Telegram":
-                hint = "Telegram's native macOS app uses TGModernGrowing (not NSAccessibility) and exposes no AX tree. Use web.telegram.org in Chrome/Safari instead — Chromium's AX tree is fully populated."
-            default:
-                hint = "This app (\(bundle)) exposes no AX children or windows even after enabling AXManualAccessibility / AXEnhancedUserInterface. It likely does not implement NSAccessibility. Options: (a) use coord-based clicks via the `click` tool with x/y, (b) use `ocr_screen` to locate targets visually, (c) try a web alternative if one exists."
+            if children.isEmpty && windows.isEmpty {
+                // Look up the bundle ID so we can surface an app-specific hint.
+                let bundle = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "unknown"
+                let hint: String
+                switch bundle {
+                case "ru.keepcoder.Telegram":
+                    hint = "Telegram's native macOS app uses TGModernGrowing (not NSAccessibility) and exposes no AX tree. Use web.telegram.org in Chrome/Safari instead — Chromium's AX tree is fully populated."
+                default:
+                    hint = "This app (\(bundle)) exposes no AX children or windows even after enabling AXManualAccessibility / AXEnhancedUserInterface. It likely does not implement NSAccessibility. Options: (a) use coord-based clicks via the `click` tool with x/y, (b) use `ocr_screen` to locate targets visually, (c) try a web alternative if one exists."
+                }
+                return AXTreeHealth(
+                    pid: pid,
+                    hasAXTree: false,
+                    childCount: 0,
+                    windowCount: 0,
+                    hint: hint
+                )
             }
+
             return AXTreeHealth(
                 pid: pid,
-                hasAXTree: false,
-                childCount: 0,
-                windowCount: 0,
-                hint: hint
+                hasAXTree: true,
+                childCount: children.count,
+                windowCount: windows.count,
+                hint: nil
             )
         }
-
-        return AXTreeHealth(
-            pid: pid,
-            hasAXTree: true,
-            childCount: children.count,
-            windowCount: windows.count,
-            hint: nil
-        )
     }
 
     /// List every AX action name supported by this element (e.g. AXPress).
@@ -1099,8 +1111,6 @@ actor AccessibilityController {
             position: info.position, size: info.size, depth: info.depth
         )
     }
-
-
 
     // BUG-FIX v0.2.6 #4: Modern web apps (React/Angular/Shadcn) label
     // buttons via `aria-label` → AXDescription, leaving AXTitle as the

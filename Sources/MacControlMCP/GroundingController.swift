@@ -189,11 +189,16 @@ actor GroundingController {
     private let accessibility: AccessibilityController
     private let screen: ScreenController
     private let elementCache: ElementCache?
+    // v0.10 B4: keep display IPC at the boundary so shallow/full-pass
+    // selection can be verified without a live desktop.
+    private let readDisplayBounds: @Sendable () -> [WindowIdentity.DisplayBounds]
 
-    init(accessibility: AccessibilityController, screen: ScreenController, elementCache: ElementCache? = nil) {
+    init(accessibility: AccessibilityController, screen: ScreenController, elementCache: ElementCache? = nil,
+         readDisplayBounds: @escaping @Sendable () -> [WindowIdentity.DisplayBounds] = WindowIdentity.displayBounds) {
         self.accessibility = accessibility
         self.screen = screen
         self.elementCache = elementCache
+        self.readDisplayBounds = readDisplayBounds
     }
 
     /// Find coordinates to click for `target` text. `strategy`:
@@ -206,7 +211,8 @@ actor GroundingController {
         pid rawPID: pid_t,
         strategy: Strategy = .auto,
         maxDepth: Int? = nil,
-        window: WindowScope? = nil
+        window: WindowScope? = nil,
+        includeMenus: Bool = false
     ) async -> GroundResult {
         let pid = window?.pid ?? rawPID
         let depth = Self.resolveMaxDepth(maxDepth)
@@ -259,15 +265,6 @@ actor GroundingController {
             } else {
                 walkRoot = nil
             }
-            let results = await accessibility.findElements(
-                pid: pid,
-                root: walkRoot,
-                role: nil,
-                title: target,
-                value: nil,
-                maxDepth: depth,
-                limit: 20
-            )
             // v0.7.1 fix (BUG 5): filter off-screen AX candidates. macOS
             // parks hidden menu items at (0, screen_height) with size
             // (0,0) — those are technically "AX-matched" but cannot be
@@ -280,45 +277,31 @@ actor GroundingController {
             // measured the parked-menu-item signature against the main
             // display's height only. `parkedHeights` keeps that signature
             // check per display.
-            let displayList = WindowIdentity.displayBounds()
+            let displayList = readDisplayBounds()
             let visibleBounds = WindowIdentity.unionBounds(of: displayList)
                 ?? CGDisplayBounds(CGMainDisplayID())
             let parkedHeights: [Double] = displayList.isEmpty
                 ? [Double(CGDisplayBounds(CGMainDisplayID()).height)]
                 : WindowIdentity.bottomEdges(of: displayList)
-            var survivors: [AccessibilityController.Match] = []
-            for match in results {
-                let info = match.info
-                guard let pos = info.position, let size = info.size else { continue }
-
-                // Filter: AXApplication is a container, not a clickable
-                // target. Clicking the app root is meaningless.
-                if info.role == "AXApplication" { continue }
-
-                // Filter: zero-size elements are off-screen / hidden.
-                if size.width < 1 || size.height < 1 { continue }
-
-                // Filter: parked-off-screen default (x≈0, y≈bottom edge of
-                // some display). The classic "hidden menu item" signature.
-                if abs(pos.x) < 1, parkedHeights.contains(where: { abs(pos.y - $0) < 1 }) {
-                    continue
+            // v0.10 B4: only usable candidates end the eight-level pass.
+            // Hidden/zero-size shallow hits must not suppress the full
+            // search, or consume the match limit before visible controls.
+            let result = await accessibility.search(
+                pid: pid, root: walkRoot, maxDepth: depth, limit: 20,
+                includeMenus: includeMenus, shallowFirst: true,
+                predicate: { attrs in
+                    guard AccessibilityController.textMatches(filter: target, candidate: attrs.title ?? "", exact: false),
+                          attrs.role != "AXApplication",
+                          let pos = attrs.position, let size = attrs.size,
+                          size.width >= 1, size.height >= 1 else { return false }
+                    if abs(pos.x) < 1, parkedHeights.contains(where: { abs(pos.y - $0) < 1 }) { return false }
+                    let frame = CGRect(origin: pos, size: size)
+                    guard frame.intersects(visibleBounds) else { return false }
+                    if let window, !WindowIdentity.rect(frame, isWithin: window.bounds) { return false }
+                    return true
                 }
-
-                let frame = CGRect(x: pos.x, y: pos.y, width: size.width, height: size.height)
-
-                // Filter: not on ANY display (C-14 — was: not on the main
-                // display, which discarded every element of a window on a
-                // secondary monitor).
-                guard frame.intersects(visibleBounds) else { continue }
-
-                // v0.9 (C-2): when a window_id scopes the call, only
-                // elements inside that window's frame count. Without this a
-                // pid-wide AX search would still return a match from the
-                // app's OTHER window.
-                if let window, !WindowIdentity.rect(frame, isWithin: window.bounds) { continue }
-
-                survivors.append(match)
-            }
+            )
+            let survivors = result.matches
 
             // Element ids for every surviving AX match, in ONE cache hop,
             // so the caller can act on the match (get_element_attributes /

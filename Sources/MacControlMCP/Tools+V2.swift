@@ -5,7 +5,7 @@ import AppKit
 // MARK: - Tool definitions (v0.2.0)
 
 /// Shared tail for every tool that honours the v0.9 payload budget.
-let axPayloadBudgetDoc = "Every response also reports bytes (encoded size), max_depth_used, nodes_visited and truncated."
+let axPayloadBudgetDoc = "AXMenuBar subtrees are excluded by default (menus_excluded=true); pass include_menus:true to include them. Every response also reports bytes (encoded size excluding the bytes field), max_depth_used, nodes_visited and truncated."
 
 extension ToolRegistry {
     static let definitionsV2: [MCPToolDefinition] = [
@@ -13,10 +13,18 @@ extension ToolRegistry {
             name: "get_ui_tree",
             description: "Walk the full accessibility tree of a process and return every node (including containers and static text) with child indices and element IDs for follow-up calls. Element IDs are content-addressed (pid + AX path), so the same node keeps the same id across calls and sessions. Bounded by a 5 s budget and node_cap nodes (= element-cache capacity, 2000 by default, so every returned id stays valid); node_cap_reached=true means the tree was cut off — lower max_depth or use find_elements. "
                 + "The heaviest AX tool (hundreds of KB for a browser or Finder window — 327 KB measured) — when you know what you are looking for, find_elements / query_elements are far smaller and also return ids. "
-                + "To make one look affordable, use interactive_only / viewport_only / fields / max_bytes. " + axPayloadBudgetDoc,
+                + "viewport_only prunes off-window subtrees during traversal; zero-size containers are still explored. To reduce the payload, use interactive_only / viewport_only / fields / max_bytes. " + axPayloadBudgetDoc,
             inputSchema: schema(
                 properties: [
                     "pid": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Target process ID.")]),
+                    "include_menus": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Include the AXMenuBar subtree. Default false; responses report menus_excluded. Dedicated menu tools are unaffected.")
+                    ]),
+                    "node_cap": .object([
+                        "type": .array([.string("integer"), .string("string")]),
+                        "description": .string("Maximum visited nodes. Default 2000 (element-cache capacity), clamped 1-2000. node_cap_reached and truncated report a cutoff.")
+                    ]),
                     "max_depth": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Traversal depth limit. Default 24 (project-wide AX default), max 64.")]),
                     "fields": .object([
                         "type": .string("array"),
@@ -42,7 +50,7 @@ extension ToolRegistry {
         MCPToolDefinition(
             name: "find_elements",
             description: "Find ALL matching elements (up to limit) by case-insensitive substring on role / title / value (title = AXTitle → AXDescription → AXIdentifier; unlike find_element it does not fall back to AXValue — use the value filter). "
-                + "Each match carries an element id for perform_element_action / get_element_attributes / set_element_attribute. "
+                + "viewport_only and interactive_only are applied during traversal, before limit is counted. Each match carries an element id for perform_element_action / get_element_attributes / set_element_attribute. "
                 + "Use find_element for a cheap first-match check, query_elements when you need regex (anchors, alternation). "
                 + "IDs are content-addressed (pid + AX path): the same element keeps the same id across calls and sessions. " + axPayloadBudgetDoc,
             inputSchema: schema(
@@ -54,6 +62,10 @@ extension ToolRegistry {
                     "exact": .object([
                         "type": .string("boolean"),
                         "description": .string("Match role/title/value by case-insensitive EQUALITY instead of substring. Default false — beware that role \"Button\" substring-matches AXRadioButton, AXMenuButton and AXPopUpButton.")
+                    ]),
+                    "include_menus": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Include the AXMenuBar subtree. Default false; responses report menus_excluded. Dedicated menu tools are unaffected.")
                     ]),
                     "max_depth": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Traversal depth limit. Default 24 (project-wide AX default), max 64.")]),
                     "limit": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Max matches to return (default 100).")]),
@@ -81,13 +93,21 @@ extension ToolRegistry {
         MCPToolDefinition(
             name: "query_elements",
             description: "Like find_elements, but role_regex / title_regex / value_regex are case-insensitive regular expressions (e.g. title_regex \"^Save$\" for an exact label, \"Save|Opslaan\" for alternatives). Invalid regex falls back to case-insensitive substring. Returns element ids. "
-                + "Prefer find_elements for plain substring matches. " + axPayloadBudgetDoc,
+                + "Bounded by node_cap (default 2000, max 2000) and 5 seconds; node_cap_reached=true means the search was cut off. Prefer find_elements for plain substring matches. " + axPayloadBudgetDoc,
             inputSchema: schema(
                 properties: [
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
                     "role_regex": .object(["type": .string("string")]),
                     "title_regex": .object(["type": .string("string")]),
                     "value_regex": .object(["type": .string("string")]),
+                    "include_menus": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Include the AXMenuBar subtree. Default false; responses report menus_excluded. Dedicated menu tools are unaffected.")
+                    ]),
+                    "node_cap": .object([
+                        "type": .array([.string("integer"), .string("string")]),
+                        "description": .string("Maximum visited nodes. Default 2000 (element-cache capacity), clamped 1-2000. node_cap_reached and truncated report a cutoff.")
+                    ]),
                     "max_depth": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Traversal depth limit. Default 24 (project-wide AX default), max 64.")]),
                     "limit": .object(["type": .array([.string("integer"), .string("string")])]),
                     "fields": .object([

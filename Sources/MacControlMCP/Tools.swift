@@ -555,7 +555,7 @@ final class ToolRegistry: @unchecked Sendable {
         let includeMenus = AXPayload.flag(arguments["include_menus"])
 
         guard let hit = await accessibility.findElementWithPath(
-            pid: pid, role: role, title: title, exact: exact, maxDepth: maxDepth, includeMenus: includeMenus
+            pid: pid, role: role, title: title, exact: exact, maxDepth: maxDepth, includeMenus: includeMenus, shallowFirst: true
         ) else {
             var payload: [String: JSONValue] = [
                 "ok": .bool(false),
@@ -1060,12 +1060,20 @@ final class ToolRegistry: @unchecked Sendable {
         MCPToolDefinition(
             name: "list_elements",
             description: "Survey the ACTIONABLE controls of an app (fixed role whitelist: buttons, links, text fields/areas, checkboxes, radio buttons, pop-up/menu buttons, sliders, switches, steppers… — no containers, rows or static text) down to max_depth (default 24). "
-                + "No filters and no element ids. Use it to answer \"what can I interact with here?\"; use find_elements / query_elements to target specific elements and get ids for follow-up calls, and get_ui_tree for the full structure including containers. " + axPayloadBudgetDoc,
+                + "Bounded by node_cap (default 2000, max 2000) and 5 seconds; node_cap_reached=true means the walk was cut off. No text filters and no element ids. Use it to answer \"what can I interact with here?\"; use find_elements / query_elements to target specific elements and get ids for follow-up calls, and get_ui_tree for the full structure including containers. " + axPayloadBudgetDoc,
             inputSchema: schema(
                 properties: [
                     "pid": .object([
                         "type": .array([.string("integer"), .string("string")]),
                         "description": .string("Target process ID.")
+                    ]),
+                    "include_menus": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Include the AXMenuBar subtree. Default false; responses report menus_excluded. Dedicated menu tools are unaffected.")
+                    ]),
+                    "node_cap": .object([
+                        "type": .array([.string("integer"), .string("string")]),
+                        "description": .string("Maximum visited nodes. Default 2000 (element-cache capacity), clamped 1-2000. node_cap_reached and truncated report a cutoff.")
                     ]),
                     "max_depth": .object([
                         "type": .array([.string("integer"), .string("string")]),
@@ -1094,9 +1102,9 @@ final class ToolRegistry: @unchecked Sendable {
         ),
         MCPToolDefinition(
             name: "find_element",
-            description: "Return the FIRST element (depth-first, max_depth default 24, 5 s budget) whose role contains `role` and whose title contains `title` — case-insensitive SUBSTRING by default; title matches AXTitle → AXDescription → AXIdentifier and falls back to AXValue. "
+            description: "Return the FIRST element (depth-first through depth 8 first, then the full max_depth only if no match; max_depth default 24, shared 5 s budget) whose role contains `role` and whose title contains `title` — case-insensitive SUBSTRING by default; title matches AXTitle → AXDescription → AXIdentifier and falls back to AXValue. "
                 + "WARNING: substring matching on role is wider than it looks — role \"Button\" also matches AXRadioButton, AXMenuButton and AXPopUpButton (a Safari tab was returned for role=Button title=Sign). Pass exact:true for equality matching when you know the exact role/title. "
-                + "Returns role/title/value/position/size plus a content-addressed element_id usable with perform_element_action / get_element_attributes / set_element_attribute. "
+                + "This shallow-first order may select a shallow match after a sibling whose matching descendant is deeper than 8. AXMenuBar subtrees are excluded by default (menus_excluded=true); include_menus:true restores them. Returns role/title/value/position/size plus a content-addressed element_id usable with perform_element_action / get_element_attributes / set_element_attribute. "
                 + "Use find_elements when you need every match; query_elements for regex (e.g. ^Save$); list_elements to survey controls; get_ui_tree for full structure.",
             inputSchema: schema(
                 properties: [
@@ -1115,6 +1123,10 @@ final class ToolRegistry: @unchecked Sendable {
                     "exact": .object([
                         "type": .string("boolean"),
                         "description": .string("Match role and title by case-insensitive EQUALITY instead of substring. Default false for compatibility.")
+                    ]),
+                    "include_menus": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Include the AXMenuBar subtree. Default false; responses report menus_excluded. Dedicated menu tools are unaffected.")
                     ]),
                     "max_depth": .object([
                         "type": .array([.string("integer"), .string("string")]),
