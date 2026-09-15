@@ -35,37 +35,76 @@ enum GeometricHitTest {
         return best.map { ($0, "geometric") } ?? (hit, "container")
     }
 
-    static func search<ID: Hashable>(root: ID, point: CGPoint, nodeCap: Int = 2000, inCollection: Bool = false,
+    static func search<ID: Hashable>(root: ID, point: CGPoint, nodeCap: Int = 2000, inCollection: Bool = false, now: () -> Date = { Date() },
                                     read: (ID) -> Node<ID>) -> ID? {
         var visited: Set<ID> = []
-        var candidates: [(id: ID, area: Double, depth: Int)] = []
-        let deadline = Date().addingTimeInterval(1)
+        var cache: [ID: Node<ID>] = [:]
+        var candidates: [(id: ID, area: Double, depth: Int, rowOrCell: Bool)] = []
+        var truncated = false
+        let deadline = now().addingTimeInterval(1)
+
+        func node(_ id: ID) -> Node<ID>? {
+            guard now() < deadline else { truncated = true; return nil }
+            if let cached = cache[id] { return cached }
+            // v0.10 C2 round 2: prioritising child geometry must not bypass
+            // the IPC budget or read the same node again during descent.
+            guard cache.count < nodeCap else { truncated = true; return nil }
+            let value = read(id)
+            cache[id] = value
+            if now() >= deadline { truncated = true }
+            return value
+        }
+
         func walk(_ id: ID, depth: Int, inCollection: Bool) {
-            guard depth <= 24, visited.count < nodeCap, Date() < deadline,
-                  visited.insert(id).inserted else { return }
-            let node = read(id)
-            let collection = inCollection || node.role == "AXOutline" || node.role == "AXTable"
-            // v0.10 C2 review: table/outline rows and cells are selectable
-            // controls even when the generic AX action whitelist excludes them.
-            let selectable = AXPayload.isInteractive(role: node.role)
-                || (collection && (node.role == "AXRow" || node.role == "AXCell"))
-            if selectable, let frame = node.frame,
-               frame.width >= 2, frame.height >= 2, frame.contains(point) {
-                let area = frame.width * frame.height
-                candidates.append((id, area, depth))
+            guard !visited.contains(id) else { return }
+            guard depth <= 24 else { truncated = true; return }
+            guard let current = node(id) else { return }
+            visited.insert(id)
+            let collection = inCollection || current.role == "AXOutline" || current.role == "AXTable"
+            let rowOrCell = current.role == "AXRow" || current.role == "AXCell"
+            let usableFrame = current.frame.flatMap { frame -> CGRect? in
+                frame.width >= 2 && frame.height >= 2 ? frame : nil
             }
-            // v0.10 C2: missing or coarse parent geometry must not hide a
-            // valid child. Identity, depth, time and node caps bound the walk.
-            for child in node.children {
-                guard visited.count < nodeCap, Date() < deadline else { break }
+            // v0.10 C2 round 2: scrolled-out rows cannot own this point.
+            // Nil/degenerate geometry still permits valid descendants.
+            if rowOrCell, let frame = usableFrame, !frame.contains(point) { return }
+            let selectable = AXPayload.isInteractive(role: current.role) || (collection && rowOrCell)
+            if selectable, let frame = usableFrame, frame.contains(point) {
+                candidates.append((id, frame.width * frame.height, depth, rowOrCell))
+            }
+            guard depth < 24 else {
+                if current.children.contains(where: { !visited.contains($0) }) { truncated = true }
+                return
+            }
+
+            // v0.10 C2 round 2: visit containing children in stable order,
+            // then deferred siblings. Descend immediately so later metadata
+            // reads cannot exhaust the deadline before a known header is scored.
+            var remaining: [ID] = []
+            for child in current.children where !visited.contains(child) {
+                guard let childNode = node(child) else { break }
+                if childNode.frame?.contains(point) == true {
+                    walk(child, depth: depth + 1, inCollection: collection)
+                } else {
+                    remaining.append(child)
+                }
+            }
+            for child in remaining {
+                guard now() < deadline else { truncated = true; break }
                 walk(child, depth: depth + 1, inCollection: collection)
             }
         }
         walk(root, depth: 0, inCollection: inCollection)
-        guard let smallestArea = candidates.map(\.area).min() else { return nil }
+
+        // v0.10 C2 round 2: explicit controls (including floating header
+        // buttons) outrank overlapping collection cells. An incomplete walk
+        // with only row/cell candidates cannot claim a precise hit.
+        let controls = candidates.filter { !$0.rowOrCell }
+        let eligible = controls.isEmpty ? (truncated ? [] : candidates) : controls
+        guard let smallestArea = eligible.map(\.area).min() else { return nil }
         // v0.10 C2 review: near-identical SwiftUI frames favour the deeper
         // leaf. Anchor the 10% band to the actual minimum to prevent drift.
-        return candidates.filter { $0.area <= smallestArea * 1.1 }.sorted {
+        return eligible.filter { $0.area <= smallestArea * 1.1 }.sorted {
             if $0.depth != $1.depth { return $0.depth > $1.depth }
             return $0.area < $1.area
         }.first?.id

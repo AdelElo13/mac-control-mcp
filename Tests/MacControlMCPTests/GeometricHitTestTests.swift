@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 import CoreGraphics
 @testable import MacControlMCP
 
@@ -84,6 +85,95 @@ struct GeometricHitTestTests {
                 1: .init(role: "AXButton", frame: CGRect(x: 0, y: 0, width: 100, height: 20), children: [2]),
                 2: .init(role: "AXButton", frame: CGRect(x: 0, y: 0, width: width, height: 20), children: [])]
             #expect(GeometricHitTest.search(root: 0, point: CGPoint(x: 10, y: 10), read: { tree[$0]! }) == expected)
+        }
+    }
+
+    @Test func floatingHeaderWinsOverSmallerDeeperRowCell() {
+        let frame = CGRect(x: 0, y: 0, width: 200, height: 30)
+        let tree: [Int: GeometricHitTest.Node<Int>] = [
+            0: .init(role: "AXOutline", frame: frame, children: [1, 3]),
+            1: .init(role: "AXRow", frame: frame, children: [2]),
+            2: .init(role: "AXCell", frame: CGRect(x: 5, y: 5, width: 10, height: 10), children: []),
+            3: .init(role: "AXGroup", frame: frame, children: [4]),
+            4: .init(role: "AXButton", frame: frame, children: [])]
+        #expect(GeometricHitTest.search(root: 0, point: CGPoint(x: 10, y: 10), read: { tree[$0]! }) == 4)
+    }
+
+    @Test func cappedOutlineNeverReturnsRowInsteadOfLaterHeader() {
+        let frame = CGRect(x: 0, y: 0, width: 200, height: 30)
+        let rows = Array(1...100)
+        var reads = 0
+        let result = GeometricHitTest.search(root: 0, point: CGPoint(x: 10, y: 10), nodeCap: 12) { id in
+            reads += 1
+            if id == 0 { return .init(role: "AXOutline", frame: frame, children: rows + [101]) }
+            if id == 101 { return .init(role: "AXGroup", frame: frame, children: [102]) }
+            return .init(role: id == 102 ? "AXButton" : "AXCell", frame: frame, children: [])
+        }
+        #expect(result == nil || result == 102)
+        #expect(reads <= 12)
+    }
+
+    @Test func deadlineCannotPromoteAnIncompleteCellMatch() {
+        let frame = CGRect(x: 0, y: 0, width: 200, height: 30)
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        var elapsed = 0.0
+        let result = GeometricHitTest.search(root: 0, point: CGPoint(x: 10, y: 10),
+            now: { start.addingTimeInterval(elapsed) }) { id in
+            if id == 0 { return .init(role: "AXOutline", frame: frame, children: [1, 2]) }
+            elapsed = 2
+            return .init(role: "AXCell", frame: frame, children: [])
+        }
+        #expect(result == nil)
+    }
+
+    @Test func laterSlowSiblingCannotDiscardAnAlreadyFoundHeader() {
+        let frame = CGRect(x: 0, y: 0, width: 200, height: 30)
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        var elapsed = 0.0
+        let result = GeometricHitTest.search(root: 0, point: CGPoint(x: 10, y: 10),
+            now: { start.addingTimeInterval(elapsed) }) { id in
+            if id == 0 { return .init(role: "AXOutline", frame: frame, children: [1, 2]) }
+            if id == 1 { return .init(role: "AXButton", frame: frame, children: []) }
+            elapsed = 2
+            return .init(role: "AXCell", frame: frame, children: [])
+        }
+        #expect(result == 1)
+    }
+
+    @Test func containingChildrenAreVisitedFirstWithoutDuplicateReads() {
+        let inside = CGRect(x: 0, y: 0, width: 30, height: 30)
+        let outside = CGRect(x: 100, y: 100, width: 30, height: 30)
+        let tree: [Int: GeometricHitTest.Node<Int>] = [
+            0: .init(role: "AXGroup", frame: nil, children: [1, 2, 5]),
+            1: .init(role: "AXGroup", frame: outside, children: [3]),
+            2: .init(role: "AXGroup", frame: inside, children: [4]),
+            3: .init(role: "AXButton", frame: outside, children: []),
+            4: .init(role: "AXButton", frame: inside, children: []),
+            5: .init(role: "AXGroup", frame: inside, children: [6]),
+            6: .init(role: "AXButton", frame: inside, children: [])]
+        var reads: [Int] = []
+        _ = GeometricHitTest.search(root: 0, point: CGPoint(x: 10, y: 10)) { id in
+            reads.append(id)
+            return tree[id]!
+        }
+        #expect(reads.firstIndex(of: 4)! < reads.firstIndex(of: 6)!)
+        #expect(reads.firstIndex(of: 6)! < reads.firstIndex(of: 3)!)
+        #expect(Set(reads).count == reads.count)
+    }
+
+    @Test func offPointRowsArePrunedButCoarseFramesKeepDescendants() {
+        for role in ["AXRow", "AXCell"] {
+            for frame in [CGRect?.none, CGRect.zero, CGRect(x: 100, y: 100, width: 30, height: 30)] {
+                var readLeaf = false
+                let result = GeometricHitTest.search(root: 0, point: CGPoint(x: 10, y: 10), inCollection: true) { id in
+                    if id == 0 { return .init(role: role, frame: frame, children: [1]) }
+                    readLeaf = true
+                    return .init(role: "AXButton", frame: CGRect(x: 0, y: 0, width: 30, height: 30), children: [])
+                }
+                let usable = frame.map { $0.width >= 2 && $0.height >= 2 } ?? false
+                #expect(readLeaf == !usable)
+                #expect(result == (usable ? nil : 1))
+            }
         }
     }
 
