@@ -71,7 +71,7 @@ extension ToolRegistry {
         MCPToolDefinition(
             name: "ocr_screen",
             description: "Capture the screen (or a region, or ONE window via window_id) and run OCR. Returns joined text plus per-block coordinates and confidence. Coordinates are in IMAGE PIXELS matching image_width/image_height (i.e. backing resolution — 2x point size on Retina), for annotating/cropping the returned image. For click-ready screen points, use the `ground` tool with strategy 'ocr' instead. "
-                + "Speed/size knobs (defaults = most accurate): level=fast (~10x faster than accurate, weaker on small or low-contrast text); language_correction=false (~2x faster at accurate level; raw glyphs, no dictionary fix-ups — good for code, IDs, URLs); include_blocks=false returns only `text` (much smaller response); max_blocks caps the blocks array. "
+                + "Speed/size knobs (default level=accurate; language correction defaults on for accurate and off for fast): level=fast (~10x faster than accurate, weaker on small or low-contrast text); language_correction=false (~2x faster at accurate level; raw glyphs, no dictionary fix-ups — good for code, IDs, URLs); include_blocks=false returns only `text` (much smaller response); max_blocks caps the blocks array. "
                 + "window_id (from list_windows) OCRs THAT window through the same per-window ScreenCaptureKit capture `ground` uses, so a covered or off-Space window reads its OWN text instead of whatever is on top of it. window_id takes precedence: x/y/width/height are ignored when it is present. "
                 + "Every response says what the block coordinates mean: coordinate_space is window_image_pixels (window_id), region_image_pixels (x/y/width/height) or screen_image_pixels (whole main display), and `origin` is that image's top-left in global screen points. "
                 + "Map a block with screen_point = origin + block_px / pixels_per_point.",
@@ -94,7 +94,7 @@ extension ToolRegistry {
                     ]),
                     "language_correction": .object([
                         "type": .string("boolean"),
-                        "description": .string("Apply Vision language correction (default true).")
+                        "description": .string("Apply Vision language correction (default true for accurate, false for fast).")
                     ]),
                     "include_blocks": .object([
                         "type": .string("boolean"),
@@ -317,7 +317,7 @@ extension ToolRegistry {
         if let raw = arguments["level"], raw != .null {
             switch raw.stringValue?.lowercased() {
             case "accurate": ocrOptions.fast = false
-            case "fast": ocrOptions.fast = true
+            case "fast": ocrOptions.fast = true; ocrOptions.languageCorrection = false
             default: return invalidArgument("ocr_screen: level must be \"accurate\" or \"fast\".")
             }
         }

@@ -106,6 +106,7 @@ actor AccessibilityController {
         let element: AXUIElement
         let info: ElementInfo
         let path: [AXPathComponent]
+        var groundingMatch: GroundingPolicy.Match? = nil
     }
 
     /// Result of querying attributes. Missing attrs are omitted.
@@ -165,6 +166,29 @@ actor AccessibilityController {
         let status = AXUIElementCopyElementAtPosition(root, Float(x), Float(y), &element)
         guard status == .success else { return nil }
         return element
+    }
+
+    /// v0.10 C2: SwiftUI/Finder can report a whole container for a precise
+    /// point. Search its owning window, so sibling controls remain reachable.
+    func refinedHit(element: AXUIElement, x: Double, y: Double) -> (element: AXUIElement, quality: String) {
+        func frame(_ values: AXAttributeBatch.Values) -> CGRect? {
+            guard let position = values.position, let size = values.size else { return nil }
+            return CGRect(origin: position, size: size)
+        }
+        let attrs = AXAttributeBatch.fetch(element, includeChildren: false)
+        let window = ([element] + AXPath.ancestors(of: element, limit: 24)).first {
+            AXPath.copyString($0, "AXRole") == "AXWindow"
+        }
+        let windowFrame = window.flatMap { frame(AXAttributeBatch.fetch($0, includeChildren: false)) }
+        guard GeometricHitTest.needsSearch(role: attrs.role, frame: frame(attrs), window: windowFrame) else {
+            return (element, "direct")
+        }
+        let root = AXKey(element: window ?? element)
+        let best = GeometricHitTest.search(root: root, point: CGPoint(x: x, y: y)) { key in
+            let values = AXAttributeBatch.fetch(key.element, includeChildren: true)
+            return .init(role: values.role, frame: frame(values), children: values.children.map { AXKey(element: $0) })
+        }
+        return best.map { ($0.element, "geometric") } ?? (element, "container")
     }
 
     /// pid that owns an element handle.
@@ -737,7 +761,8 @@ actor AccessibilityController {
         value: String?,
         exact: Bool = false,
         maxDepth: Int = AXDepth.default,
-        limit: Int = 100
+        limit: Int = 100,
+        groundingTarget: String? = nil
     ) -> [Match] {
         // Inline recurse (same structure as treeWalk) instead of going
         // through the private `walk(...)` helper. An earlier implementation
@@ -757,9 +782,10 @@ actor AccessibilityController {
         let rootPath = axRoot?.path ?? []
         var visited = Set<AXKey>()
         var matches: [Match] = []
+        let displays = groundingTarget == nil ? [] : WindowIdentity.displayBounds().map { $0.rect }
 
         func recurse(element: AXUIElement, depth: Int, parentPath: [AXPathComponent], ordinal: Int) {
-            guard matches.count < limit, depth <= maxDepth else { return }
+            guard matches.count < limit, depth <= maxDepth, visited.count < 5000 else { return }
             guard Date() < deadline else { return }
             // AXKey wraps CFHash + CFEqual — see its definition.
             guard visited.insert(AXKey(element: element)).inserted else { return }
@@ -771,8 +797,18 @@ actor AccessibilityController {
                     parentPath, role: attrs.role, index: ordinal, identifier: attrs.identifier,
                     title: attrs.title, subrole: attrs.subrole
                 )
-            if Self.matchesFilter(attrs: attrs, role: role, title: title, value: value, exact: exact) {
-                matches.append(Match(element: element, info: Self.elementInfo(from: attrs, depth: depth), path: path))
+            // v0.10 A5: match all label fields in the same bounded walk; title-only
+            // prefiltering discarded static text before grounding could score it.
+            let groundingMatch = groundingTarget.flatMap { target in
+                guard let position = attrs.position, let size = attrs.size else { return GroundingPolicy.Match?.none }
+                return GroundingPolicy.match(.init(role: attrs.role, title: attrs.rawTitle,
+                    value: attrs.value, description: attrs.description,
+                    bounds: CGRect(origin: position, size: size)), target: target, displays: displays)
+            }
+            if groundingTarget != nil ? groundingMatch != nil
+                : Self.matchesFilter(attrs: attrs, role: role, title: title, value: value, exact: exact) {
+                matches.append(Match(element: element, info: Self.elementInfo(from: attrs, depth: depth),
+                                     path: path, groundingMatch: groundingMatch))
                 if matches.count >= limit { return }
             }
 

@@ -47,7 +47,14 @@ actor ScreenController {
     struct OCRRequestOptions: Sendable, Equatable {
         var languages: [String] = []
         var fast: Bool = false
-        var languageCorrection: Bool = true
+        var languageCorrection: Bool
+
+        init(languages: [String] = [], fast: Bool = false, languageCorrection: Bool? = nil) {
+            self.languages = languages
+            self.fast = fast
+            // v0.10 B5: dictionary correction defeats the fast recognition path.
+            self.languageCorrection = languageCorrection ?? !fast
+        }
     }
 
     /// A single OCR text block. `x`/`y`/`width`/`height` are in IMAGE
@@ -513,6 +520,32 @@ actor ScreenController {
             pointBounds: selected.bounds
         )
         return (capture, try ocr(image: image, options: options))
+    }
+
+    /// v0.10 B5: reuse one capture for both passes so fallback cannot
+    /// drift to a different frame and does not pay screen capture twice.
+    func ocrGroundingWindow(ownerPID: pid_t, selected: SelectedWindowInfo? = nil,
+                            target: String) async throws -> (CaptureResult, OCRResult) {
+        let image: CGImage
+        let window: SelectedWindowInfo
+        if let selected {
+            window = selected
+            image = try await captureSelected(selected)
+        } else {
+            (image, window) = try await windowImage(ownerPID: ownerPID, titleContains: nil)
+        }
+        let capture = CaptureResult(path: "", width: image.width, height: image.height,
+            sourceWidth: image.width, sourceHeight: image.height, format: "png",
+            pointWidth: Double(window.bounds.width), pointBounds: window.bounds)
+        return (capture, try Self.groundingOCR(capture: capture, target: target,
+            displays: WindowIdentity.displayBounds().map { $0.rect }) { options in
+                try ocr(image: image, options: options)
+            })
+    }
+
+    static func groundingOCR(capture: CaptureResult, target: String, displays: [CGRect],
+                              recognize: (OCRRequestOptions) throws -> OCRResult) throws -> OCRResult {
+        try recognize(OCRRequestOptions())
     }
 
     /// v0.9 (C-2/C-3): capture ONE window named by its `CGWindowID`,

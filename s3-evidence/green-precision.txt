@@ -1,0 +1,228 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ground': failed storing manifest for 'wt10-ground' in cache: attempt to write a readonly database
+Building for debugging...
+[0/5] Write sources
+[1/5] Write swift-version--58304C5D6DBC2206.txt
+[3/7] Compiling MacControlMCP AccessibilityController.swift
+[4/7] Emitting module MacControlMCP
+[5/30] Compiling MacControlMCP Tools+V2Phase9.swift
+[6/30] Compiling MacControlMCP main.swift
+[7/30] Compiling MacControlMCP Tools+Permissions.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/Tools+Permissions.swift:227:19: warning: consider using asynchronous alternative function
+225 |             let store = CNContactStore()
+226 |             let keeper = ObjectKeeper(store)
+227 |             store.requestAccess(for: .contacts) { _, _ in keeper.release() }
+    |                   `- warning: consider using asynchronous alternative function
+228 |             return .triggered
+229 |             #else
+
+Contacts.CNContactStore.requestAccess:2:11: note: 'requestAccess(for:)' declared here
+1 | class CNContactStore {
+2 | open func requestAccess(for entityType: CNEntityType) async throws -> Bool}
+  |           `- note: 'requestAccess(for:)' declared here
+3 | 
+[8/30] Compiling MacControlMCP Tools+TextEditing.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/Tools+Permissions.swift:227:19: warning: consider using asynchronous alternative function
+225 |             let store = CNContactStore()
+226 |             let keeper = ObjectKeeper(store)
+227 |             store.requestAccess(for: .contacts) { _, _ in keeper.release() }
+    |                   `- warning: consider using asynchronous alternative function
+228 |             return .triggered
+229 |             #else
+
+Contacts.CNContactStore.requestAccess:2:11: note: 'requestAccess(for:)' declared here
+1 | class CNContactStore {
+2 | open func requestAccess(for entityType: CNEntityType) async throws -> Bool}
+  |           `- note: 'requestAccess(for:)' declared here
+3 | 
+[9/30] Compiling MacControlMCP Tools+V0_9AXCore.swift
+[10/30] Compiling MacControlMCP Tools+V2.swift
+[11/30] Compiling MacControlMCP Tools+V2Phase10.swift
+[12/30] Compiling MacControlMCP Tools+V2Phase11.swift
+[13/30] Compiling MacControlMCP Tools+V2Phase6.swift
+[14/30] Compiling MacControlMCP Tools+WindowTarget.swift
+[15/30] Compiling MacControlMCP Tools+Annotate.swift
+[16/30] Compiling MacControlMCP Tools+Batch.swift
+[17/30] Compiling MacControlMCP Tools+V2Phase7.swift
+[18/30] Compiling MacControlMCP Tools.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/Tools.swift:848:27: warning: no 'async' operations occur within 'await' expression
+ 846 |             }
+ 847 | 
+ 848 |             let pressed = await accessibility.pressKey(keyCode: keyCode, modifiers: modifiers)
+     |                           `- warning: no 'async' operations occur within 'await' expression
+ 849 |             if pressed {
+ 850 |                 return successResult(
+[19/30] Compiling MacControlMCP Tools+V2Phase4.swift
+[20/30] Compiling MacControlMCP Tools+V2Phase5.swift
+[21/30] Compiling MacControlMCP Tools+V2Phase8.swift
+[22/30] Compiling MacControlMCP Tools+V2Phase2.swift
+[23/30] Compiling MacControlMCP Tools+V2Phase3.swift
+[24/30] Compiling MacControlMCP AppleAppsController.swift
+[25/30] Compiling MacControlMCP GroundingController.swift
+[26/30] Compiling MacControlMCP HardwareController.swift
+[27/30] Compiling MacControlMCP SystemInfoController.swift
+[27/32] Write Objects.LinkFileList
+[28/32] Linking mac-control-mcp
+[29/32] Applying mac-control-mcp
+[31/89] Compiling MacControlMCPTests Phase2ToolsTests.swift
+[32/89] Compiling MacControlMCPTests Phase3ToolsTests.swift
+[33/89] Compiling MacControlMCPTests Phase4ToolsTests.swift
+[34/89] Compiling MacControlMCPTests Phase5ToolsTests.swift
+[35/93] Compiling MacControlMCPTests BlockingWorkPoolTests.swift
+[36/93] Compiling MacControlMCPTests BrowserDOMFailureTests.swift
+[37/93] Compiling MacControlMCPTests BrowserErrorClassificationTests.swift
+[38/93] Compiling MacControlMCPTests BugFixesV0_2_6Tests.swift
+[39/93] Compiling MacControlMCPTests AXAttributeBatchTests.swift
+[40/93] Compiling MacControlMCPTests AXDepthTests.swift
+[41/93] Compiling MacControlMCPTests AXHandleSafetyTests.swift
+[42/93] Compiling MacControlMCPTests AXPathTests.swift
+[43/93] Compiling MacControlMCPTests AnnotatedElementIdentityTests.swift
+[44/93] Compiling MacControlMCPTests AppleScriptStringTests.swift
+[45/93] Compiling MacControlMCPTests AuditLogFixesTests.swift
+[46/93] Compiling MacControlMCPTests BatchToolTests.swift
+[47/93] Compiling MacControlMCPTests Phase6ToolsTests.swift
+[48/93] Compiling MacControlMCPTests Phase7HardeningTests.swift
+[49/93] Compiling MacControlMCPTests Phase7ToolsTests.swift
+[50/93] Compiling MacControlMCPTests Phase8ToolsTests.swift
+[51/93] Compiling MacControlMCPTests GroundingWindowScopeTests.swift
+[52/93] Compiling MacControlMCPTests HardeningTests.swift
+[53/93] Compiling MacControlMCPTests HonestFailuresTests.swift
+[54/93] Compiling MacControlMCPTests LocationWifiScanTests.swift
+[55/93] Compiling MacControlMCPTests StdioIntegrationTests.swift
+[56/93] Compiling MacControlMCPTests SubprocessTests.swift
+[57/93] Compiling MacControlMCPTests TestSupport.swift
+[58/93] Compiling MacControlMCPTests TextEditingBackendTests.swift
+[59/93] Compiling MacControlMCPTests CrashRegressionTests.swift
+[60/93] Compiling MacControlMCPTests ElementAtPointTests.swift
+[61/93] Compiling MacControlMCPTests ElementCacheTests.swift
+[62/93] Compiling MacControlMCPTests EntitlementsConsistencyTests.swift
+[63/93] Compiling MacControlMCPTests NonFiniteNumberRegressionTests.swift
+[64/93] Compiling MacControlMCPTests PerfHelpersTests.swift
+[65/93] Compiling MacControlMCPTests PermissionUXTests.swift
+[66/93] Compiling MacControlMCPTests Phase10ToolsTests.swift
+[67/93] Compiling MacControlMCPTests Phase9ToolsTests.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Tests/MacControlMCPTests/RealAppMatrixTests.swift:361:32: warning: immutable value 'treeCount' was never used; consider replacing with '_' or removing it [#no-usage]
+359 |             arguments: #"{"pid":\#(pid),"max_depth":10}"#, timeout: 30
+360 |         ),
+361 |               case .number(let treeCount) = tree["count"] ?? .null else {
+    |                                `- warning: immutable value 'treeCount' was never used; consider replacing with '_' or removing it [#no-usage]
+362 |             Self.expect("find_elements coverage", in: "Finder", .fail("get_ui_tree failed"))
+363 |             return
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Tests/MacControlMCPTests/RealAppMatrixTests.swift:372:32: warning: immutable value 'foundCount' was never used; consider replacing with '_' or removing it [#no-usage]
+370 |             arguments: #"{"pid":\#(pid),"role":"AXMenuItem","max_depth":10,"limit":500}"#, timeout: 30
+371 |         ),
+372 |               case .number(let foundCount) = findResp["count"] ?? .null else {
+    |                                `- warning: immutable value 'foundCount' was never used; consider replacing with '_' or removing it [#no-usage]
+373 |             Self.expect("find_elements coverage", in: "Finder", .fail("find_elements failed"))
+374 |             return
+[68/93] Compiling MacControlMCPTests RealAppMatrixTests.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Tests/MacControlMCPTests/RealAppMatrixTests.swift:361:32: warning: immutable value 'treeCount' was never used; consider replacing with '_' or removing it [#no-usage]
+359 |             arguments: #"{"pid":\#(pid),"max_depth":10}"#, timeout: 30
+360 |         ),
+361 |               case .number(let treeCount) = tree["count"] ?? .null else {
+    |                                `- warning: immutable value 'treeCount' was never used; consider replacing with '_' or removing it [#no-usage]
+362 |             Self.expect("find_elements coverage", in: "Finder", .fail("get_ui_tree failed"))
+363 |             return
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Tests/MacControlMCPTests/RealAppMatrixTests.swift:372:32: warning: immutable value 'foundCount' was never used; consider replacing with '_' or removing it [#no-usage]
+370 |             arguments: #"{"pid":\#(pid),"role":"AXMenuItem","max_depth":10,"limit":500}"#, timeout: 30
+371 |         ),
+372 |               case .number(let foundCount) = findResp["count"] ?? .null else {
+    |                                `- warning: immutable value 'foundCount' was never used; consider replacing with '_' or removing it [#no-usage]
+373 |             Self.expect("find_elements coverage", in: "Finder", .fail("find_elements failed"))
+374 |             return
+[69/93] Compiling MacControlMCPTests ScreenAnnotatorTests.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Tests/MacControlMCPTests/RealAppMatrixTests.swift:361:32: warning: immutable value 'treeCount' was never used; consider replacing with '_' or removing it [#no-usage]
+359 |             arguments: #"{"pid":\#(pid),"max_depth":10}"#, timeout: 30
+360 |         ),
+361 |               case .number(let treeCount) = tree["count"] ?? .null else {
+    |                                `- warning: immutable value 'treeCount' was never used; consider replacing with '_' or removing it [#no-usage]
+362 |             Self.expect("find_elements coverage", in: "Finder", .fail("get_ui_tree failed"))
+363 |             return
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Tests/MacControlMCPTests/RealAppMatrixTests.swift:372:32: warning: immutable value 'foundCount' was never used; consider replacing with '_' or removing it [#no-usage]
+370 |             arguments: #"{"pid":\#(pid),"role":"AXMenuItem","max_depth":10,"limit":500}"#, timeout: 30
+371 |         ),
+372 |               case .number(let foundCount) = findResp["count"] ?? .null else {
+    |                                `- warning: immutable value 'foundCount' was never used; consider replacing with '_' or removing it [#no-usage]
+373 |             Self.expect("find_elements coverage", in: "Finder", .fail("find_elements failed"))
+374 |             return
+[70/93] Compiling MacControlMCPTests ServerLifecycleTests.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Tests/MacControlMCPTests/RealAppMatrixTests.swift:361:32: warning: immutable value 'treeCount' was never used; consider replacing with '_' or removing it [#no-usage]
+359 |             arguments: #"{"pid":\#(pid),"max_depth":10}"#, timeout: 30
+360 |         ),
+361 |               case .number(let treeCount) = tree["count"] ?? .null else {
+    |                                `- warning: immutable value 'treeCount' was never used; consider replacing with '_' or removing it [#no-usage]
+362 |             Self.expect("find_elements coverage", in: "Finder", .fail("get_ui_tree failed"))
+363 |             return
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Tests/MacControlMCPTests/RealAppMatrixTests.swift:372:32: warning: immutable value 'foundCount' was never used; consider replacing with '_' or removing it [#no-usage]
+370 |             arguments: #"{"pid":\#(pid),"role":"AXMenuItem","max_depth":10,"limit":500}"#, timeout: 30
+371 |         ),
+372 |               case .number(let foundCount) = findResp["count"] ?? .null else {
+    |                                `- warning: immutable value 'foundCount' was never used; consider replacing with '_' or removing it [#no-usage]
+373 |             Self.expect("find_elements coverage", in: "Finder", .fail("find_elements failed"))
+374 |             return
+[71/93] Emitting module MacControlMCPTests
+[72/93] Compiling MacControlMCPTests AXPayloadBudgetTests.swift
+[73/93] Compiling MacControlMCPTests AXScopePolicyTests.swift
+[74/93] Compiling MacControlMCPTests AXSnapshotIdentityTests.swift
+[75/93] Compiling MacControlMCPTests AXTreeAugmentedScopeTests.swift
+[76/93] Compiling MacControlMCPTests FocusGuardTests.swift
+[77/93] Compiling MacControlMCPTests GeometricHitTestTests.swift
+[78/93] Compiling MacControlMCPTests GroundingCoordinateTests.swift
+[79/93] Compiling MacControlMCPTests GroundingPrecisionTests.swift
+[80/93] Compiling MacControlMCPTests TextEditingTests.swift
+[81/93] Compiling MacControlMCPTests ToolDocsDriftTests.swift
+[82/93] Compiling MacControlMCPTests ToolRegistryV2Tests.swift
+[83/93] Compiling MacControlMCPTests WindowIdentityTests.swift
+[84/93] Compiling MacControlMCPTests CaptureAnnotatedToolTests.swift
+[85/93] Compiling MacControlMCPTests ClipboardRichTests.swift
+[86/93] Compiling MacControlMCPTests CodexR2RegressionTests.swift
+[87/93] Compiling MacControlMCPTests ControlZooMatrixTests.swift
+[88/93] Compiling MacControlMCPTests WindowScopedTreeTests.swift
+[89/93] Compiling MacControlMCPTests WindowSelectionTests.swift
+[90/93] Compiling MacControlMCPTests WindowTargetToolsTests.swift
+[91/93] Compiling MacControlMCPTests WindowTargetingTests.swift
+[91/93] Write Objects.LinkFileList
+[92/93] Linking mac-control-mcpPackageTests
+Build complete! (6.46s)
+Test Suite 'Selected tests' started at 2026-09-15 17:18:23.436.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 17:18:23.442.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 17:18:23.442.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 17:18:23.442.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.006) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Browser DOM failures" started.
+◇ Test missingSafariResultHasCodeAndSetting() started.
+✔ Test missingSafariResultHasCodeAndSetting() passed after 0.001 seconds.
+◇ Test nullDOMAndMalformedResultAreExplicit() started.
+✔ Test nullDOMAndMalformedResultAreExplicit() passed after 0.001 seconds.
+◇ Test browserPolicyAndMissingTabs() started.
+✔ Test browserPolicyAndMissingTabs() passed after 0.001 seconds.
+✔ Suite "Browser DOM failures" passed after 0.001 seconds.
+◇ Suite "Geometric hit test" started.
+◇ Test smallestInteractiveDescendantWins() started.
+✔ Test smallestInteractiveDescendantWins() passed after 0.001 seconds.
+◇ Test boundsDepthCyclesAndBudget() started.
+✔ Test boundsDepthCyclesAndBudget() passed after 0.001 seconds.
+✔ Suite "Geometric hit test" passed after 0.001 seconds.
+◇ Suite "Grounding precision" started.
+◇ Test containersAndHiddenLinksCannotBeTargets() started.
+✔ Test containersAndHiddenLinksCannotBeTargets() passed after 0.001 seconds.
+◇ Test valueAndDescriptionBeatPartialImageTitle() started.
+✔ Test valueAndDescriptionBeatPartialImageTitle() passed after 0.001 seconds.
+◇ Test unicodeAndEllipsisAreEquivalent() started.
+✔ Test unicodeAndEllipsisAreEquivalent() passed after 0.001 seconds.
+◇ Test exactTiesPreferSmallestArea() started.
+✔ Test exactTiesPreferSmallestArea() passed after 0.001 seconds.
+◇ Test distantOCRIsWeakerAndFastFallbackPreservesRecall() started.
+✔ Test distantOCRIsWeakerAndFastFallbackPreservesRecall() passed after 0.001 seconds.
+✔ Suite "Grounding precision" passed after 0.001 seconds.
+✔ Test run with 10 tests in 3 suites passed after 0.002 seconds.

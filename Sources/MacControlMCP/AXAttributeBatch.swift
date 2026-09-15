@@ -62,6 +62,9 @@ enum AXAttributeBatch {
         /// AXChildren followed by AXSheets. Empty when children were not
         /// requested.
         let children: [AXUIElement]
+        // v0.10 A5: preserve provenance instead of labelling description fallbacks as titles.
+        var rawTitle: String? = nil
+        var description: String? = nil
     }
 
     /// Fetch `nodeAttributes` (when `includeChildren`) or
@@ -105,7 +108,9 @@ enum AXAttributeBatch {
             value: string(slot(4)),
             position: point(slot(5)),
             size: size(slot(6)),
-            children: children
+            children: children,
+            rawTitle: nonEmpty(1),
+            description: nonEmpty(2)
         )
     }
 
