@@ -453,6 +453,7 @@ extension ToolRegistry {
         switch await elementCache.resolveLive(id) {
         case .resolved(let resolved): element = resolved
         case .unknown: return unknownElementResult(id)
+        case .evicted(let hint): return evictedElementResult(id, hint: hint)
         case .stale(let reason): return staleElementResult(id, reason: reason)
         }
 
@@ -508,6 +509,7 @@ extension ToolRegistry {
         switch await elementCache.resolveLive(id) {
         case .resolved(let resolved): element = resolved
         case .unknown: return unknownElementResult(id)
+        case .evicted(let hint): return evictedElementResult(id, hint: hint)
         case .stale(let reason): return staleElementResult(id, reason: reason)
         }
 
@@ -532,6 +534,7 @@ extension ToolRegistry {
         switch await elementCache.resolveLive(id) {
         case .resolved(let resolved): element = resolved
         case .unknown: return unknownElementResult(id)
+        case .evicted(let hint): return evictedElementResult(id, hint: hint)
         case .stale(let reason): return staleElementResult(id, reason: reason)
         }
 
@@ -860,6 +863,15 @@ extension ToolRegistry {
     /// its process was replaced, or its AX path no longer matches the
     /// fingerprint recorded at capture time. We refuse rather than act
     /// on a plausible-looking neighbour.
+    /// v0.10 A2: the id was ours but its entry was evicted (cache pressure),
+    /// which is neither "unknown" nor "stale" — say so, with the retention hint.
+    func evictedElementResult(_ id: String, hint: String) -> ToolCallResult {
+        errorResult("Element id was evicted from the cache.", [
+            "ok": .bool(false), "element_id": .string(id),
+            "error_code": .string("evicted_element_id"), "hint": .string(hint)
+        ])
+    }
+
     func staleElementResult(_ id: String, reason: String) -> ToolCallResult {
         errorResult(
             "Stale element_id: \(reason).",

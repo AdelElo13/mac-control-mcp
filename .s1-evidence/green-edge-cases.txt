@@ -1,0 +1,150 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ids': failed storing manifest for 'wt10-ids' in cache: attempt to write a readonly database
+Building for debugging...
+[0/5] Write sources
+[1/5] Write swift-version--58304C5D6DBC2206.txt
+[3/9] Compiling MacControlMCP AXPath.swift
+[4/9] Emitting module MacControlMCP
+[5/9] Compiling MacControlMCP ElementCache.swift
+[6/9] Compiling MacControlMCP Tools+V2Phase6.swift
+[7/12] Compiling MacControlMCP Tools+V2.swift
+[8/12] Compiling MacControlMCP Tools.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/Sources/MacControlMCP/Tools.swift:848:27: warning: no 'async' operations occur within 'await' expression
+ 846 |             }
+ 847 | 
+ 848 |             let pressed = await accessibility.pressKey(keyCode: keyCode, modifiers: modifiers)
+     |                           `- warning: no 'async' operations occur within 'await' expression
+ 849 |             if pressed {
+ 850 |                 return successResult(
+[9/12] Compiling MacControlMCP Tools+Annotate.swift
+[9/14] Write Objects.LinkFileList
+[10/14] Linking mac-control-mcp
+[11/14] Applying mac-control-mcp
+[13/15] Emitting module MacControlMCPTests
+[13/15] Write Objects.LinkFileList
+[14/15] Linking mac-control-mcpPackageTests
+Build complete! (4.55s)
+Test Suite 'Selected tests' started at 2026-09-15 17:18:25.601.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 17:18:25.606.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 17:18:25.606.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 17:18:25.606.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.005) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "AX handle safety (C-5 review)" started.
+◇ Test "identifier wins when the recorded path has one" started.
+✔ Test "identifier wins when the recorded path has one" passed after 0.001 seconds.
+◇ Test "without an identifier, title AND subrole must both match" started.
+✔ Test "without an identifier, title AND subrole must both match" passed after 0.001 seconds.
+◇ Test "a titleless, identifierless control still matches its exact twin shape" started.
+✔ Test "a titleless, identifierless control still matches its exact twin shape" passed after 0.001 seconds.
+◇ Test "inserting a sibling does NOT hand the ordinal's new occupant back" started.
+✔ Test "inserting a sibling does NOT hand the ordinal's new occupant back" passed after 0.001 seconds.
+◇ Test "ordinal alone is never enough — a same-role neighbour is refused" started.
+✔ Test "ordinal alone is never enough — a same-role neighbour is refused" passed after 0.001 seconds.
+◇ Test "an ambiguous fingerprint is refused rather than guessed" started.
+✔ Test "an ambiguous fingerprint is refused rather than guessed" passed after 0.001 seconds.
+◇ Test "fingerprint repair succeeds when the identifier is present and the ordinal drifted" started.
+✔ Test "fingerprint repair succeeds when the identifier is present and the ordinal drifted" passed after 0.001 seconds.
+◇ Test "fingerprint fields do not change the element id" started.
+✔ Test "fingerprint fields do not change the element id" passed after 0.001 seconds.
+◇ Test "process identity distinguishes a recycled pid" started.
+✔ Test "process identity distinguishes a recycled pid" passed after 0.001 seconds.
+◇ Test "a live process reports a stable, non-nil identity" started.
+✔ Test "a live process reports a stable, non-nil identity" passed after 0.001 seconds.
+◇ Test "resolveLive refuses an entry whose process identity changed" started.
+✔ Test "resolveLive refuses an entry whose process identity changed" passed after 0.001 seconds.
+◇ Test "resolveLive still returns a live element for an intact entry" started.
+✔ Test "resolveLive still returns a live element for an intact entry" passed after 0.001 seconds.
+◇ Test "an unknown id is 'unknown', not 'stale'" started.
+✔ Test "an unknown id is 'unknown', not 'stale'" passed after 0.001 seconds.
+◇ Test "tools report stale_element and unknown_element_id distinctly" started.
+✔ Test "tools report stale_element and unknown_element_id distinctly" passed after 0.002 seconds.
+◇ Test "a max_bytes-truncated tree has no child index past the end" started.
+✔ Test "a max_bytes-truncated tree has no child index past the end" passed after 0.001 seconds.
+✔ Suite "AX handle safety (C-5 review)" passed after 0.004 seconds.
+◇ Suite "AX path identity (C-5)" started.
+◇ Test "identity string is canonical, length-prefixed, and includes pid, role, ordinal, identifier" started.
+✔ Test "identity string is canonical, length-prefixed, and includes pid, role, ordinal, identifier" passed after 0.001 seconds.
+◇ Test "same (pid, path) always yields the same id" started.
+✔ Test "same (pid, path) always yields the same id" passed after 0.001 seconds.
+◇ Test "a crafted AXIdentifier cannot forge another path's identity" started.
+✔ Test "a crafted AXIdentifier cannot forge another path's identity" passed after 0.001 seconds.
+◇ Test "adjacent numeric fields cannot be run together" started.
+✔ Test "adjacent numeric fields cannot be run together" passed after 0.001 seconds.
+◇ Test "absent identifier is distinguishable from a literal dash" started.
+✔ Test "absent identifier is distinguishable from a literal dash" passed after 0.001 seconds.
+◇ Test "different elements yield different ids" started.
+✔ Test "different elements yield different ids" passed after 0.001 seconds.
+◇ Test "hash is process-independent (not Swift's seeded Hasher)" started.
+✔ Test "hash is process-independent (not Swift's seeded Hasher)" passed after 0.001 seconds.
+◇ Test "empty identifiers are normalised away" started.
+✔ Test "empty identifiers are normalised away" passed after 0.001 seconds.
+◇ Test "appending builds the path a walk would record" started.
+✔ Test "appending builds the path a walk would record" passed after 0.001 seconds.
+◇ Test "the same query twice returns identical element ids, and the cache survives a clear" started.
+✔ Test "the same query twice returns identical element ids, and the cache survives a clear" passed after 0.001 seconds.
+◇ Test "upward path accepts the application root itself" started.
+✔ Test "upward path accepts the application root itself" passed after 0.002 seconds.
+◇ Test "search metadata counts visited nodes instead of matches" started.
+◇ Test case passing 1 argument tool → "find_elements" to "search metadata counts visited nodes instead of matches" started.
+◇ Test case passing 1 argument tool → "query_elements" to "search metadata counts visited nodes instead of matches" started.
+✔ Test "search metadata counts visited nodes instead of matches" with 2 test cases passed after 0.001 seconds.
+✔ Suite "AX path identity (C-5)" passed after 0.005 seconds.
+◇ Suite "ElementCache" started.
+◇ Test "store returns distinct IDs" started.
+✔ Test "store returns distinct IDs" passed after 0.001 seconds.
+◇ Test "resolve returns the stored element" started.
+✔ Test "resolve returns the stored element" passed after 0.001 seconds.
+◇ Test "resolve returns nil for unknown IDs" started.
+✔ Test "resolve returns nil for unknown IDs" passed after 0.001 seconds.
+◇ Test "ttl expiry drops entries on resolve" started.
+✔ Test "ttl expiry drops entries on resolve" passed after 0.123 seconds.
+◇ Test "maxEntries triggers oldest-first eviction" started.
+✔ Test "maxEntries triggers oldest-first eviction" passed after 0.001 seconds.
+◇ Test "storeMany returns one distinct, resolvable ID per element in order" started.
+✔ Test "storeMany returns one distinct, resolvable ID per element in order" passed after 0.001 seconds.
+◇ Test "storeMany evicts oldest entries first and keeps the whole batch" started.
+✔ Test "storeMany evicts oldest entries first and keeps the whole batch" passed after 0.001 seconds.
+◇ Test "storeMany larger than capacity never exceeds maxEntries and returns no dangling IDs" started.
+✔ Test "storeMany larger than capacity never exceeds maxEntries and returns no dangling IDs" passed after 0.001 seconds.
+◇ Test "a colliding id never silently retargets the existing entry" started.
+[mac-control-mcp] element id collision on el_collision: pid 7 path axpath2:7:1:8:AXWindow:0:- vs pid 7 path axpath2:7:1:8:AXButton:1:-. Both handles quarantined; no element was retargeted.
+✔ Test "a colliding id never silently retargets the existing entry" passed after 0.001 seconds.
+◇ Test "re-storing the same (pid, path) still refreshes in place" started.
+✔ Test "re-storing the same (pid, path) still refreshes in place" passed after 0.001 seconds.
+◇ Test "a colliding id across pids is a collision too" started.
+[mac-control-mcp] element id collision on el_collision: pid 7 path axpath2:7:1:8:AXWindow:0:- vs pid 8 path axpath2:8:1:8:AXWindow:0:-. Both handles quarantined; no element was retargeted.
+✔ Test "a colliding id across pids is a collision too" passed after 0.001 seconds.
+◇ Test "real paths that naively concatenate the same get distinct cache ids" started.
+✔ Test "real paths that naively concatenate the same get distinct cache ids" passed after 0.001 seconds.
+◇ Test "storeMany drops expired entries before inserting" started.
+✔ Test "storeMany drops expired entries before inserting" passed after 0.122 seconds.
+◇ Test "live handle with a different fingerprint is stale" started.
+✔ Test "live handle with a different fingerprint is stale" passed after 0.001 seconds.
+◇ Test "capacity eviction prefers older entries from the incoming pid" started.
+✔ Test "capacity eviction prefers older entries from the incoming pid" passed after 0.001 seconds.
+◇ Test "refreshing stable paths at capacity does not evict other ids" started.
+✔ Test "refreshing stable paths at capacity does not evict other ids" passed after 0.001 seconds.
+◇ Test "six 2000-node trees fit in the default cache" started.
+✔ Test "six 2000-node trees fit in the default cache" passed after 0.106 seconds.
+◇ Test "capacity removes the oldest tree even when its ids were recently read" started.
+✔ Test "capacity removes the oldest tree even when its ids were recently read" passed after 0.003 seconds.
+◇ Test "colliding paths in one batch cannot exceed capacity" started.
+[mac-control-mcp] element id collision on el_collision: pid 1 path axpath2:1:1:8:AXButton:0:- vs pid 1 path axpath2:1:1:8:AXButton:1:-. Both handles quarantined; no element was retargeted.
+✔ Test "colliding paths in one batch cannot exceed capacity" passed after 0.001 seconds.
+◇ Test "element and text tools distinguish eviction with configured retention hints" started.
+◇ Test case passing 1 argument tool → "get_element_attributes" to "element and text tools distinguish eviction with configured retention hints" started.
+◇ Test case passing 1 argument tool → "perform_element_action" to "element and text tools distinguish eviction with configured retention hints" started.
+◇ Test case passing 1 argument tool → "set_element_attribute" to "element and text tools distinguish eviction with configured retention hints" started.
+◇ Test case passing 1 argument tool → "text_get_value" to "element and text tools distinguish eviction with configured retention hints" started.
+◇ Test case passing 1 argument tool → "wait_for_ax_notification" to "element and text tools distinguish eviction with configured retention hints" started.
+✔ Test "element and text tools distinguish eviction with configured retention hints" with 5 test cases passed after 0.002 seconds.
+◇ Test "failed fingerprint batch cannot validate an AXUnknown leaf" started.
+✔ Test "failed fingerprint batch cannot validate an AXUnknown leaf" passed after 0.001 seconds.
+✔ Suite "ElementCache" passed after 0.363 seconds.
+✔ Test run with 48 tests in 3 suites passed after 0.373 seconds.

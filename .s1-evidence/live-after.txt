@@ -1,0 +1,78 @@
+initialize: 265 ms, serverInfo={'version': '0.9.0', 'name': 'mac-control-mcp'}
+--- permissions_status {} -> 4 ms
+{
+ "launched_by": [
+  "python3.12",
+  "zsh",
+  "codex",
+  "node"
+ ],
+ "screen_recording": "not_granted",
+ "responsible_app": {
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "name": "claude",
+  "bundle_id": "com.anthropic.claude-code",
+  "pid": 71183
+ },
+ "ok": true,
+ "hint": "For each item in 'missing', call request_permissions (categories=[...]) to trigger the prompt, or open_permission_pane pane=<item> and enable 'claude'. Grants belong to the responsible app 'claude', not to mac-control-mcp alone — launching the server from another client changes which app needs them.",
+ "missing": [
+  "accessibility",
+  "screen_recording",
+  "calendar",
+  "reminders",
+  "contacts",
+  "location",
+  "microphone"
+ ],
+ "prompt_blocked_by_missing_entitlement": [],
+ "location": "info_plist_missing",
+ "contacts": "info_plist_missing",
+ "server": {
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/.build/debug",
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/.build/arm64-apple-macosx/debug/mac-control-mcp",
+  "pid": 94309
+ },
+ "calendar": "info_plist_missing",
+ "microphone": "info_plist_missing",
+ "accessibility": "not_granted",
+ "responsible_is_self": false,
+ "reminders": "info_plist_missing"
+}
+--- list_apps {} -> 1 ms
+{
+ "ok": true,
+ "apps": [],
+ "count": 0
+}
+--- list_windows {} -> 3 ms
+{
+ "ok": true,
+ "count": 0,
+ "windows": []
+}
+--- element_at_point {"x": 100, "y": 100} -> 0 ms
+{
+ "launched_by": [
+  "python3.12",
+  "zsh",
+  "codex",
+  "node"
+ ],
+ "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry.",
+ "error_code": "permission_missing",
+ "ok": false,
+ "responsible_app": {
+  "path": "/Users/a/Library/Application Support/Claude/claude-code/2.1.270/claude.app",
+  "name": "claude",
+  "bundle_id": "com.anthropic.claude-code",
+  "pid": 71183
+ },
+ "responsible_is_self": false,
+ "server": {
+  "executable": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/.build/arm64-apple-macosx/debug/mac-control-mcp",
+  "bundle_path": "/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/.build/debug",
+  "pid": 94309
+ },
+ "pane": "accessibility"
+}

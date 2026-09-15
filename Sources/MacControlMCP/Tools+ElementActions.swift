@@ -35,6 +35,7 @@ extension ToolRegistry {
         switch await elementCache.resolveLive(id) {
         case .unknown: return .failed(unknownElementResult(id))
         case .stale(let reason): return .failed(staleElementResult(id, reason: reason))
+        case .evicted(let hint): return .failed(evictedElementResult(id, hint: hint))
         case .resolved(let element):
             // v0.10 C1: until the shared cache's A1 repair lands, never act
             // on an alive positional AX handle whose fingerprint changed.
@@ -146,6 +147,9 @@ extension ToolRegistry {
             let changed = ["value", "focused"].first { before[$0] != .null && after[$0] != .null && before[$0] != after[$0] }
             payload["verified"] = changed == nil ? .null : .bool(true)
             payload["verification"] = .string(changed.map { "\($0)_changed" } ?? "element_still_resolves_effect_unobserved")
+        case .evicted(let hint):
+            payload["verification"] = .string("element_evicted_from_cache")
+            payload["hint"] = .string(hint)
         case .stale(let reason):
             // v0.10 C1: an identity mismatch is not evidence of disappearance.
             let gone = Self.actionDefinitelyGone(target)

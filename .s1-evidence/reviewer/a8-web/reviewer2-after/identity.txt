@@ -1,0 +1,3923 @@
+initialize: 21 ms, serverInfo={'name': 'mac-control-mcp', 'version': '0.9.0'}
+--- find_elements {"pid": 41308, "role": "AXLink", "exact": true, "max_depth": 32, "limit": 500, "fields": ["id", "role", "title", "position", "size"], "max_bytes": 100000} -> 169 ms
+{
+ "ok": true,
+ "pid": 41308,
+ "max_depth_used": 32,
+ "nodes_visited": 1650,
+ "elements": [
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 20,
+    "width": 20
+   },
+   "id": "el_0b0daa8dd4dc6fd9e74b4cb8c1243055",
+   "title": "To get missing image descriptions, open the context menu.",
+   "position": {
+    "y": 184,
+    "x": 684
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 16,
+    "width": 98
+   },
+   "id": "el_e0e588fb7deb8beb2e4212b52bd9642d",
+   "title": "Hacker News",
+   "position": {
+    "y": 186,
+    "x": 709
+   }
+  },
+  {
+   "size": {
+    "height": 16,
+    "width": 28
+   },
+   "role": "AXLink",
+   "id": "el_638aadce8599b339ccdd920f09f4da3c",
+   "title": "new",
+   "position": {
+    "y": 186,
+    "x": 812
+   }
+  },
+  {
+   "size": {
+    "height": 16,
+    "width": 51
+   },
+   "role": "AXLink",
+   "id": "el_22b9efef54cd52a5bd64bdc77f7cb966",
+   "title": "threads",
+   "position": {
+    "y": 186,
+    "x": 855
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 16,
+    "width": 29
+   },
+   "id": "el_2c3a0c4bb058c304eb92f2b0614e29be",
+   "title": "past",
+   "position": {
+    "y": 186,
+    "x": 921
+   }
+  },
+  {
+   "size": {
+    "height": 16,
+    "width": 71
+   },
+   "role": "AXLink",
+   "title": "comments",
+   "id": "el_af909e18d9ea85ef7e9f26f8ae1c4638",
+   "position": {
+    "y": 186,
+    "x": 964
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 16,
+    "width": 24
+   },
+   "title": "ask",
+   "id": "el_4651a560e2d02a7a8e2cc82fc4d2e4c8",
+   "position": {
+    "y": 186,
+    "x": 1049
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 16,
+    "width": 35
+   },
+   "title": "show",
+   "id": "el_7be29a1c95c70527c34962cf57548cdc",
+   "position": {
+    "y": 186,
+    "x": 1088
+   }
+  },
+  {
+   "size": {
+    "height": 16,
+    "width": 28
+   },
+   "role": "AXLink",
+   "id": "el_7b0ef8c515504e756ef68328a885b28c",
+   "title": "jobs",
+   "position": {
+    "y": 186,
+    "x": 1138
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 16,
+    "width": 46
+   },
+   "id": "el_cf20cf68aa541a9850ebc764cf6406da",
+   "title": "submit",
+   "position": {
+    "y": 186,
+    "x": 1181
+   }
+  },
+  {
+   "size": {
+    "height": 16,
+    "width": 65
+   },
+   "role": "AXLink",
+   "title": "adelelo13",
+   "id": "el_d8e5dfae266edb0a8dc7a6c2fddf2844",
+   "position": {
+    "y": 186,
+    "x": 1535
+   }
+  },
+  {
+   "size": {
+    "height": 16,
+    "width": 43
+   },
+   "role": "AXLink",
+   "title": "logout",
+   "id": "el_e47e38282cb1e6438e2d8b9f5004e5b1",
+   "position": {
+    "y": 186,
+    "x": 1640
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 16,
+    "width": 496
+   },
+   "title": "Show HN: Neuromcp – local-first memory for any MCP client, no API keys",
+   "id": "el_f9317461d3a461a8cc1fcd50eaf2f43f",
+   "position": {
+    "y": 217,
+    "x": 718
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 117
+   },
+   "title": "github.com/adelelo13",
+   "id": "el_348c09f82f87671e14da364eacb95882",
+   "position": {
+    "y": 220,
+    "x": 1222
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 46
+   },
+   "role": "AXLink",
+   "id": "el_d1c8e9970fdfad80edeac24241100864",
+   "title": "adelelo13",
+   "position": {
+    "y": 234,
+    "x": 768
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 67
+   },
+   "role": "AXLink",
+   "title": "0 minutes ago",
+   "id": "el_23df8e2119c29610431bbd810c5c5a80",
+   "position": {
+    "y": 234,
+    "x": 817
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 20
+   },
+   "role": "AXLink",
+   "title": "hide",
+   "id": "el_15dad7b28c249d8651016636941bc9db",
+   "position": {
+    "y": 234,
+    "x": 895
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 21
+   },
+   "role": "AXLink",
+   "id": "el_4dac035050c8a34b7faa96d3e71be458",
+   "title": "past",
+   "position": {
+    "y": 234,
+    "x": 925
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 34
+   },
+   "id": "el_920acd873b8d02b5e1a956f2bc62033b",
+   "title": "discuss",
+   "position": {
+    "y": 234,
+    "x": 956
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 18
+   },
+   "id": "el_f0c8116b22375c05ec357c82da9bdb7b",
+   "title": "edit",
+   "position": {
+    "y": 234,
+    "x": 1001
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 29
+   },
+   "role": "AXLink",
+   "id": "el_dedb91498a016a064dc9b339b35b2043",
+   "title": "delete",
+   "position": {
+    "y": 234,
+    "x": 1029
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 16,
+    "width": 14
+   },
+   "title": null,
+   "id": "el_35d92412ea3c5c94c6a53af32676d49f",
+   "position": {
+    "y": 253,
+    "x": 704
+   }
+  },
+  {
+   "size": {
+    "height": 17,
+    "width": 328
+   },
+   "role": "AXLink",
+   "title": "B2B SaaS Meta Ads: A Funnel-to-Creative Matrix",
+   "id": "el_8c085c3878ff7ea74132295b9b952e46",
+   "position": {
+    "y": 251,
+    "x": 718
+   }
+  },
+  {
+   "size": {
+    "height": 13,
+    "width": 75
+   },
+   "role": "AXLink",
+   "id": "el_76875137b4c76579f3b95641724d085f",
+   "title": "adriselab.com",
+   "position": {
+    "y": 254,
+    "x": 1055
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 59
+   },
+   "title": "canermoraly",
+   "id": "el_b33734e221ea7bf73949d73d0238b793",
+   "position": {
+    "y": 269,
+    "x": 768
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 67
+   },
+   "role": "AXLink",
+   "title": "0 minutes ago",
+   "id": "el_3544ade1ea710aa5e73e6c58311d1625",
+   "position": {
+    "y": 269,
+    "x": 830
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 20
+   },
+   "role": "AXLink",
+   "title": "hide",
+   "id": "el_b83aba25d04098d361d11349db54f267",
+   "position": {
+    "y": 269,
+    "x": 908
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 21
+   },
+   "title": "past",
+   "id": "el_5200f8c53617a90d902303b04ca36699",
+   "position": {
+    "y": 269,
+    "x": 938
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 34
+   },
+   "id": "el_7a28c9a40b3a29f10b62a8f8e9b6d52c",
+   "title": "discuss",
+   "position": {
+    "y": 269,
+    "x": 969
+   }
+  },
+  {
+   "size": {
+    "height": 16,
+    "width": 14
+   },
+   "role": "AXLink",
+   "id": "el_3ba35e5d1b814c4e290b38b11fd8b62f",
+   "title": null,
+   "position": {
+    "y": 289,
+    "x": 704
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 17,
+    "width": 527
+   },
+   "title": "Auto-autoresearch: self-improving agents on Karpathy's NanoChat benchmark",
+   "id": "el_c248318cfce47c385e88100367ed59e6",
+   "position": {
+    "y": 287,
+    "x": 718
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 13,
+    "width": 56
+   },
+   "title": "rekursiv.ai",
+   "id": "el_31452fbfb9b934e85f3d6df8c98cd96a",
+   "position": {
+    "y": 290,
+    "x": 1253
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 62
+   },
+   "title": "hyperparticle",
+   "id": "el_5954606d86682cfdadd6ba26948b2541",
+   "position": {
+    "y": 305,
+    "x": 768
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 63
+   },
+   "title": "1 minute ago",
+   "id": "el_12506163df557a88bcc5892dc382279d",
+   "position": {
+    "y": 305,
+    "x": 833
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 20
+   },
+   "role": "AXLink",
+   "title": "hide",
+   "id": "el_3fc66e5dd057cf9eba30ee807708b537",
+   "position": {
+    "y": 305,
+    "x": 906
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 20
+   },
+   "role": "AXLink",
+   "id": "el_a03d461d75073ec652658e6bc56821f6",
+   "title": "past",
+   "position": {
+    "y": 305,
+    "x": 937
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 35
+   },
+   "role": "AXLink",
+   "title": "discuss",
+   "id": "el_0235da941c183ff9217f1088d48fdcfa",
+   "position": {
+    "y": 305,
+    "x": 967
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 16,
+    "width": 14
+   },
+   "id": "el_38c2d025e5f5a7c6b53f13d1c06f7ef2",
+   "title": null,
+   "position": {
+    "y": 324,
+    "x": 704
+   }
+  },
+  {
+   "size": {
+    "height": 17,
+    "width": 324
+   },
+   "role": "AXLink",
+   "id": "el_de80387fdf048b0def4ff56a18bbdd79",
+   "title": "Public Data for Health at the OpenAI Foundation",
+   "position": {
+    "y": 322,
+    "x": 718
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 13,
+    "width": 115
+   },
+   "id": "el_2b1e8f96b23d11b5dd42e592fce6cca3",
+   "title": "openaifoundation.org",
+   "position": {
+    "y": 325,
+    "x": 1050
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 51
+   },
+   "id": "el_7326fefb630cc3a745c555791eeda630",
+   "title": "abhishaike",
+   "position": {
+    "y": 340,
+    "x": 768
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 68
+   },
+   "title": "2 minutes ago",
+   "id": "el_83b74e296cdd79d276bed92a059d0c78",
+   "position": {
+    "y": 340,
+    "x": 821
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 21
+   },
+   "title": "hide",
+   "id": "el_1fca581c8dddeba646744331b5e63280",
+   "position": {
+    "y": 340,
+    "x": 899
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 20
+   },
+   "title": "past",
+   "id": "el_3542576857e175f5ed4825cc643440b7",
+   "position": {
+    "y": 340,
+    "x": 930
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 34
+   },
+   "id": "el_ab110f4f23771aac1582f8ff07872589",
+   "title": "discuss",
+   "position": {
+    "y": 340,
+    "x": 961
+   }
+  },
+  {
+   "size": {
+    "height": 16,
+    "width": 14
+   },
+   "role": "AXLink",
+   "id": "el_7ed748bc69bb2774a63777811d76ce33",
+   "title": null,
+   "position": {
+    "y": 360,
+    "x": 704
+   }
+  },
+  {
+   "size": {
+    "height": 17,
+    "width": 131
+   },
+   "role": "AXLink",
+   "id": "el_9bde18f62b31233146ab791fe20e6d7c",
+   "title": "Leaving Proton Mail",
+   "position": {
+    "y": 358,
+    "x": 718
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 13,
+    "width": 59
+   },
+   "id": "el_28d42f933285a48c629ab4ae7c837966",
+   "title": "runarcn.no",
+   "position": {
+    "y": 361,
+    "x": 857
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 33
+   },
+   "title": "speckx",
+   "id": "el_e1702dc5909a1b2a1c92d498ce4af7a1",
+   "position": {
+    "y": 376,
+    "x": 773
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 67
+   },
+   "role": "AXLink",
+   "title": "2 minutes ago",
+   "id": "el_58b0fe844c246508182da77d33036bdd",
+   "position": {
+    "y": 376,
+    "x": 809
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 20
+   },
+   "id": "el_a83f17102c9a09887f82af119d26e5ff",
+   "title": "hide",
+   "position": {
+    "y": 376,
+    "x": 887
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 21
+   },
+   "id": "el_e7c37bae20422e897a5052689a7878d9",
+   "title": "past",
+   "position": {
+    "y": 376,
+    "x": 917
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 34
+   },
+   "role": "AXLink",
+   "id": "el_378ab72936b356bbec1a9f28e5efbc8c",
+   "title": "discuss",
+   "position": {
+    "y": 376,
+    "x": 948
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 16,
+    "width": 14
+   },
+   "id": "el_7bd2ffac13bc8e658210f9f312f8f20b",
+   "title": null,
+   "position": {
+    "y": 395,
+    "x": 704
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 17,
+    "width": 269
+   },
+   "id": "el_24048a4ecfc1b17a11f6f21f0b445690",
+   "title": "Making a movie in pure SVG using SMIL",
+   "position": {
+    "y": 393,
+    "x": 718
+   }
+  },
+  {
+   "size": {
+    "height": 13,
+    "width": 84
+   },
+   "role": "AXLink",
+   "title": "zeyaddeeb.com",
+   "id": "el_2077a3894cf158f742622c9bdaa575b1",
+   "position": {
+    "y": 396,
+    "x": 995
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 28
+   },
+   "role": "AXLink",
+   "id": "el_c1a51fb39e04fb6f9d4f0cc6554ec693",
+   "title": "zdeeb",
+   "position": {
+    "y": 411,
+    "x": 768
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 68
+   },
+   "role": "AXLink",
+   "title": "4 minutes ago",
+   "id": "el_4455b8a382c75df4ba95778d64f25e1e",
+   "position": {
+    "y": 411,
+    "x": 799
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 20
+   },
+   "role": "AXLink",
+   "title": "hide",
+   "id": "el_7b52d2b973209a32ac603ab59bc5331c",
+   "position": {
+    "y": 411,
+    "x": 877
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 20
+   },
+   "role": "AXLink",
+   "title": "past",
+   "id": "el_b4e33b1b955cc252d03beee8e712d016",
+   "position": {
+    "y": 411,
+    "x": 908
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 34
+   },
+   "title": "discuss",
+   "id": "el_520a93c2d7731b01c948bcd540237c43",
+   "position": {
+    "y": 411,
+    "x": 939
+   }
+  },
+  {
+   "size": {
+    "height": 16,
+    "width": 14
+   },
+   "role": "AXLink",
+   "id": "el_5681b4da27f1370aa6413db9a389eb64",
+   "title": null,
+   "position": {
+    "y": 431,
+    "x": 704
+   }
+  },
+  {
+   "size": {
+    "height": 17,
+    "width": 536
+   },
+   "role": "AXLink",
+   "title": "Question for the Feds from Vanderbilt: Can We Start a Federal Drone Research?",
+   "id": "el_e900e0340d4a429e6da1f15e6c824ffc",
+   "position": {
+    "y": 429,
+    "x": 718
+   }
+  },
+  {
+   "size": {
+    "height": 13,
+    "width": 202
+   },
+   "role": "AXLink",
+   "id": "el_bb67abb1c4942799f8d5beca6e882b91",
+   "title": "jeniffergatesforuspresidentforlife.com",
+   "position": {
+    "y": 432,
+    "x": 1262
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 34
+   },
+   "title": "wapiou",
+   "id": "el_32eff708f70957220c6b4fde488b2d5c",
+   "position": {
+    "y": 447,
+    "x": 768
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 67
+   },
+   "role": "AXLink",
+   "id": "el_c4d41bfb38d1fa702af7528ccd75dbb8",
+   "title": "5 minutes ago",
+   "position": {
+    "y": 447,
+    "x": 805
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 20
+   },
+   "id": "el_9c1a5ad65d236ea62bc99637391e04f7",
+   "title": "hide",
+   "position": {
+    "y": 447,
+    "x": 883
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 21
+   },
+   "id": "el_03bcaf05d0ed93b21f453230ab8e7c79",
+   "title": "past",
+   "position": {
+    "y": 447,
+    "x": 913
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 34
+   },
+   "role": "AXLink",
+   "id": "el_dfa453302ebf17230d883d4eda156217",
+   "title": "discuss",
+   "position": {
+    "y": 447,
+    "x": 944
+   }
+  },
+  {
+   "size": {
+    "height": 16,
+    "width": 14
+   },
+   "role": "AXLink",
+   "id": "el_e202a91c1e410bdd1c3271707358958b",
+   "title": null,
+   "position": {
+    "y": 466,
+    "x": 704
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 17,
+    "width": 553
+   },
+   "title": "Air pollution spiked 30% since US stopped worldwide embassy monitoring in 2025",
+   "id": "el_75c3f30b3bc3a0db91abdd9918ea4486",
+   "position": {
+    "y": 464,
+    "x": 718
+   }
+  },
+  {
+   "size": {
+    "height": 13,
+    "width": 38
+   },
+   "role": "AXLink",
+   "title": "npr.org",
+   "id": "el_420b81c408ea0532b0864c46f48dc725",
+   "position": {
+    "y": 467,
+    "x": 1279
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 17
+   },
+   "id": "el_19a58b6fb4fbe42c64200eb5179538bd",
+   "title": "ck2",
+   "position": {
+    "y": 482,
+    "x": 768
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 68
+   },
+   "id": "el_02b8c842d60ce62fd10002aa4ccb48e6",
+   "title": "6 minutes ago",
+   "position": {
+    "y": 482,
+    "x": 788
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 20
+   },
+   "id": "el_9aa68082c5a14cf515060595d9d43437",
+   "title": "hide",
+   "position": {
+    "y": 482,
+    "x": 866
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 21
+   },
+   "role": "AXLink",
+   "id": "el_ed0efc18959e5613f77e862313da6ebc",
+   "title": "past",
+   "position": {
+    "y": 482,
+    "x": 896
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 34
+   },
+   "id": "el_24e40da8f40e09492366ff8a54afcb3a",
+   "title": "discuss",
+   "position": {
+    "y": 482,
+    "x": 927
+   }
+  },
+  {
+   "size": {
+    "height": 16,
+    "width": 14
+   },
+   "role": "AXLink",
+   "id": "el_884ae76086a392d77309639f89846481",
+   "title": null,
+   "position": {
+    "y": 502,
+    "x": 704
+   }
+  },
+  {
+   "size": {
+    "height": 17,
+    "width": 556
+   },
+   "role": "AXLink",
+   "title": "A 40-year-old bug in BSD Unix domain socket inode allocation discovered on the D",
+   "id": "el_369cc0c45ada2f3c72426d0f2908248f",
+   "position": {
+    "y": 500,
+    "x": 718
+   }
+  },
+  {
+   "size": {
+    "height": 13,
+    "width": 72
+   },
+   "role": "AXLink",
+   "id": "el_1c39857bd349ba37358a9696d1ef308a",
+   "title": "yuvalino.com",
+   "position": {
+    "y": 503,
+    "x": 1282
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 25
+   },
+   "role": "AXLink",
+   "id": "el_b6028ade1e58ab3c33996a3b71559db8",
+   "title": "fanf2",
+   "position": {
+    "y": 518,
+    "x": 768
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 67
+   },
+   "role": "AXLink",
+   "title": "7 minutes ago",
+   "id": "el_6240afe21733cdcd0a6b4d55dc22ce26",
+   "position": {
+    "y": 518,
+    "x": 796
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 20
+   },
+   "role": "AXLink",
+   "title": "hide",
+   "id": "el_267e6bb545a96782a092b8d34b3c261a",
+   "position": {
+    "y": 518,
+    "x": 874
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 21
+   },
+   "id": "el_8f4ef047c4f4b0dd96345db9574eca5b",
+   "title": "past",
+   "position": {
+    "y": 518,
+    "x": 904
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 34
+   },
+   "role": "AXLink",
+   "title": "discuss",
+   "id": "el_2f115c39dc55c2908e88b6f671a6ca5d",
+   "position": {
+    "y": 518,
+    "x": 935
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 16,
+    "width": 14
+   },
+   "id": "el_77020dd6dfd5e3e7dd2a7ddb7b8226ea",
+   "title": null,
+   "position": {
+    "y": 537,
+    "x": 704
+   }
+  },
+  {
+   "size": {
+    "height": 17,
+    "width": 393
+   },
+   "role": "AXLink",
+   "title": "How Americans think about censorship of news in the U.S.",
+   "id": "el_f112a648e29a566fe3ea0d286672fbe4",
+   "position": {
+    "y": 535,
+    "x": 718
+   }
+  },
+  {
+   "size": {
+    "height": 13,
+    "width": 90
+   },
+   "role": "AXLink",
+   "id": "el_5f15bae393996efe67cd9c8444220c26",
+   "title": "pewresearch.org",
+   "position": {
+    "y": 538,
+    "x": 1119
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 54
+   },
+   "title": "iamnothere",
+   "id": "el_a096a795b25a2ab88fcf69de43767267",
+   "position": {
+    "y": 553,
+    "x": 768
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 68
+   },
+   "role": "AXLink",
+   "id": "el_4199a1371b69942e1b2cc253b52cac0c",
+   "title": "8 minutes ago",
+   "position": {
+    "y": 553,
+    "x": 825
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 20
+   },
+   "id": "el_1e1aa23dc2df34f54deccee955e5944c",
+   "title": "hide",
+   "position": {
+    "y": 553,
+    "x": 903
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 20
+   },
+   "role": "AXLink",
+   "title": "past",
+   "id": "el_f5cceaa571051fe55fa8171524000c62",
+   "position": {
+    "y": 553,
+    "x": 934
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 35
+   },
+   "title": "discuss",
+   "id": "el_012f7b328b1e0d9504acb3bfa3a4721b",
+   "position": {
+    "y": 553,
+    "x": 964
+   }
+  },
+  {
+   "size": {
+    "height": 16,
+    "width": 14
+   },
+   "role": "AXLink",
+   "title": null,
+   "id": "el_b3fb092ccb11d83bd7380383b084962c",
+   "position": {
+    "y": 573,
+    "x": 704
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 17,
+    "width": 226
+   },
+   "id": "el_c5c91b74de846c5bdeb51441740a52e4",
+   "title": "Smooth Exponentials for Robotics",
+   "position": {
+    "y": 571,
+    "x": 718
+   }
+  },
+  {
+   "size": {
+    "height": 13,
+    "width": 63
+   },
+   "role": "AXLink",
+   "id": "el_0c48040408f5fe6d9cb5dea19dfeecf3",
+   "title": "evjang.com",
+   "position": {
+    "y": 574,
+    "x": 952
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 40
+   },
+   "role": "AXLink",
+   "title": "seafoam",
+   "id": "el_90ffbbb7a3e785c292e2e9db848fb140",
+   "position": {
+    "y": 589,
+    "x": 773
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 68
+   },
+   "id": "el_ae91d4583c19ddaf0d34fbc092df4477",
+   "title": "8 minutes ago",
+   "position": {
+    "y": 589,
+    "x": 816
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 20
+   },
+   "role": "AXLink",
+   "id": "el_0c6959023179b4f840c0ea37184c4d16",
+   "title": "hide",
+   "position": {
+    "y": 589,
+    "x": 894
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 20
+   },
+   "id": "el_7e29a99ae29d9948ef6add283cdd77b5",
+   "title": "past",
+   "position": {
+    "y": 589,
+    "x": 925
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 35
+   },
+   "title": "discuss",
+   "id": "el_c53bf3e56c7be96a9e1ff76e95b13d73",
+   "position": {
+    "y": 589,
+    "x": 955
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 16,
+    "width": 14
+   },
+   "title": null,
+   "id": "el_1383a470594270c24ae85835d7d280b9",
+   "position": {
+    "y": 608,
+    "x": 704
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 17,
+    "width": 310
+   },
+   "id": "el_d35bc4f76156119a2c01072abae6032b",
+   "title": "Can an AI chatbot replace human connection?",
+   "position": {
+    "y": 606,
+    "x": 718
+   }
+  },
+  {
+   "size": {
+    "height": 13,
+    "width": 122
+   },
+   "role": "AXLink",
+   "id": "el_7b1d6971188bc126900836e99eaef126",
+   "title": "scientificamerican.com",
+   "position": {
+    "y": 609,
+    "x": 1036
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 39
+   },
+   "role": "AXLink",
+   "title": "the-mitr",
+   "id": "el_67657ad6c44192fef2be493664d90c28",
+   "position": {
+    "y": 624,
+    "x": 768
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 68
+   },
+   "title": "9 minutes ago",
+   "id": "el_5a897d2e29cb945aa474944a4f901c3b",
+   "position": {
+    "y": 624,
+    "x": 810
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 21
+   },
+   "title": "hide",
+   "id": "el_07c3869a62497814a430c06deddfd7d3",
+   "position": {
+    "y": 624,
+    "x": 888
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 20
+   },
+   "id": "el_78a189ae1dbaecc71644d53068d64755",
+   "title": "past",
+   "position": {
+    "y": 624,
+    "x": 919
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 53
+   },
+   "role": "AXLink",
+   "title": "1 comment",
+   "id": "el_c8d6942952d2123192f3b23e8db7cd74",
+   "position": {
+    "y": 624,
+    "x": 950
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 16,
+    "width": 14
+   },
+   "id": "el_5ac90c0924f1f26bc697e115b50fc351",
+   "title": null,
+   "position": {
+    "y": 644,
+    "x": 704
+   }
+  },
+  {
+   "size": {
+    "height": 17,
+    "width": 514
+   },
+   "role": "AXLink",
+   "id": "el_d75f9cf0d03525cf48586eb14e2024e5",
+   "title": "Pulley is shutting down and will cease all operations and services on Dec 8th",
+   "position": {
+    "y": 642,
+    "x": 718
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 42
+   },
+   "role": "AXLink",
+   "id": "el_a3812eb796f91942169b3099f8d14f56",
+   "title": "svcrunch",
+   "position": {
+    "y": 660,
+    "x": 773
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 68
+   },
+   "role": "AXLink",
+   "id": "el_1e568d7c7eba9af88b82f88c907863f2",
+   "title": "9 minutes ago",
+   "position": {
+    "y": 660,
+    "x": 818
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 21
+   },
+   "role": "AXLink",
+   "id": "el_f5b9f8a996e173aac9a69bba8e11219a",
+   "title": "hide",
+   "position": {
+    "y": 660,
+    "x": 896
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 20
+   },
+   "role": "AXLink",
+   "title": "past",
+   "id": "el_f5b5d71ab24c9c05c015ed0fac010c41",
+   "position": {
+    "y": 660,
+    "x": 927
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 34
+   },
+   "id": "el_ed69443d96d1533cfda9fb0b7494c1eb",
+   "title": "discuss",
+   "position": {
+    "y": 660,
+    "x": 958
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 16,
+    "width": 14
+   },
+   "title": null,
+   "id": "el_776912b0e11e0c71fcd27fcf05e3c9d6",
+   "position": {
+    "y": 679,
+    "x": 704
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 17,
+    "width": 465
+   },
+   "title": "Mark: A journey to the heart of history's largest nonterritorial empire",
+   "id": "el_73c09d9654e93657e6379fb402a8e383",
+   "position": {
+    "y": 677,
+    "x": 718
+   }
+  },
+  {
+   "size": {
+    "height": 13,
+    "width": 71
+   },
+   "role": "AXLink",
+   "id": "el_3755869d0a9f04fdde75a8732cdcfa1b",
+   "title": "colossus.com",
+   "position": {
+    "y": 680,
+    "x": 1192
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 53
+   },
+   "role": "AXLink",
+   "title": "paulpauper",
+   "id": "el_80f85413f5f911aad1a039440593a2c3",
+   "position": {
+    "y": 695,
+    "x": 768
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 74
+   },
+   "role": "AXLink",
+   "title": "10 minutes ago",
+   "id": "el_7d11669286087b3f80b5aabce7430df4",
+   "position": {
+    "y": 695,
+    "x": 824
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 20
+   },
+   "role": "AXLink",
+   "title": "hide",
+   "id": "el_0a382b7fd13956bd8952da75d4ad242a",
+   "position": {
+    "y": 695,
+    "x": 908
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 20
+   },
+   "title": "past",
+   "id": "el_efb7fc721f558e50a555081ea6387f49",
+   "position": {
+    "y": 695,
+    "x": 939
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 35
+   },
+   "title": "discuss",
+   "id": "el_aa905b1ef5524300b4c62e35b86fba76",
+   "position": {
+    "y": 695,
+    "x": 969
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 16,
+    "width": 14
+   },
+   "title": null,
+   "id": "el_dbc6857a15963335dc71d804d6ddf602",
+   "position": {
+    "y": 715,
+    "x": 704
+   }
+  },
+  {
+   "size": {
+    "height": 17,
+    "width": 174
+   },
+   "role": "AXLink",
+   "id": "el_1f55c69bef6dd644bf6f6a4ba9a35c4a",
+   "title": "Polanyi Knowledge and AI",
+   "position": {
+    "y": 713,
+    "x": 718
+   }
+  },
+  {
+   "size": {
+    "height": 13,
+    "width": 137
+   },
+   "role": "AXLink",
+   "id": "el_fc96d681f835498181ab38838577842c",
+   "title": "arnoldkling.substack.com",
+   "position": {
+    "y": 716,
+    "x": 900
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 53
+   },
+   "id": "el_09d481c888cb31a8a83736b7dd489092",
+   "title": "paulpauper",
+   "position": {
+    "y": 731,
+    "x": 768
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 74
+   },
+   "id": "el_93135973ddcd6e67e77616bcf1a7095c",
+   "title": "10 minutes ago",
+   "position": {
+    "y": 731,
+    "x": 824
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 20
+   },
+   "role": "AXLink",
+   "title": "hide",
+   "id": "el_5683c9ad89b80419a52d2301babb7843",
+   "position": {
+    "y": 731,
+    "x": 908
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 20
+   },
+   "role": "AXLink",
+   "title": "past",
+   "id": "el_5ba99e3ce7e6d01390660323d82342f7",
+   "position": {
+    "y": 731,
+    "x": 939
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 35
+   },
+   "id": "el_40206fea35537d5bbf3f36b41b63667a",
+   "title": "discuss",
+   "position": {
+    "y": 731,
+    "x": 969
+   }
+  },
+  {
+   "size": {
+    "height": 16,
+    "width": 14
+   },
+   "role": "AXLink",
+   "title": null,
+   "id": "el_5e8b74941d1062ecfed04b21f84a444d",
+   "position": {
+    "y": 750,
+    "x": 704
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 17,
+    "width": 323
+   },
+   "id": "el_a19966b4454e16000cd01e747142232b",
+   "title": "The striking thing is how late the market moved",
+   "position": {
+    "y": 748,
+    "x": 718
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 13,
+    "width": 128
+   },
+   "title": "marginalrevolution.com",
+   "id": "el_ddec8d558a2801cbfdad762dc8d889a6",
+   "position": {
+    "y": 751,
+    "x": 1049
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 53
+   },
+   "title": "paulpauper",
+   "id": "el_5bbaec3540ff38a3d735a437b5a704d5",
+   "position": {
+    "y": 766,
+    "x": 768
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 74
+   },
+   "role": "AXLink",
+   "id": "el_a9225241d6f00740c1b89ae3c23bbd7b",
+   "title": "11 minutes ago",
+   "position": {
+    "y": 766,
+    "x": 824
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 20
+   },
+   "role": "AXLink",
+   "title": "hide",
+   "id": "el_eb5cac82bd3791588ea5074f9e5b1839",
+   "position": {
+    "y": 766,
+    "x": 908
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 20
+   },
+   "title": "past",
+   "id": "el_7088857a51a35ff80c05dae84179f827",
+   "position": {
+    "y": 766,
+    "x": 939
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 35
+   },
+   "title": "discuss",
+   "id": "el_15b6567b22eaf5436aa6464bfc8a7c61",
+   "position": {
+    "y": 766,
+    "x": 969
+   }
+  },
+  {
+   "size": {
+    "height": 16,
+    "width": 14
+   },
+   "role": "AXLink",
+   "id": "el_16b06f406c02657718f8ad28f53ea2f0",
+   "title": null,
+   "position": {
+    "y": 786,
+    "x": 704
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 17,
+    "width": 321
+   },
+   "id": "el_ca9a52262e8ea9d354f81483ca99751a",
+   "title": "Gemini 3.8 Live and 3.8 Live Extended Thinking",
+   "position": {
+    "y": 784,
+    "x": 718
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 13,
+    "width": 63
+   },
+   "title": "blog.google",
+   "id": "el_431ace460a2d74289c43597eb295244e",
+   "position": {
+    "y": 787,
+    "x": 1047
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 35
+   },
+   "role": "AXLink",
+   "title": "leumon",
+   "id": "el_cf784c81b1f300276f98df64252bee43",
+   "position": {
+    "y": 802,
+    "x": 773
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 74
+   },
+   "id": "el_3c4c44273331e91ecee593a49514d37c",
+   "title": "11 minutes ago",
+   "position": {
+    "y": 802,
+    "x": 811
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 20
+   },
+   "title": "hide",
+   "id": "el_446e0b3c9468c0e8df34afc5c3c0d9d5",
+   "position": {
+    "y": 802,
+    "x": 895
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 20
+   },
+   "role": "AXLink",
+   "title": "past",
+   "id": "el_9aff041fb8f5dde0fdcbfc87761fd631",
+   "position": {
+    "y": 802,
+    "x": 926
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 35
+   },
+   "id": "el_4b55c7d54ffad5fffd23781fad7b16ff",
+   "title": "discuss",
+   "position": {
+    "y": 802,
+    "x": 956
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 16,
+    "width": 14
+   },
+   "id": "el_3705bd81ab13cf7a50f35dae3d8f9805",
+   "title": null,
+   "position": {
+    "y": 821,
+    "x": 704
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 17,
+    "width": 317
+   },
+   "title": "Revolut data breach affected nearly 700 clients",
+   "id": "el_24c10ebca3237ff88d79cf7a5882905f",
+   "position": {
+    "y": 819,
+    "x": 718
+   }
+  },
+  {
+   "size": {
+    "height": 13,
+    "width": 59
+   },
+   "role": "AXLink",
+   "title": "yahoo.com",
+   "id": "el_397f3c2513ebdf3a24331a3d73182121",
+   "position": {
+    "y": 822,
+    "x": 1043
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 77
+   },
+   "title": "theNotFractured",
+   "id": "el_ca3f5fbf7e0557b542b281e4525dd478",
+   "position": {
+    "y": 837,
+    "x": 773
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 74
+   },
+   "title": "11 minutes ago",
+   "id": "el_2390b2084d7a36445434b69b58d19efc",
+   "position": {
+    "y": 837,
+    "x": 852
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 21
+   },
+   "id": "el_d0673eadac6df9ed041a354b2047461f",
+   "title": "hide",
+   "position": {
+    "y": 837,
+    "x": 936
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 20
+   },
+   "id": "el_861616051dde3900550dacbcce3c08ac",
+   "title": "past",
+   "position": {
+    "y": 837,
+    "x": 967
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 34
+   },
+   "role": "AXLink",
+   "title": "discuss",
+   "id": "el_4d246adcd018301a7537e8bf87f7db2d",
+   "position": {
+    "y": 837,
+    "x": 998
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 16,
+    "width": 14
+   },
+   "id": "el_21317801e499697b286c4ac5d512369d",
+   "title": null,
+   "position": {
+    "y": 857,
+    "x": 704
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 17,
+    "width": 560
+   },
+   "title": "How do we prevent mathemathics from devolving into the Medieval Era of secrecy?",
+   "id": "el_54a4b78b457321a8bc40fd17909e355c",
+   "position": {
+    "y": 855,
+    "x": 718
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 13,
+    "width": 94
+   },
+   "title": "mathoverflow.net",
+   "id": "el_df0bab1091ce2b65ae9899a658fe8a8f",
+   "position": {
+    "y": 858,
+    "x": 1286
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 34
+   },
+   "id": "el_4de4482d784de06e75c7b12617c40bc4",
+   "title": "jjgreen",
+   "position": {
+    "y": 873,
+    "x": 768
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 73
+   },
+   "id": "el_c2a1ce9c9dbd403f8f8018b9ebbfe08a",
+   "title": "12 minutes ago",
+   "position": {
+    "y": 873,
+    "x": 805
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 20
+   },
+   "id": "el_72a12c0bec140e62b4579dd924f2e603",
+   "title": "hide",
+   "position": {
+    "y": 873,
+    "x": 889
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 21
+   },
+   "role": "AXLink",
+   "title": "past",
+   "id": "el_9236e1d06e0729c677382089db34c2cf",
+   "position": {
+    "y": 873,
+    "x": 919
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 34
+   },
+   "role": "AXLink",
+   "id": "el_8b98fb4444c0ef3c622f4539585780d2",
+   "title": "discuss",
+   "position": {
+    "y": 873,
+    "x": 950
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 16,
+    "width": 14
+   },
+   "id": "el_200a49fa3a1fc77bb4a6e50079b1b5f5",
+   "title": null,
+   "position": {
+    "y": 892,
+    "x": 704
+   }
+  },
+  {
+   "size": {
+    "height": 17,
+    "width": 303
+   },
+   "role": "AXLink",
+   "id": "el_c110c1168696a134457afbd82c1ab749",
+   "title": "Dystopian Surveillance Is Becoming a Reality",
+   "position": {
+    "y": 890,
+    "x": 718
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 13,
+    "width": 89
+   },
+   "id": "el_ad772740083f2b8020b7b5f6928335f5",
+   "title": "dallincrump.com",
+   "position": {
+    "y": 893,
+    "x": 1029
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 33
+   },
+   "role": "AXLink",
+   "id": "el_e53e17eb8b01422844c2195abed6a168",
+   "title": "speckx",
+   "position": {
+    "y": 908,
+    "x": 779
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 73
+   },
+   "role": "AXLink",
+   "title": "12 minutes ago",
+   "id": "el_ade081a6efcbafde8de882851dd97205",
+   "position": {
+    "y": 908,
+    "x": 815
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 21
+   },
+   "title": "hide",
+   "id": "el_5335e2a8a65a175c6b2c9a671bc7a774",
+   "position": {
+    "y": 908,
+    "x": 898
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 20
+   },
+   "title": "past",
+   "id": "el_2e27d73a5261e0fcab10324c0fd164e4",
+   "position": {
+    "y": 908,
+    "x": 929
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 58
+   },
+   "role": "AXLink",
+   "id": "el_a7c59452e9ac280897c20be8e7df1a4e",
+   "title": "7 comments",
+   "position": {
+    "y": 908,
+    "x": 960
+   }
+  },
+  {
+   "size": {
+    "height": 16,
+    "width": 14
+   },
+   "role": "AXLink",
+   "id": "el_06622a28fc4a3a8dc60b99a1672b8018",
+   "title": null,
+   "position": {
+    "y": 928,
+    "x": 704
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 17,
+    "width": 328
+   },
+   "title": "Why I'm still bearish on LLMs after navier-stokes",
+   "id": "el_910a09d96f63d823094f5feb6f93fd29",
+   "position": {
+    "y": 926,
+    "x": 718
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 13,
+    "width": 75
+   },
+   "id": "el_09231a51aeb4b017d3399a7bfb21cbf1",
+   "title": "dank.systems",
+   "position": {
+    "y": 929,
+    "x": 1054
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 30
+   },
+   "role": "AXLink",
+   "id": "el_d76dca38ff532cf97608a75fb12d03ee",
+   "title": "jaykru",
+   "position": {
+    "y": 944,
+    "x": 773
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 74
+   },
+   "title": "12 minutes ago",
+   "id": "el_161dd25ef5c9fc3eb22583c3a3aaab8a",
+   "position": {
+    "y": 944,
+    "x": 806
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 20
+   },
+   "id": "el_6b994ddd346a8f7bc9a99da46e9ac534",
+   "title": "hide",
+   "position": {
+    "y": 944,
+    "x": 890
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 20
+   },
+   "id": "el_32a1d293412ce2a8bf4160fc89331a94",
+   "title": "past",
+   "position": {
+    "y": 944,
+    "x": 921
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 54
+   },
+   "title": "1 comment",
+   "id": "el_a38c6d96601bb9ae795bd9e6a2b0cca9",
+   "position": {
+    "y": 944,
+    "x": 951
+   }
+  },
+  {
+   "size": {
+    "height": 16,
+    "width": 14
+   },
+   "role": "AXLink",
+   "title": null,
+   "id": "el_d3b41f9ddd603bc9a581336409dc8cad",
+   "position": {
+    "y": 963,
+    "x": 704
+   }
+  },
+  {
+   "size": {
+    "height": 17,
+    "width": 347
+   },
+   "role": "AXLink",
+   "title": "Reddit Is Still Useful. It's Also Becoming Impossible",
+   "id": "el_22811d57c23037558a16c46547e6f98d",
+   "position": {
+    "y": 961,
+    "x": 718
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 13,
+    "width": 49
+   },
+   "title": "verja.net",
+   "id": "el_20b7731fcc8faa3b48fbff59c98a35bb",
+   "position": {
+    "y": 964,
+    "x": 1073
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 33
+   },
+   "role": "AXLink",
+   "id": "el_769e9ba5e00f139be6aad4dc40ca7853",
+   "title": "speckx",
+   "position": {
+    "y": 979,
+    "x": 773
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 73
+   },
+   "role": "AXLink",
+   "id": "el_83e086118071f3441f37106488a56031",
+   "title": "15 minutes ago",
+   "position": {
+    "y": 979,
+    "x": 809
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 21
+   },
+   "id": "el_b72eee4d9871612d2f03a0236b8edd72",
+   "title": "hide",
+   "position": {
+    "y": 979,
+    "x": 892
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 21
+   },
+   "role": "AXLink",
+   "title": "past",
+   "id": "el_fd422ef28a59341c4e7541ff133d6cb9",
+   "position": {
+    "y": 979,
+    "x": 923
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 34
+   },
+   "id": "el_5a73c2f6c1f33b5b909522cfca379e19",
+   "title": "discuss",
+   "position": {
+    "y": 979,
+    "x": 954
+   }
+  },
+  {
+   "size": {
+    "height": 16,
+    "width": 14
+   },
+   "role": "AXLink",
+   "id": "el_c244fce61a45e8fe3446195fca654a09",
+   "title": null,
+   "position": {
+    "y": 999,
+    "x": 704
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 17,
+    "width": 459
+   },
+   "title": "Your brain is a special snowflake and experience might help shape it",
+   "id": "el_04b2b65da4aa9bc64e6e53b09d1bc9b8",
+   "position": {
+    "y": 997,
+    "x": 718
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 13,
+    "width": 103
+   },
+   "title": "neurofrontiers.blog",
+   "id": "el_9361b96e69fe78063112143418db1104",
+   "position": {
+    "y": 1000,
+    "x": 1185
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 48
+   },
+   "id": "el_5a67d843d5d4401c05c897a9644298f8",
+   "title": "lentoutcry",
+   "position": {
+    "y": 1015,
+    "x": 768
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 73
+   },
+   "title": "16 minutes ago",
+   "id": "el_39d9ece71bfd577a69d7bcc55cc23404",
+   "position": {
+    "y": 1015,
+    "x": 819
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 20
+   },
+   "id": "el_ce970dbaa53d41f6ca8cc52e0cab8e3a",
+   "title": "hide",
+   "position": {
+    "y": 1015,
+    "x": 903
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 21
+   },
+   "role": "AXLink",
+   "title": "past",
+   "id": "el_30780efda6e36507c461b8506a5eeb86",
+   "position": {
+    "y": 1015,
+    "x": 933
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 34
+   },
+   "role": "AXLink",
+   "id": "el_39ffa27c24827ff6934f8e6f573c7613",
+   "title": "discuss",
+   "position": {
+    "y": 1015,
+    "x": 964
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 16,
+    "width": 14
+   },
+   "title": null,
+   "id": "el_b22206eed8ae2ff648df77688aa17301",
+   "position": {
+    "y": 1034,
+    "x": 704
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 17,
+    "width": 440
+   },
+   "title": "Lyric – Windows dictation with a guard against LLM hallucinations",
+   "id": "el_52d9fb062e2113ccc3246f090e0c5f39",
+   "position": {
+    "y": 1032,
+    "x": 718
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 13,
+    "width": 105
+   },
+   "title": "cachedhostiong.net",
+   "id": "el_f8992e5d3c24ae6e8a280b1488caa25e",
+   "position": {
+    "y": 1035,
+    "x": 1166
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 40
+   },
+   "title": "CH-Lyric",
+   "id": "el_caa3dfca7f4301ff562d930725de2991",
+   "position": {
+    "y": 1050,
+    "x": 768
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 74
+   },
+   "role": "AXLink",
+   "title": "16 minutes ago",
+   "id": "el_618303700f0b2b3ef71e32ed9ebc41d7",
+   "position": {
+    "y": 1050,
+    "x": 811
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 20
+   },
+   "role": "AXLink",
+   "id": "el_828629b53024f066ae1d1f188f62a9f2",
+   "title": "hide",
+   "position": {
+    "y": 1050,
+    "x": 895
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 12,
+    "width": 21
+   },
+   "id": "el_6bd6e362e4ad0f9dbeec33f38b77989d",
+   "title": "past",
+   "position": {
+    "y": 1050,
+    "x": 925
+   }
+  },
+  {
+   "size": {
+    "height": 12,
+    "width": 34
+   },
+   "role": "AXLink",
+   "id": "el_61fe9b0bd077ad84c1ae059b08fb1051",
+   "title": "discuss",
+   "position": {
+    "y": 1050,
+    "x": 956
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 16,
+    "width": 14
+   },
+   "id": "el_a3842b95da2b7000fcf38b98d646b4c7",
+   "title": null,
+   "position": {
+    "y": 1070,
+    "x": 704
+   }
+  },
+  {
+   "size": {
+    "height": 17,
+    "width": 336
+   },
+   "role": "AXLink",
+   "id": "el_3092e07cd07490b88adcc5c1c817202a",
+   "title": "Show HN: Self-adjusting vLLM at production scale",
+   "position": {
+    "y": 1068,
+    "x": 718
+   }
+  },
+  {
+   "size": {
+    "height": 13,
+    "width": 102
+   },
+   "role": "AXLink",
+   "title": "twitter.com/yevr19",
+   "id": "el_860875ff2b61dba9998843190a827dde",
+   "position": {
+    "y": 1071,
+    "x": 1062
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 42
+   },
+   "title": "dmitriisn",
+   "id": "el_1da3f481fe885d7e29d40225e3e044e5",
+   "position": {
+    "y": 1086,
+    "x": 768
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 11,
+    "width": 73
+   },
+   "title": "17 minutes ago",
+   "id": "el_aa740c0841b7761523600ebba7ec1624",
+   "position": {
+    "y": 1086,
+    "x": 813
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 21
+   },
+   "role": "AXLink",
+   "id": "el_793c4cf5095e4ceee4310b72244a06a0",
+   "title": "hide",
+   "position": {
+    "y": 1086,
+    "x": 896
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 21
+   },
+   "role": "AXLink",
+   "id": "el_02792671d606b373e4a6c5f2366521b5",
+   "title": "past",
+   "position": {
+    "y": 1086,
+    "x": 927
+   }
+  },
+  {
+   "size": {
+    "height": 11,
+    "width": 34
+   },
+   "role": "AXLink",
+   "id": "el_cbb32b136d1e7349734b9b5758d8bb20",
+   "title": "discuss",
+   "position": {
+    "y": 1086,
+    "x": 958
+   }
+  },
+  {
+   "size": {
+    "height": 6,
+    "width": 14
+   },
+   "role": "AXLink",
+   "title": null,
+   "id": "el_8b474005fd74b93cf6782dd349938698",
+   "position": {
+    "y": 1105,
+    "x": 704
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 8,
+    "width": 376
+   },
+   "id": "el_e2dcb1096e2a0b41d65538f4de6ee1a9",
+   "title": "Efficient Chips Alone Will Not Solve AI's Energy Problem",
+   "position": {
+    "y": 1103,
+    "x": 718
+   }
+  },
+  {
+   "size": {
+    "height": 5,
+    "width": 74
+   },
+   "role": "AXLink",
+   "title": "substack.com",
+   "id": "el_e72bf799fb6f889f464a5d8480b9b6e2",
+   "position": {
+    "y": 1106,
+    "x": 1102
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 39
+   },
+   "title": "carolceli",
+   "id": "el_bc8dacfaeae3599614831bbb21f8c7ee",
+   "position": {
+    "y": 1111,
+    "x": 768
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 73
+   },
+   "title": "18 minutes ago",
+   "id": "el_4279e60c6cc031eb1b7a92597246ea8e",
+   "position": {
+    "y": 1111,
+    "x": 810
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 20
+   },
+   "title": "hide",
+   "id": "el_fb582796c52ef0e0c4301034c192ea8f",
+   "position": {
+    "y": 1111,
+    "x": 894
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 21
+   },
+   "id": "el_4cd17446074478f2a50cdec6239f17d1",
+   "title": "past",
+   "position": {
+    "y": 1111,
+    "x": 924
+   }
+  },
+  {
+   "size": {
+    "height": 0,
+    "width": 34
+   },
+   "role": "AXLink",
+   "title": "discuss",
+   "id": "el_4409814103955657666a93075678dc0e",
+   "position": {
+    "y": 1111,
+    "x": 955
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 14
+   },
+   "id": "el_cb875ea1d8d60caf47b1b93e0f747917",
+   "title": null,
+   "position": {
+    "y": 1111,
+    "x": 704
+   }
+  },
+  {
+   "size": {
+    "height": 0,
+    "width": 567
+   },
+   "role": "AXLink",
+   "title": "Rightsholders Can't Use OpenAI and Anthropic to Dismantle Meta's Seeding Defense",
+   "id": "el_cfd7b7b5bc86ce9e731ef9b4204b0579",
+   "position": {
+    "y": 1111,
+    "x": 718
+   }
+  },
+  {
+   "size": {
+    "height": 0,
+    "width": 91
+   },
+   "role": "AXLink",
+   "id": "el_e921120bd33c211f0f7365354a50be67",
+   "title": "torrentfreak.com",
+   "position": {
+    "y": 1111,
+    "x": 1293
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 23
+   },
+   "title": "gslin",
+   "id": "el_98a3429ac05e715527d0c241a30c11f5",
+   "position": {
+    "y": 1111,
+    "x": 768
+   }
+  },
+  {
+   "size": {
+    "height": 0,
+    "width": 74
+   },
+   "role": "AXLink",
+   "id": "el_257a05cc226854d308330b99b00f38a2",
+   "title": "19 minutes ago",
+   "position": {
+    "y": 1111,
+    "x": 793
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 20
+   },
+   "id": "el_afa0334434d70c6b606edaa450635e37",
+   "title": "hide",
+   "position": {
+    "y": 1111,
+    "x": 877
+   }
+  },
+  {
+   "size": {
+    "height": 0,
+    "width": 20
+   },
+   "role": "AXLink",
+   "id": "el_883cfb4a06261b99efac07c05168f0ff",
+   "title": "past",
+   "position": {
+    "y": 1111,
+    "x": 908
+   }
+  },
+  {
+   "size": {
+    "height": 0,
+    "width": 34
+   },
+   "role": "AXLink",
+   "title": "discuss",
+   "id": "el_118cbd937a19e46ab94aba9a50ed9d80",
+   "position": {
+    "y": 1111,
+    "x": 939
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 14
+   },
+   "title": null,
+   "id": "el_167657bc54ebc1e9d7238f922fe6132d",
+   "position": {
+    "y": 1111,
+    "x": 704
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 476
+   },
+   "id": "el_afe9b1628c838c26e976c67fee69487a",
+   "title": "Show HN: Free tool that checks if your Etsy/Shopify listing is EU-ready",
+   "position": {
+    "y": 1111,
+    "x": 718
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 49
+   },
+   "title": "claude.ai",
+   "id": "el_4f1903a525f349c5d5c9c90cd1f0763b",
+   "position": {
+    "y": 1111,
+    "x": 1202
+   }
+  },
+  {
+   "size": {
+    "height": 0,
+    "width": 49
+   },
+   "role": "AXLink",
+   "title": "ReplyCraft",
+   "id": "el_e464cc9413225675557599242d7c6fd1",
+   "position": {
+    "y": 1111,
+    "x": 768
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 74
+   },
+   "title": "20 minutes ago",
+   "id": "el_59267d620bbb4dccbc8da57f3b34a05a",
+   "position": {
+    "y": 1111,
+    "x": 820
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 20
+   },
+   "id": "el_c8aff2f18463dd4f1ec61ffaa9d20a09",
+   "title": "hide",
+   "position": {
+    "y": 1111,
+    "x": 904
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 20
+   },
+   "title": "past",
+   "id": "el_7f13d20f6774e45b036273c38ed37d5e",
+   "position": {
+    "y": 1111,
+    "x": 935
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 35
+   },
+   "title": "discuss",
+   "id": "el_94c21f43adecaa4fee59b698666c14ba",
+   "position": {
+    "y": 1111,
+    "x": 965
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 14
+   },
+   "id": "el_4469812755b533e7816e0818e04c7b9f",
+   "title": null,
+   "position": {
+    "y": 1111,
+    "x": 704
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 482
+   },
+   "title": "Fujitsu launches made-in-Japan next-generation CPU FUJITSU-MONAKA",
+   "id": "el_b81739a2a0582c00e2ff50cdb2cba878",
+   "position": {
+    "y": 1111,
+    "x": 718
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 70
+   },
+   "title": "global.fujitsu",
+   "id": "el_50c63dd2134659f83020a33082b7c156",
+   "position": {
+    "y": 1111,
+    "x": 1208
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 33
+   },
+   "id": "el_cfd689a86918a9cac6b56fa67a710ac8",
+   "title": "my123",
+   "position": {
+    "y": 1111,
+    "x": 768
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 73
+   },
+   "id": "el_bb713d242737c064e030d127620cb6d7",
+   "title": "21 minutes ago",
+   "position": {
+    "y": 1111,
+    "x": 804
+   }
+  },
+  {
+   "size": {
+    "height": 0,
+    "width": 20
+   },
+   "role": "AXLink",
+   "id": "el_f3aa0c2be5f511871adc1f308fbcd6d8",
+   "title": "hide",
+   "position": {
+    "y": 1111,
+    "x": 888
+   }
+  },
+  {
+   "size": {
+    "height": 0,
+    "width": 21
+   },
+   "role": "AXLink",
+   "title": "past",
+   "id": "el_f3c97a1799d80e9629f4e5fa6234aa9f",
+   "position": {
+    "y": 1111,
+    "x": 918
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 34
+   },
+   "title": "discuss",
+   "id": "el_dbaa123b792246f998100023ef939b37",
+   "position": {
+    "y": 1111,
+    "x": 949
+   }
+  },
+  {
+   "size": {
+    "height": 0,
+    "width": 14
+   },
+   "role": "AXLink",
+   "id": "el_597c67fe366d3b922dbfa5f1fe55fc3c",
+   "title": null,
+   "position": {
+    "y": 1111,
+    "x": 704
+   }
+  },
+  {
+   "size": {
+    "height": 0,
+    "width": 552
+   },
+   "role": "AXLink",
+   "title": "Qector-mega 2.2.1 – Sub-ms QEC decoding on a 2-core CPU with zero GPU needs",
+   "id": "el_637ef02b252231dffa4ae9e840f91cae",
+   "position": {
+    "y": 1111,
+    "x": 718
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 60
+   },
+   "title": "zenodo.org",
+   "id": "el_6f34605098acdc8cc0c2cbc6b144845b",
+   "position": {
+    "y": 1111,
+    "x": 1278
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 40
+   },
+   "id": "el_e07782406964cb42231580526b305adc",
+   "title": "QECTOR",
+   "position": {
+    "y": 1111,
+    "x": 768
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 73
+   },
+   "id": "el_9f5c08284e97ad5dd3b0c199298c75a2",
+   "title": "21 minutes ago",
+   "position": {
+    "y": 1111,
+    "x": 811
+   }
+  },
+  {
+   "size": {
+    "height": 0,
+    "width": 20
+   },
+   "role": "AXLink",
+   "id": "el_7453bc3495add643db107d33a91f4a2b",
+   "title": "hide",
+   "position": {
+    "y": 1111,
+    "x": 895
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 21
+   },
+   "title": "past",
+   "id": "el_dd36ca4072a49f686452ca0c2b40266e",
+   "position": {
+    "y": 1111,
+    "x": 925
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 34
+   },
+   "title": "discuss",
+   "id": "el_978b86ae577080a387091cc3669a0efc",
+   "position": {
+    "y": 1111,
+    "x": 956
+   }
+  },
+  {
+   "size": {
+    "height": 0,
+    "width": 33
+   },
+   "role": "AXLink",
+   "title": "More",
+   "id": "el_9de7f3d461b3e2f7c88a5f54f6c36e47",
+   "position": {
+    "y": 1111,
+    "x": 718
+   }
+  },
+  {
+   "size": {
+    "height": 0,
+    "width": 56
+   },
+   "role": "AXLink",
+   "id": "el_200d6e9aacad4fdf75003c88a44d7cc0",
+   "title": "Guidelines",
+   "position": {
+    "y": 1111,
+    "x": 995
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 22
+   },
+   "title": "FAQ",
+   "id": "el_28d1a0f638374b3ef4738df6553720ad",
+   "position": {
+    "y": 1111,
+    "x": 1062
+   }
+  },
+  {
+   "size": {
+    "height": 0,
+    "width": 25
+   },
+   "role": "AXLink",
+   "id": "el_9bcd9b42da5b5cd4457f838414eb083a",
+   "title": "Lists",
+   "position": {
+    "y": 1111,
+    "x": 1096
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 18
+   },
+   "id": "el_9f78a48f14149806cdb27188834ce26a",
+   "title": "API",
+   "position": {
+    "y": 1111,
+    "x": 1133
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 45
+   },
+   "title": "Security",
+   "id": "el_3076743efaa16028c10317e8e4721747",
+   "position": {
+    "y": 1111,
+    "x": 1163
+   }
+  },
+  {
+   "size": {
+    "height": 0,
+    "width": 29
+   },
+   "role": "AXLink",
+   "title": "Legal",
+   "id": "el_54b3f26cfbd2d813ffb8744b2efc450b",
+   "position": {
+    "y": 1111,
+    "x": 1219
+   }
+  },
+  {
+   "size": {
+    "height": 0,
+    "width": 62
+   },
+   "role": "AXLink",
+   "title": "Apply to YC",
+   "id": "el_3023a53b120c9f494217190a8df87d0d",
+   "position": {
+    "y": 1111,
+    "x": 1260
+   }
+  },
+  {
+   "role": "AXLink",
+   "size": {
+    "height": 0,
+    "width": 42
+   },
+   "id": "el_05447327c28cbcd469db42fd8f5b4fa0",
+   "title": "Contact",
+   "position": {
+    "y": 1111,
+    "x": 1334
+   }
+  }
+ ],
+ "bytes": 38463,
+ "limit_reached": false,
+ "truncated": false,
+ "count": 261
+}
+--- find_elements {"pid": 41308, "role": "AXImage", "exact": true, "max_depth": 32, "limit": 500, "fields": ["id", "role", "title", "position", "size"], "max_bytes": 100000} -> 122 ms
+{
+ "ok": true,
+ "truncated": false,
+ "nodes_visited": 1650,
+ "elements": [
+  {
+   "role": "AXImage",
+   "position": {
+    "x": 684,
+    "y": 184
+   },
+   "id": "el_e41f2f750a9e70dc72187a0e26ff9731",
+   "title": "To get missing image descriptions, open the context menu.",
+   "size": {
+    "height": 20,
+    "width": 20
+   }
+  },
+  {
+   "role": "AXImage",
+   "id": "el_024ffc8b71f432e375de5cedfe1f600b",
+   "position": {
+    "x": 704,
+    "y": 233
+   },
+   "title": "/s.gif",
+   "size": {
+    "height": 1,
+    "width": 14
+   }
+  },
+  {
+   "role": "AXImage",
+   "position": {
+    "x": 682,
+    "y": 1111
+   },
+   "id": "el_92b5669b02bc9ae1a42810530f284ad5",
+   "title": "/s.gif",
+   "size": {
+    "height": 0,
+    "width": 0
+   }
+  }
+ ],
+ "limit_reached": false,
+ "count": 3,
+ "pid": 41308,
+ "max_depth_used": 32,
+ "bytes": 598
+}
+--- element_at_point {"pid": 41308, "x": 733.5, "y": 194.0} -> 10 ms
+{
+ "enabled": true,
+ "stable_id_strategy": "top_down",
+ "ancestors": [
+  {
+   "role": "AXScrollArea",
+   "title": null
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": "New Links | Hacker News - Part of group ✅Neuromcp - Google Chrome - John (Persoon 1)"
+  }
+ ],
+ "element_id": "el_a9827eedf29913d0a489320746ff8e86",
+ "x": 733.5,
+ "y": 194,
+ "title": "New Links | Hacker News",
+ "pid": 41308,
+ "role": "AXWebArea",
+ "app_name": "Google Chrome",
+ "bounds": {
+  "x": 585,
+  "y": 174,
+  "width": 1200,
+  "height": 937
+ },
+ "ok": true,
+ "stable_id_steps": [
+  "cf_equal"
+ ],
+ "value": "",
+ "stable_id": true
+}
+--- element_at_point {"pid": 41308, "x": 733.5, "y": 194.0} -> 9 ms
+{
+ "enabled": true,
+ "stable_id_strategy": "top_down",
+ "ancestors": [
+  {
+   "role": "AXLink",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": "Hacker Newsnew | threads | past | comments | ask | show | jobs | submit"
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": "Hacker Newsnew | threads | past | comments | ask | show | jobs | submit adelelo13 (2) | logout"
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXWebArea",
+   "title": "New Links | Hacker News"
+  }
+ ],
+ "element_id": "el_0c0587ece906e6dc3083da745ba853d0",
+ "x": 733.5,
+ "y": 194,
+ "title": null,
+ "pid": 41308,
+ "role": "AXStaticText",
+ "app_name": "Google Chrome",
+ "bounds": {
+  "x": 709,
+  "y": 186,
+  "width": 98,
+  "height": 16
+ },
+ "ok": true,
+ "stable_id_steps": [
+  "cf_equal"
+ ],
+ "value": "Hacker News",
+ "stable_id": true
+}
+--- element_at_point {"pid": 41308, "x": 782.5, "y": 194.0} -> 10 ms
+{
+ "enabled": true,
+ "stable_id_strategy": "top_down",
+ "ancestors": [
+  {
+   "role": "AXLink",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": "Hacker Newsnew | threads | past | comments | ask | show | jobs | submit"
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": "Hacker Newsnew | threads | past | comments | ask | show | jobs | submit adelelo13 (2) | logout"
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXWebArea",
+   "title": "New Links | Hacker News"
+  }
+ ],
+ "element_id": "el_0c0587ece906e6dc3083da745ba853d0",
+ "x": 782.5,
+ "y": 194,
+ "title": null,
+ "pid": 41308,
+ "role": "AXStaticText",
+ "app_name": "Google Chrome",
+ "bounds": {
+  "x": 709,
+  "y": 186,
+  "width": 98,
+  "height": 16
+ },
+ "ok": true,
+ "stable_id_steps": [
+  "cf_equal"
+ ],
+ "value": "Hacker News",
+ "stable_id": true
+}
+--- element_at_point {"pid": 41308, "x": 782.5, "y": 194.0} -> 9 ms
+{
+ "enabled": true,
+ "stable_id_strategy": "top_down",
+ "ancestors": [
+  {
+   "role": "AXLink",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": "Hacker Newsnew | threads | past | comments | ask | show | jobs | submit"
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": "Hacker Newsnew | threads | past | comments | ask | show | jobs | submit adelelo13 (2) | logout"
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXWebArea",
+   "title": "New Links | Hacker News"
+  }
+ ],
+ "element_id": "el_0c0587ece906e6dc3083da745ba853d0",
+ "x": 782.5,
+ "y": 194,
+ "title": null,
+ "pid": 41308,
+ "role": "AXStaticText",
+ "app_name": "Google Chrome",
+ "bounds": {
+  "x": 709,
+  "y": 186,
+  "width": 98,
+  "height": 16
+ },
+ "ok": true,
+ "stable_id_steps": [
+  "cf_equal"
+ ],
+ "value": "Hacker News",
+ "stable_id": true
+}
+--- element_at_point {"pid": 41308, "x": 826.0, "y": 194.0} -> 9 ms
+{
+ "ancestors": [
+  {
+   "role": "AXLink",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": "Hacker Newsnew | threads | past | comments | ask | show | jobs | submit"
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": "Hacker Newsnew | threads | past | comments | ask | show | jobs | submit adelelo13 (2) | logout"
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXWebArea",
+   "title": "New Links | Hacker News"
+  }
+ ],
+ "app_name": "Google Chrome",
+ "element_id": "el_fbfa4506dab2d3b50c16587b64bbfd3d",
+ "stable_id": true,
+ "title": null,
+ "bounds": {
+  "x": 812,
+  "y": 186,
+  "width": 28,
+  "height": 16
+ },
+ "role": "AXStaticText",
+ "enabled": true,
+ "pid": 41308,
+ "x": 826,
+ "ok": true,
+ "stable_id_strategy": "top_down",
+ "y": 194,
+ "value": "new",
+ "stable_id_steps": [
+  "cf_equal"
+ ]
+}
+--- element_at_point {"pid": 41308, "x": 826.0, "y": 194.0} -> 8 ms
+{
+ "ancestors": [
+  {
+   "role": "AXLink",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": "Hacker Newsnew | threads | past | comments | ask | show | jobs | submit"
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": "Hacker Newsnew | threads | past | comments | ask | show | jobs | submit adelelo13 (2) | logout"
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXWebArea",
+   "title": "New Links | Hacker News"
+  }
+ ],
+ "app_name": "Google Chrome",
+ "element_id": "el_fbfa4506dab2d3b50c16587b64bbfd3d",
+ "title": null,
+ "bounds": {
+  "height": 16,
+  "x": 812,
+  "width": 28,
+  "y": 186
+ },
+ "role": "AXStaticText",
+ "stable_id": true,
+ "enabled": true,
+ "x": 826,
+ "pid": 41308,
+ "ok": true,
+ "stable_id_strategy": "top_down",
+ "y": 194,
+ "value": "new",
+ "stable_id_steps": [
+  "cf_equal"
+ ]
+}
+--- element_at_point {"pid": 41308, "x": 694.0, "y": 194.0} -> 8 ms
+{
+ "ancestors": [
+  {
+   "role": "AXLink",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": "Hacker Newsnew | threads | past | comments | ask | show | jobs | submit adelelo13 (2) | logout"
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXWebArea",
+   "title": "New Links | Hacker News"
+  }
+ ],
+ "app_name": "Google Chrome",
+ "element_id": "el_e41f2f750a9e70dc72187a0e26ff9731",
+ "title": "To get missing image descriptions, open the context menu.",
+ "bounds": {
+  "height": 20,
+  "x": 684,
+  "width": 20,
+  "y": 184
+ },
+ "role": "AXImage",
+ "stable_id": true,
+ "enabled": true,
+ "x": 694,
+ "pid": 41308,
+ "ok": true,
+ "stable_id_strategy": "top_down",
+ "y": 194,
+ "value": "",
+ "stable_id_steps": [
+  "cf_equal"
+ ]
+}
+--- element_at_point {"pid": 41308, "x": 694.0, "y": 194.0} -> 7 ms
+{
+ "ancestors": [
+  {
+   "role": "AXLink",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": "Hacker Newsnew | threads | past | comments | ask | show | jobs | submit adelelo13 (2) | logout"
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXGroup",
+   "title": ""
+  },
+  {
+   "role": "AXWebArea",
+   "title": "New Links | Hacker News"
+  }
+ ],
+ "app_name": "Google Chrome",
+ "element_id": "el_e41f2f750a9e70dc72187a0e26ff9731",
+ "title": "To get missing image descriptions, open the context menu.",
+ "bounds": {
+  "height": 20,
+  "x": 684,
+  "width": 20,
+  "y": 184
+ },
+ "role": "AXImage",
+ "stable_id": true,
+ "enabled": true,
+ "x": 694,
+ "pid": 41308,
+ "ok": true,
+ "stable_id_strategy": "top_down",
+ "y": 194,
+ "value": "",
+ "stable_id_steps": [
+  "cf_equal"
+ ]
+}

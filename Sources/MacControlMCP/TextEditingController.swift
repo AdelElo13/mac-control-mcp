@@ -112,7 +112,7 @@ actor TextEditingController {
             case .permissionMissing:
                 return "Grant Accessibility in System Settings → Privacy & Security → Accessibility, then retry. open_permission_pane(pane=\"accessibility\") deep-links there."
             case .notFound:
-                return "Re-resolve the element with find_elements/query_elements (ids expire after 5 minutes), or pass pid to target the app's currently focused element."
+                return "Re-resolve the element with find_elements/query_elements, or pass pid to target the app's currently focused element."
             case .notSupported(_, let reason):
                 switch reason {
                 case "secure_field":

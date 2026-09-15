@@ -1,0 +1,45 @@
+## feat/v0.10-ids
+ M Sources/MacControlMCP/ElementCache.swift
+ M Sources/MacControlMCP/TextEditingController.swift
+ M Sources/MacControlMCP/Tools+TextEditing.swift
+ M Sources/MacControlMCP/Tools+V0_9AXCore.swift
+ M Sources/MacControlMCP/Tools+V2.swift
+ M Tests/MacControlMCPTests/ElementCacheTests.swift
+ M Tests/MacControlMCPTests/TextEditingTests.swift
+ M docs/TOOLS.md
+?? .s1-evidence/REPORT.md
+?? .s1-evidence/build-final.txt
+?? .s1-evidence/build-resume.txt
+?? .s1-evidence/commit-attempt.txt
+?? .s1-evidence/fake-baseline.txt
+?? .s1-evidence/final-AXAttributeBatchTests.txt
+?? .s1-evidence/final-AXHandleSafetyTests.txt
+?? .s1-evidence/final-AXPathTests.txt
+?? .s1-evidence/final-AXPayloadBudgetTests.txt
+?? .s1-evidence/final-AnnotatedElementIdentityTests.txt
+?? .s1-evidence/final-CodexR2RegressionTests.txt
+?? .s1-evidence/final-ElementCacheTests.txt
+?? .s1-evidence/final-Phase6ToolsTests.txt
+?? .s1-evidence/final-Phase9ToolsTests.txt
+?? .s1-evidence/final-TextEditingBackendTests.txt
+?? .s1-evidence/final-TextEditingTests.txt
+?? .s1-evidence/git-status-final.txt
+?? .s1-evidence/green-fake-live-fastpath.txt
+?? .s1-evidence/green-repeated-collision.txt
+?? .s1-evidence/green-stability-reason.txt
+?? .s1-evidence/green-text-hint.txt
+?? .s1-evidence/live-after.txt
+?? .s1-evidence/live-checks-validation.txt
+?? .s1-evidence/live-finder-chrome.txt
+?? .s1-evidence/perf-after-run.txt
+?? .s1-evidence/perf-after.json
+?? .s1-evidence/perf-before-supplied.json
+?? .s1-evidence/perf-cases.json
+?? .s1-evidence/red-fake-live-fastpath.txt
+?? .s1-evidence/red-repeated-collision.txt
+?? .s1-evidence/red-text-hint.txt
+?? .s1-evidence/required-suites.txt
+?? .s1-evidence/suite-summary.txt
+?? .s1-evidence/tool-docs-final.txt
+?? .s1-evidence/tool-docs.txt
+?? LIVE-CHECKS.md

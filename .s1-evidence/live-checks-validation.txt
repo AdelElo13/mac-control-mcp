@@ -1,0 +1,6 @@
+PASS: bash syntax for 5 command blocks; none executed
+PASS: Python syntax for 2 embedded programs; no top-level program executed
+PASS: fake id checks accept same/stale and reject a silent retarget
+PASS: app pid decoder accepts the server bundle-key formats
+PASS: fake mid-check failure closes only newly created Finder window 11; existing window 10 is untouched
+FINAL PASS: shell syntax 6 blocks; Python syntax 2 programs; no desktop commands executed.

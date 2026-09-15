@@ -84,6 +84,8 @@ extension ToolRegistry {
             case .unknown:
                 if let original, Self.actionDefinitelyGone(original) { return .states([]) }
                 return .failed(unknownElementResult(id))
+            case .evicted(let hint):
+                return .failed(evictedElementResult(id, hint: hint))
             case .stale(let reason):
                 // v0.10 C3: only confirmed invalid AX handles prove disappearance;
                 // an expired cache entry or identity mismatch must not pass a wait.

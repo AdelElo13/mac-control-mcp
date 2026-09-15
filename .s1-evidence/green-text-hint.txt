@@ -1,0 +1,160 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ids': failed storing manifest for 'wt10-ids' in cache: attempt to write a readonly database
+warning: 'wt10-ids': found 1 file(s) which are unhandled; explicitly declare them as resources or exclude from the target
+    /private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/Sources/MacControlMCP/Resources/well-known-mcp.json
+[0/1] Planning build
+Building for debugging...
+[0/5] Write sources
+[1/5] Write swift-version--58304C5D6DBC2206.txt
+[3/9] Compiling MacControlMCP TextEditingController.swift
+[4/9] Compiling MacControlMCP Tools+V2.swift
+[5/9] Compiling MacControlMCP Tools+TextEditing.swift
+[6/10] Emitting module MacControlMCP
+[7/10] Compiling MacControlMCP Tools.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/Sources/MacControlMCP/Tools.swift:849:27: warning: no 'async' operations occur within 'await' expression
+ 847 |             }
+ 848 | 
+ 849 |             let pressed = await accessibility.pressKey(keyCode: keyCode, modifiers: modifiers)
+     |                           `- warning: no 'async' operations occur within 'await' expression
+ 850 |             if pressed {
+ 851 |                 return successResult(
+[7/12] Write Objects.LinkFileList
+[8/12] Linking mac-control-mcp
+[9/12] Applying mac-control-mcp
+[11/13] Emitting module MacControlMCPTests
+[11/13] Write Objects.LinkFileList
+[12/13] Linking mac-control-mcpPackageTests
+Build complete! (4.36s)
+Test Suite 'Selected tests' started at 2026-09-15 17:57:38.426.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 17:57:38.431.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 17:57:38.431.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 17:57:38.431.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.006) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Text editing — AX backend seam (C-7 review)" started.
+◇ Test "inserted_characters is the UTF-16 delta, not the grapheme count" started.
+✔ Test "inserted_characters is the UTF-16 delta, not the grapheme count" passed after 0.001 seconds.
+◇ Test "number_of_characters is UTF-16 consistent across the value and selection paths" started.
+✔ Test "number_of_characters is UTF-16 consistent across the value and selection paths" passed after 0.001 seconds.
+◇ Test "a decomposed é counts as its two UTF-16 units" started.
+✔ Test "a decomposed é counts as its two UTF-16 units" passed after 0.001 seconds.
+◇ Test "truncate never splits a surrogate pair" started.
+✔ Test "truncate never splits a surrogate pair" passed after 0.001 seconds.
+◇ Test "text_get_value truncation is reported in UTF-16 units" started.
+✔ Test "text_get_value truncation is reported in UTF-16 units" passed after 0.001 seconds.
+◇ Test "replacingUTF16 splices in AX space" started.
+✔ Test "replacingUTF16 splices in AX space" passed after 0.001 seconds.
+◇ Test "a selection write the element ignores is reported, and no text is written" started.
+✔ Test "a selection write the element ignores is reported, and no text is written" passed after 0.001 seconds.
+◇ Test "a text write the element ignores reports write_not_applied" started.
+✔ Test "a text write the element ignores reports write_not_applied" passed after 0.001 seconds.
+◇ Test "a count-only verification reports applied: nil, not true" started.
+✔ Test "a count-only verification reports applied: nil, not true" passed after 0.001 seconds.
+◇ Test "an entirely unverifiable write reports applied: nil" started.
+✔ Test "an entirely unverifiable write reports applied: nil" passed after 0.001 seconds.
+◇ Test "a read-back match is still reported as applied: true" started.
+✔ Test "a read-back match is still reported as applied: true" passed after 0.001 seconds.
+◇ Test "location + length overflow is an argument error, not a trap" started.
+✔ Test "location + length overflow is an argument error, not a trap" passed after 0.001 seconds.
+◇ Test "an overflowing range never reaches the element" started.
+✔ Test "an overflowing range never reaches the element" passed after 0.001 seconds.
+◇ Test "replacingUTF16 rejects an overflowing range instead of trapping" started.
+✔ Test "replacingUTF16 rejects an overflowing range instead of trapping" passed after 0.001 seconds.
+◇ Test "a write that lands differently returns applied=false with the observed text" started.
+✔ Test "a write that lands differently returns applied=false with the observed text" passed after 0.001 seconds.
+◇ Test "verification falls back to AXStringForRange when AXValue is unreadable" started.
+✔ Test "verification falls back to AXStringForRange when AXValue is unreadable" passed after 0.001 seconds.
+◇ Test "insert_at_caret collapses a non-empty selection instead of overwriting it" started.
+✔ Test "insert_at_caret collapses a non-empty selection instead of overwriting it" passed after 0.001 seconds.
+◇ Test "replace_range does overwrite the range it was given" started.
+✔ Test "replace_range does overwrite the range it was given" passed after 0.001 seconds.
+◇ Test "secure text fields are refused for reads" started.
+◇ Test case passing 1 argument kind → "selection" to "secure text fields are refused for reads" started.
+◇ Test case passing 1 argument kind → "caret" to "secure text fields are refused for reads" started.
+◇ Test case passing 1 argument kind → "value" to "secure text fields are refused for reads" started.
+✔ Test "secure text fields are refused for reads" with 3 test cases passed after 0.001 seconds.
+◇ Test "secure text fields are refused for writes" started.
+✔ Test "secure text fields are refused for writes" passed after 0.001 seconds.
+◇ Test "an untrusted process reports permission_missing before touching AX" started.
+✔ Test "an untrusted process reports permission_missing before touching AX" passed after 0.001 seconds.
+◇ Test "a dead element reports not_found" started.
+✔ Test "a dead element reports not_found" passed after 0.001 seconds.
+◇ Test "an app element from the pid path reports no_focused_element, not not_text_element" started.
+✔ Test "an app element from the pid path reports no_focused_element, not not_text_element" passed after 0.001 seconds.
+◇ Test "a non-text element reports not_text_element" started.
+✔ Test "a non-text element reports not_text_element" passed after 0.001 seconds.
+✔ Suite "Text editing — AX backend seam (C-7 review)" passed after 0.001 seconds.
+◇ Suite "Text editing primitives (C-7)" started.
+◇ Test "cfRange AXValue decodes to a typed TextRange" started.
+✔ Test "cfRange AXValue decodes to a typed TextRange" passed after 0.001 seconds.
+◇ Test "a zero-length cfRange (collapsed caret) decodes as length 0" started.
+✔ Test "a zero-length cfRange (collapsed caret) decodes as length 0" passed after 0.001 seconds.
+◇ Test "a non-range AXValue does not decode as a range" started.
+✔ Test "a non-range AXValue does not decode as a range" passed after 0.001 seconds.
+◇ Test "cgRect AXValue decodes to typed bounds" started.
+✔ Test "cgRect AXValue decodes to typed bounds" passed after 0.001 seconds.
+◇ Test "a non-rect AXValue does not decode as bounds" started.
+✔ Test "a non-rect AXValue does not decode as bounds" passed after 0.001 seconds.
+◇ Test "makeRangeValue round-trips through AXValue" started.
+✔ Test "makeRangeValue round-trips through AXValue" passed after 0.001 seconds.
+◇ Test "a range inside the document validates" started.
+✔ Test "a range inside the document validates" passed after 0.001 seconds.
+◇ Test "negative location or length is rejected" started.
+✔ Test "negative location or length is rejected" passed after 0.001 seconds.
+◇ Test "a range past the end of the document is rejected" started.
+✔ Test "a range past the end of the document is rejected" passed after 0.001 seconds.
+◇ Test "with an unknown character count the bounds check is skipped, not guessed" started.
+✔ Test "with an unknown character count the bounds check is skipped, not guessed" passed after 0.001 seconds.
+◇ Test "an out-of-range insertion point line is reported as unknown, not as Int.max" started.
+✔ Test "an out-of-range insertion point line is reported as unknown, not as Int.max" passed after 0.001 seconds.
+◇ Test "truncate reports the untruncated value when it fits" started.
+✔ Test "truncate reports the untruncated value when it fits" passed after 0.001 seconds.
+◇ Test "truncate cuts to maxChars and flags it" started.
+✔ Test "truncate cuts to maxChars and flags it" passed after 0.001 seconds.
+◇ Test "truncate with no limit returns everything" started.
+✔ Test "truncate with no limit returns everything" passed after 0.001 seconds.
+◇ Test "truncate counts UTF-16 code units, not graphemes or bytes" started.
+✔ Test "truncate counts UTF-16 code units, not graphemes or bytes" passed after 0.001 seconds.
+◇ Test "all text editing tools are registered" started.
+✔ Test "all text editing tools are registered" passed after 0.003 seconds.
+◇ Test "every text tool dispatches (no unknown-tool fallthrough)" started.
+✔ Test "every text tool dispatches (no unknown-tool fallthrough)" passed after 0.001 seconds.
+◇ Test "tools require element_id or pid" started.
+◇ Test case passing 1 argument name → "text_get_selection" to "tools require element_id or pid" started.
+◇ Test case passing 1 argument name → "text_get_caret" to "tools require element_id or pid" started.
+◇ Test case passing 1 argument name → "text_get_value" to "tools require element_id or pid" started.
+✔ Test "tools require element_id or pid" with 3 test cases passed after 0.001 seconds.
+◇ Test "text_set_selection requires location and length" started.
+✔ Test "text_set_selection requires location and length" passed after 0.001 seconds.
+◇ Test "text_insert_at_caret requires text" started.
+✔ Test "text_insert_at_caret requires text" passed after 0.001 seconds.
+◇ Test "text_replace_range requires location, length and text" started.
+✔ Test "text_replace_range requires location, length and text" passed after 0.001 seconds.
+◇ Test "text_get_value rejects a non-positive max_chars" started.
+✔ Test "text_get_value rejects a non-positive max_chars" passed after 0.001 seconds.
+◇ Test "an out-of-bounds range is an argument error, not not_supported" started.
+✔ Test "an out-of-bounds range is an argument error, not not_supported" passed after 0.001 seconds.
+◇ Test "text tools report stale_element for a recycled-pid handle" started.
+◇ Test case passing 1 argument name → "text_get_selection" to "text tools report stale_element for a recycled-pid handle" started.
+◇ Test case passing 1 argument name → "text_get_caret" to "text tools report stale_element for a recycled-pid handle" started.
+◇ Test case passing 1 argument name → "text_get_value" to "text tools report stale_element for a recycled-pid handle" started.
+✔ Test "text tools report stale_element for a recycled-pid handle" with 3 test cases passed after 0.002 seconds.
+◇ Test "text write tools refuse a recycled-pid handle" started.
+✔ Test "text write tools refuse a recycled-pid handle" passed after 0.001 seconds.
+◇ Test "an overflowing range is an argument error at the tool boundary" started.
+✔ Test "an overflowing range is an argument error at the tool boundary" passed after 0.001 seconds.
+◇ Test "an unknown element_id reports not_found, not a crash" started.
+✔ Test "an unknown element_id reports not_found, not a crash" passed after 0.001 seconds.
+◇ Test "a pid that belongs to no process reports not_found" started.
+✔ Test "a pid that belongs to no process reports not_found" passed after 0.001 seconds.
+◇ Test "an invalid pid is an argument error, not a not_found" started.
+✔ Test "an invalid pid is an argument error, not a not_found" passed after 0.001 seconds.
+◇ Test "unknown text ids describe the configured cache retention" started.
+✔ Test "unknown text ids describe the configured cache retention" passed after 0.001 seconds.
+✔ Suite "Text editing primitives (C-7)" passed after 0.012 seconds.
+✔ Test run with 54 tests in 2 suites passed after 0.014 seconds.

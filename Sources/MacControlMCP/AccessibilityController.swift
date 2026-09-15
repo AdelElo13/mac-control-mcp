@@ -222,6 +222,7 @@ actor AccessibilityController {
         let path: [AXPathComponent]?
         /// Nearest-first (role, title) pairs, capped by the caller.
         let ancestors: [(role: String?, title: String?)]
+        var identity: AXPath.Reconstruction? = nil
     }
 
     func describeHit(element: AXUIElement, ancestorLimit: Int = 8) -> HitTest? {
@@ -232,13 +233,15 @@ actor AccessibilityController {
             (role: AXPath.copyString($0, "AXRole"),
              title: AXPath.copyString($0, "AXTitle") ?? AXPath.copyString($0, "AXDescription"))
         }
+        let identity = AXPath.reconstruct(element: element)
         return HitTest(
             info: Self.elementInfo(from: attrs, depth: nil),
             enabled: enabled,
             pid: pid,
             appName: NSRunningApplication(processIdentifier: pid)?.localizedName,
-            path: AXPath.upwardPath(of: element),
-            ancestors: ancestors
+            path: identity.path,
+            ancestors: ancestors,
+            identity: identity
         )
     }
 
@@ -286,7 +289,9 @@ actor AccessibilityController {
         manualAccessibilityEnabled.insert(pid)
     }
 
-    func listElements(pid: pid_t, maxDepth: Int = AXDepth.default) -> [ElementInfo] {
+    // v0.10 A6: report the real number of nodes the walk touched, not the
+    // number of controls kept.
+    func listElements(pid: pid_t, maxDepth: Int = AXDepth.default) -> (elements: [ElementInfo], nodesVisited: Int) {
         enableManualAccessibility(pid: pid)
         let root = AXUIElementCreateApplication(pid)
         var visited = Set<AXKey>()
@@ -299,7 +304,7 @@ actor AccessibilityController {
             return false
         }
 
-        return output
+        return (output, visited.count)
     }
 
     /// First depth-first match.

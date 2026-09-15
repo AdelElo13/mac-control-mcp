@@ -75,13 +75,20 @@ enum AXAttributeBatch {
     // v0.10 C6: append web metadata only below AXWebArea, in the same IPC.
     static let webAttributes = ["AXURL", "AXDOMIdentifier", "AXDOMClassList"]
 
-    static func fetch(_ element: AXUIElement, includeChildren: Bool, insideWebArea: Bool = false) -> Values {
+    /// `fallbackOnFailure: false` (v0.10 A1) keeps identity checks to ONE
+    /// IPC round trip: a failed batch cannot prove identity and fails closed.
+    static func fetch(
+        _ element: AXUIElement, includeChildren: Bool, insideWebArea: Bool = false, fallbackOnFailure: Bool = true
+    ) -> Values {
         let names = (includeChildren ? nodeAttributes : infoAttributes) + (insideWebArea ? webAttributes : [])
         var raw: CFArray?
         let status = AXUIElementCopyMultipleAttributeValues(element, names as CFArray, [], &raw)
         if status == .success, let array = raw as? [AnyObject], array.count == names.count {
             return decode(array, includeChildren: includeChildren)
         }
+        // v0.10 A1: identity validation must stay within one IPC round trip;
+        // a failed batch cannot prove identity and must fail closed.
+        guard fallbackOnFailure else { return decode([], includeChildren: includeChildren) }
         let slots: [AnyObject] = names.map { name in
             var value: CFTypeRef?
             guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success,

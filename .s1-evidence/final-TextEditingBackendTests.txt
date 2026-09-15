@@ -1,0 +1,70 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ids': failed storing manifest for 'wt10-ids' in cache: attempt to write a readonly database
+Building for debugging...
+[0/4] Write swift-version--58304C5D6DBC2206.txt
+Build complete! (0.09s)
+Test Suite 'Selected tests' started at 2026-09-15 19:38:53.627.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 19:38:53.632.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 19:38:53.632.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 19:38:53.632.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.005) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Text editing — AX backend seam (C-7 review)" started.
+◇ Test "inserted_characters is the UTF-16 delta, not the grapheme count" started.
+✔ Test "inserted_characters is the UTF-16 delta, not the grapheme count" passed after 0.001 seconds.
+◇ Test "number_of_characters is UTF-16 consistent across the value and selection paths" started.
+✔ Test "number_of_characters is UTF-16 consistent across the value and selection paths" passed after 0.001 seconds.
+◇ Test "a decomposed é counts as its two UTF-16 units" started.
+✔ Test "a decomposed é counts as its two UTF-16 units" passed after 0.001 seconds.
+◇ Test "truncate never splits a surrogate pair" started.
+✔ Test "truncate never splits a surrogate pair" passed after 0.001 seconds.
+◇ Test "text_get_value truncation is reported in UTF-16 units" started.
+✔ Test "text_get_value truncation is reported in UTF-16 units" passed after 0.001 seconds.
+◇ Test "replacingUTF16 splices in AX space" started.
+✔ Test "replacingUTF16 splices in AX space" passed after 0.001 seconds.
+◇ Test "a selection write the element ignores is reported, and no text is written" started.
+✔ Test "a selection write the element ignores is reported, and no text is written" passed after 0.001 seconds.
+◇ Test "a text write the element ignores reports write_not_applied" started.
+✔ Test "a text write the element ignores reports write_not_applied" passed after 0.001 seconds.
+◇ Test "a count-only verification reports applied: nil, not true" started.
+✔ Test "a count-only verification reports applied: nil, not true" passed after 0.001 seconds.
+◇ Test "an entirely unverifiable write reports applied: nil" started.
+✔ Test "an entirely unverifiable write reports applied: nil" passed after 0.001 seconds.
+◇ Test "a read-back match is still reported as applied: true" started.
+✔ Test "a read-back match is still reported as applied: true" passed after 0.001 seconds.
+◇ Test "location + length overflow is an argument error, not a trap" started.
+✔ Test "location + length overflow is an argument error, not a trap" passed after 0.001 seconds.
+◇ Test "an overflowing range never reaches the element" started.
+✔ Test "an overflowing range never reaches the element" passed after 0.001 seconds.
+◇ Test "replacingUTF16 rejects an overflowing range instead of trapping" started.
+✔ Test "replacingUTF16 rejects an overflowing range instead of trapping" passed after 0.001 seconds.
+◇ Test "a write that lands differently returns applied=false with the observed text" started.
+✔ Test "a write that lands differently returns applied=false with the observed text" passed after 0.001 seconds.
+◇ Test "verification falls back to AXStringForRange when AXValue is unreadable" started.
+✔ Test "verification falls back to AXStringForRange when AXValue is unreadable" passed after 0.001 seconds.
+◇ Test "insert_at_caret collapses a non-empty selection instead of overwriting it" started.
+✔ Test "insert_at_caret collapses a non-empty selection instead of overwriting it" passed after 0.001 seconds.
+◇ Test "replace_range does overwrite the range it was given" started.
+✔ Test "replace_range does overwrite the range it was given" passed after 0.001 seconds.
+◇ Test "secure text fields are refused for reads" started.
+◇ Test case passing 1 argument kind → "selection" to "secure text fields are refused for reads" started.
+◇ Test case passing 1 argument kind → "caret" to "secure text fields are refused for reads" started.
+◇ Test case passing 1 argument kind → "value" to "secure text fields are refused for reads" started.
+✔ Test "secure text fields are refused for reads" with 3 test cases passed after 0.001 seconds.
+◇ Test "secure text fields are refused for writes" started.
+✔ Test "secure text fields are refused for writes" passed after 0.001 seconds.
+◇ Test "an untrusted process reports permission_missing before touching AX" started.
+✔ Test "an untrusted process reports permission_missing before touching AX" passed after 0.001 seconds.
+◇ Test "a dead element reports not_found" started.
+✔ Test "a dead element reports not_found" passed after 0.001 seconds.
+◇ Test "an app element from the pid path reports no_focused_element, not not_text_element" started.
+✔ Test "an app element from the pid path reports no_focused_element, not not_text_element" passed after 0.001 seconds.
+◇ Test "a non-text element reports not_text_element" started.
+✔ Test "a non-text element reports not_text_element" passed after 0.001 seconds.
+✔ Suite "Text editing — AX backend seam (C-7 review)" passed after 0.001 seconds.
+✔ Test run with 24 tests in 1 suite passed after 0.001 seconds.

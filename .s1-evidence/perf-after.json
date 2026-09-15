@@ -1,0 +1,578 @@
+[
+ {
+  "label": "get_ui_tree/Finder",
+  "tool": "get_ui_tree",
+  "args": {
+   "pid": 742
+  },
+  "n": 7,
+  "p50": 0.7,
+  "p95": 0.8,
+  "min": 0.6,
+  "max": 0.9,
+  "bytes": 272,
+  "errors": 0,
+  "info": {
+   "nodes_visited": 1,
+   "count": 1,
+   "bytes": 260,
+   "truncated": false,
+   "node_cap_reached": false,
+   "max_depth_used": 24,
+   "n_nodes": 1
+  }
+ },
+ {
+  "label": "get_ui_tree(interactive,fields)/Finder",
+  "tool": "get_ui_tree",
+  "args": {
+   "pid": 742,
+   "interactive_only": true,
+   "fields": [
+    "id",
+    "role",
+    "title"
+   ]
+  },
+  "n": 7,
+  "p50": 0.6,
+  "p95": 0.7,
+  "min": 0.5,
+  "max": 0.7,
+  "bytes": 166,
+  "errors": 0,
+  "info": {
+   "nodes_visited": 1,
+   "count": 0,
+   "bytes": 154,
+   "truncated": false,
+   "node_cap_reached": false,
+   "max_depth_used": 24,
+   "n_nodes": 0
+  }
+ },
+ {
+  "label": "find_elements(AXButton,20)/Finder",
+  "tool": "find_elements",
+  "args": {
+   "pid": 742,
+   "role": "AXButton",
+   "limit": 20
+  },
+  "n": 7,
+  "p50": 0.8,
+  "p95": 0.8,
+  "min": 0.7,
+  "max": 0.8,
+  "bytes": 477,
+  "errors": 0,
+  "info": {
+   "nodes_visited": 1,
+   "count": 0,
+   "bytes": 123,
+   "truncated": false,
+   "max_depth_used": 24,
+   "n_elements": 0
+  }
+ },
+ {
+  "label": "query_elements(^Eject$)/Finder",
+  "tool": "query_elements",
+  "args": {
+   "pid": 742,
+   "title_regex": "^Eject$"
+  },
+  "n": 7,
+  "p50": 0.7,
+  "p95": 0.7,
+  "min": 0.6,
+  "max": 0.7,
+  "bytes": 455,
+  "errors": 0,
+  "info": {
+   "nodes_visited": 1,
+   "count": 0,
+   "bytes": 101,
+   "truncated": false,
+   "max_depth_used": 24,
+   "n_elements": 0
+  }
+ },
+ {
+  "label": "list_elements/Finder",
+  "tool": "list_elements",
+  "args": {
+   "pid": 742
+  },
+  "n": 7,
+  "p50": 0.7,
+  "p95": 0.8,
+  "min": 0.6,
+  "max": 0.8,
+  "bytes": 470,
+  "errors": 0,
+  "info": {
+   "nodes_visited": 1,
+   "count": 0,
+   "bytes": 116,
+   "truncated": false,
+   "max_depth_used": 24,
+   "n_elements": 0
+  }
+ },
+ {
+  "label": "element_at_point/Finder",
+  "tool": "element_at_point",
+  "args": {
+   "pid": 742,
+   "x": 900,
+   "y": 569
+  },
+  "n": 7,
+  "p50": 0.1,
+  "p95": 0.2,
+  "min": 0.1,
+  "max": 0.2,
+  "bytes": 840,
+  "errors": 7,
+  "info": {
+   "error_code": "permission_missing"
+  },
+  "err_sample": {
+   "error_code": "permission_missing",
+   "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry."
+  }
+ },
+ {
+  "label": "get_ui_tree/Safari",
+  "tool": "get_ui_tree",
+  "args": {
+   "pid": 681
+  },
+  "n": 7,
+  "p50": 0.7,
+  "p95": 0.7,
+  "min": 0.6,
+  "max": 0.7,
+  "bytes": 272,
+  "errors": 0,
+  "info": {
+   "nodes_visited": 1,
+   "count": 1,
+   "bytes": 260,
+   "truncated": false,
+   "node_cap_reached": false,
+   "max_depth_used": 24,
+   "n_nodes": 1
+  }
+ },
+ {
+  "label": "get_ui_tree(interactive,fields)/Safari",
+  "tool": "get_ui_tree",
+  "args": {
+   "pid": 681,
+   "interactive_only": true,
+   "fields": [
+    "id",
+    "role",
+    "title"
+   ]
+  },
+  "n": 7,
+  "p50": 0.6,
+  "p95": 0.7,
+  "min": 0.5,
+  "max": 0.7,
+  "bytes": 166,
+  "errors": 0,
+  "info": {
+   "nodes_visited": 1,
+   "count": 0,
+   "bytes": 154,
+   "truncated": false,
+   "node_cap_reached": false,
+   "max_depth_used": 24,
+   "n_nodes": 0
+  }
+ },
+ {
+  "label": "find_elements(AXButton,20)/Safari",
+  "tool": "find_elements",
+  "args": {
+   "pid": 681,
+   "role": "AXButton",
+   "limit": 20
+  },
+  "n": 7,
+  "p50": 0.7,
+  "p95": 0.7,
+  "min": 0.5,
+  "max": 0.7,
+  "bytes": 477,
+  "errors": 0,
+  "info": {
+   "nodes_visited": 1,
+   "count": 0,
+   "bytes": 123,
+   "truncated": false,
+   "max_depth_used": 24,
+   "n_elements": 0
+  }
+ },
+ {
+  "label": "query_elements(^Go back$)/Safari",
+  "tool": "query_elements",
+  "args": {
+   "pid": 681,
+   "title_regex": "^Go back$"
+  },
+  "n": 7,
+  "p50": 0.7,
+  "p95": 0.8,
+  "min": 0.6,
+  "max": 0.8,
+  "bytes": 455,
+  "errors": 0,
+  "info": {
+   "nodes_visited": 1,
+   "count": 0,
+   "bytes": 101,
+   "truncated": false,
+   "max_depth_used": 24,
+   "n_elements": 0
+  }
+ },
+ {
+  "label": "list_elements/Safari",
+  "tool": "list_elements",
+  "args": {
+   "pid": 681
+  },
+  "n": 7,
+  "p50": 0.7,
+  "p95": 0.7,
+  "min": 0.6,
+  "max": 0.7,
+  "bytes": 470,
+  "errors": 0,
+  "info": {
+   "nodes_visited": 1,
+   "count": 0,
+   "bytes": 116,
+   "truncated": false,
+   "max_depth_used": 24,
+   "n_elements": 0
+  }
+ },
+ {
+  "label": "element_at_point/Safari",
+  "tool": "element_at_point",
+  "args": {
+   "pid": 681,
+   "x": 900,
+   "y": 567
+  },
+  "n": 7,
+  "p50": 0.1,
+  "p95": 0.2,
+  "min": 0.1,
+  "max": 0.2,
+  "bytes": 840,
+  "errors": 7,
+  "info": {
+   "error_code": "permission_missing"
+  },
+  "err_sample": {
+   "error_code": "permission_missing",
+   "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry."
+  }
+ },
+ {
+  "label": "get_ui_tree/Chrome",
+  "tool": "get_ui_tree",
+  "args": {
+   "pid": 41308
+  },
+  "n": 7,
+  "p50": 0.7,
+  "p95": 0.8,
+  "min": 0.7,
+  "max": 0.8,
+  "bytes": 274,
+  "errors": 0,
+  "info": {
+   "nodes_visited": 1,
+   "count": 1,
+   "bytes": 262,
+   "truncated": false,
+   "node_cap_reached": false,
+   "max_depth_used": 24,
+   "n_nodes": 1
+  }
+ },
+ {
+  "label": "get_ui_tree(interactive,fields)/Chrome",
+  "tool": "get_ui_tree",
+  "args": {
+   "pid": 41308,
+   "interactive_only": true,
+   "fields": [
+    "id",
+    "role",
+    "title"
+   ]
+  },
+  "n": 7,
+  "p50": 0.6,
+  "p95": 0.7,
+  "min": 0.5,
+  "max": 0.7,
+  "bytes": 168,
+  "errors": 0,
+  "info": {
+   "nodes_visited": 1,
+   "count": 0,
+   "bytes": 156,
+   "truncated": false,
+   "node_cap_reached": false,
+   "max_depth_used": 24,
+   "n_nodes": 0
+  }
+ },
+ {
+  "label": "find_elements(AXButton,20)/Chrome",
+  "tool": "find_elements",
+  "args": {
+   "pid": 41308,
+   "role": "AXButton",
+   "limit": 20
+  },
+  "n": 7,
+  "p50": 0.7,
+  "p95": 0.8,
+  "min": 0.7,
+  "max": 0.8,
+  "bytes": 479,
+  "errors": 0,
+  "info": {
+   "nodes_visited": 1,
+   "count": 0,
+   "bytes": 125,
+   "truncated": false,
+   "max_depth_used": 24,
+   "n_elements": 0
+  }
+ },
+ {
+  "label": "query_elements(^Reload$)/Chrome",
+  "tool": "query_elements",
+  "args": {
+   "pid": 41308,
+   "title_regex": "^Reload$"
+  },
+  "n": 7,
+  "p50": 0.7,
+  "p95": 0.7,
+  "min": 0.6,
+  "max": 0.7,
+  "bytes": 457,
+  "errors": 0,
+  "info": {
+   "nodes_visited": 1,
+   "count": 0,
+   "bytes": 103,
+   "truncated": false,
+   "max_depth_used": 24,
+   "n_elements": 0
+  }
+ },
+ {
+  "label": "list_elements/Chrome",
+  "tool": "list_elements",
+  "args": {
+   "pid": 41308
+  },
+  "n": 7,
+  "p50": 0.7,
+  "p95": 0.7,
+  "min": 0.6,
+  "max": 0.7,
+  "bytes": 472,
+  "errors": 0,
+  "info": {
+   "nodes_visited": 1,
+   "count": 0,
+   "bytes": 118,
+   "truncated": false,
+   "max_depth_used": 24,
+   "n_elements": 0
+  }
+ },
+ {
+  "label": "element_at_point/Chrome",
+  "tool": "element_at_point",
+  "args": {
+   "pid": 41308,
+   "x": 622,
+   "y": 573
+  },
+  "n": 7,
+  "p50": 0.2,
+  "p95": 0.2,
+  "min": 0.1,
+  "max": 0.2,
+  "bytes": 840,
+  "errors": 7,
+  "info": {
+   "error_code": "permission_missing"
+  },
+  "err_sample": {
+   "error_code": "permission_missing",
+   "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry."
+  }
+ },
+ {
+  "label": "get_ui_tree/SysSettings",
+  "tool": "get_ui_tree",
+  "args": {
+   "pid": 76246
+  },
+  "n": 7,
+  "p50": 0.7,
+  "p95": 0.7,
+  "min": 0.6,
+  "max": 0.7,
+  "bytes": 274,
+  "errors": 0,
+  "info": {
+   "nodes_visited": 1,
+   "count": 1,
+   "bytes": 262,
+   "truncated": false,
+   "node_cap_reached": false,
+   "max_depth_used": 24,
+   "n_nodes": 1
+  }
+ },
+ {
+  "label": "get_ui_tree(interactive,fields)/SysSettings",
+  "tool": "get_ui_tree",
+  "args": {
+   "pid": 76246,
+   "interactive_only": true,
+   "fields": [
+    "id",
+    "role",
+    "title"
+   ]
+  },
+  "n": 7,
+  "p50": 0.6,
+  "p95": 0.7,
+  "min": 0.6,
+  "max": 0.7,
+  "bytes": 168,
+  "errors": 0,
+  "info": {
+   "nodes_visited": 1,
+   "count": 0,
+   "bytes": 156,
+   "truncated": false,
+   "node_cap_reached": false,
+   "max_depth_used": 24,
+   "n_nodes": 0
+  }
+ },
+ {
+  "label": "find_elements(AXButton,20)/SysSettings",
+  "tool": "find_elements",
+  "args": {
+   "pid": 76246,
+   "role": "AXButton",
+   "limit": 20
+  },
+  "n": 7,
+  "p50": 0.7,
+  "p95": 0.8,
+  "min": 0.6,
+  "max": 0.8,
+  "bytes": 479,
+  "errors": 0,
+  "info": {
+   "nodes_visited": 1,
+   "count": 0,
+   "bytes": 125,
+   "truncated": false,
+   "max_depth_used": 24,
+   "n_elements": 0
+  }
+ },
+ {
+  "label": "query_elements(^Search$)/SysSettings",
+  "tool": "query_elements",
+  "args": {
+   "pid": 76246,
+   "title_regex": "^Search$"
+  },
+  "n": 7,
+  "p50": 0.7,
+  "p95": 0.7,
+  "min": 0.6,
+  "max": 0.7,
+  "bytes": 457,
+  "errors": 0,
+  "info": {
+   "nodes_visited": 1,
+   "count": 0,
+   "bytes": 103,
+   "truncated": false,
+   "max_depth_used": 24,
+   "n_elements": 0
+  }
+ },
+ {
+  "label": "list_elements/SysSettings",
+  "tool": "list_elements",
+  "args": {
+   "pid": 76246
+  },
+  "n": 7,
+  "p50": 0.7,
+  "p95": 0.7,
+  "min": 0.7,
+  "max": 0.7,
+  "bytes": 472,
+  "errors": 0,
+  "info": {
+   "nodes_visited": 1,
+   "count": 0,
+   "bytes": 118,
+   "truncated": false,
+   "max_depth_used": 24,
+   "n_elements": 0
+  }
+ },
+ {
+  "label": "element_at_point/SysSettings",
+  "tool": "element_at_point",
+  "args": {
+   "pid": 76246,
+   "x": 800,
+   "y": 573
+  },
+  "n": 7,
+  "p50": 0.1,
+  "p95": 0.2,
+  "min": 0.1,
+  "max": 0.2,
+  "bytes": 840,
+  "errors": 7,
+  "info": {
+   "error_code": "permission_missing"
+  },
+  "err_sample": {
+   "error_code": "permission_missing",
+   "hint": "Grant Accessibility to the app macOS attributes this server to (see permissions_status.responsible_app), e.g. via open_permission_pane pane=accessibility, then retry."
+  }
+ }
+]

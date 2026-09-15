@@ -1,0 +1,554 @@
+[
+  {
+    "label": "get_ui_tree/Finder",
+    "tool": "get_ui_tree",
+    "args": {
+      "pid": 742
+    },
+    "n": 7,
+    "p50": 724.2,
+    "p95": 782.3,
+    "min": 634.7,
+    "max": 792.5,
+    "bytes": 375239,
+    "errors": 0,
+    "info": {
+      "nodes_visited": 2000,
+      "count": 2000,
+      "bytes": 375251,
+      "truncated": true,
+      "node_cap_reached": true,
+      "max_depth_used": 24,
+      "n_nodes": 2000
+    }
+  },
+  {
+    "label": "get_ui_tree(interactive,fields)/Finder",
+    "tool": "get_ui_tree",
+    "args": {
+      "pid": 742,
+      "interactive_only": true,
+      "fields": [
+        "id",
+        "role",
+        "title"
+      ]
+    },
+    "n": 7,
+    "p50": 639.7,
+    "p95": 696.7,
+    "min": 586.3,
+    "max": 699.6,
+    "bytes": 44246,
+    "errors": 0,
+    "info": {
+      "nodes_visited": 2000,
+      "count": 579,
+      "bytes": 44233,
+      "truncated": true,
+      "node_cap_reached": true,
+      "max_depth_used": 24,
+      "n_nodes": 579
+    }
+  },
+  {
+    "label": "find_elements(AXButton,20)/Finder",
+    "tool": "find_elements",
+    "args": {
+      "pid": 742,
+      "role": "AXButton",
+      "limit": 20
+    },
+    "n": 7,
+    "p50": 428.3,
+    "p95": 470.9,
+    "min": 353.1,
+    "max": 481.0,
+    "bytes": 3375,
+    "errors": 0,
+    "info": {
+      "nodes_visited": 20,
+      "count": 20,
+      "bytes": 3362,
+      "truncated": false,
+      "max_depth_used": 24,
+      "n_elements": 20
+    }
+  },
+  {
+    "label": "query_elements(^Eject$)/Finder",
+    "tool": "query_elements",
+    "args": {
+      "pid": 742,
+      "title_regex": "^Eject$"
+    },
+    "n": 7,
+    "p50": 890.3,
+    "p95": 1050.4,
+    "min": 834.4,
+    "max": 1075.9,
+    "bytes": 1259,
+    "errors": 0,
+    "info": {
+      "nodes_visited": 7,
+      "count": 7,
+      "bytes": 1246,
+      "truncated": false,
+      "max_depth_used": 24,
+      "n_elements": 7
+    }
+  },
+  {
+    "label": "list_elements/Finder",
+    "tool": "list_elements",
+    "args": {
+      "pid": 742
+    },
+    "n": 7,
+    "p50": 881.9,
+    "p95": 981.5,
+    "min": 851.8,
+    "max": 1014.2,
+    "bytes": 57748,
+    "errors": 0,
+    "info": {
+      "nodes_visited": 368,
+      "count": 368,
+      "bytes": 57733,
+      "truncated": false,
+      "max_depth_used": 24,
+      "n_elements": 368
+    }
+  },
+  {
+    "label": "element_at_point/Finder",
+    "tool": "element_at_point",
+    "args": {
+      "pid": 742,
+      "x": 900,
+      "y": 569
+    },
+    "n": 7,
+    "p50": 5.0,
+    "p95": 8.4,
+    "min": 2.9,
+    "max": 8.5,
+    "bytes": 481,
+    "errors": 0,
+    "info": {}
+  },
+  {
+    "label": "get_ui_tree/Safari",
+    "tool": "get_ui_tree",
+    "args": {
+      "pid": 681
+    },
+    "n": 7,
+    "p50": 95.8,
+    "p95": 99.6,
+    "min": 92.1,
+    "max": 100.2,
+    "bytes": 222413,
+    "errors": 0,
+    "info": {
+      "nodes_visited": 1114,
+      "count": 1114,
+      "bytes": 222563,
+      "truncated": false,
+      "node_cap_reached": false,
+      "max_depth_used": 24,
+      "n_nodes": 1114
+    }
+  },
+  {
+    "label": "get_ui_tree(interactive,fields)/Safari",
+    "tool": "get_ui_tree",
+    "args": {
+      "pid": 681,
+      "interactive_only": true,
+      "fields": [
+        "id",
+        "role",
+        "title"
+      ]
+    },
+    "n": 7,
+    "p50": 66.3,
+    "p95": 75.3,
+    "min": 63.2,
+    "max": 78.0,
+    "bytes": 6719,
+    "errors": 0,
+    "info": {
+      "nodes_visited": 1115,
+      "count": 77,
+      "bytes": 6706,
+      "truncated": false,
+      "node_cap_reached": false,
+      "max_depth_used": 24,
+      "n_nodes": 77
+    }
+  },
+  {
+    "label": "find_elements(AXButton,20)/Safari",
+    "tool": "find_elements",
+    "args": {
+      "pid": 681,
+      "role": "AXButton",
+      "limit": 20
+    },
+    "n": 7,
+    "p50": 67.1,
+    "p95": 68.5,
+    "min": 63.8,
+    "max": 68.8,
+    "bytes": 3031,
+    "errors": 0,
+    "info": {
+      "nodes_visited": 17,
+      "count": 17,
+      "bytes": 3018,
+      "truncated": false,
+      "max_depth_used": 24,
+      "n_elements": 17
+    }
+  },
+  {
+    "label": "query_elements(^Go back$)/Safari",
+    "tool": "query_elements",
+    "args": {
+      "pid": 681,
+      "title_regex": "^Go back$"
+    },
+    "n": 7,
+    "p50": 66.9,
+    "p95": 75.9,
+    "min": 64.3,
+    "max": 78.9,
+    "bytes": 276,
+    "errors": 0,
+    "info": {
+      "nodes_visited": 1,
+      "count": 1,
+      "bytes": 264,
+      "truncated": false,
+      "max_depth_used": 24,
+      "n_elements": 1
+    }
+  },
+  {
+    "label": "list_elements/Safari",
+    "tool": "list_elements",
+    "args": {
+      "pid": 681
+    },
+    "n": 7,
+    "p50": 64.8,
+    "p95": 66.4,
+    "min": 61.9,
+    "max": 66.6,
+    "bytes": 6037,
+    "errors": 0,
+    "info": {
+      "nodes_visited": 46,
+      "count": 46,
+      "bytes": 6029,
+      "truncated": false,
+      "max_depth_used": 24,
+      "n_elements": 46
+    }
+  },
+  {
+    "label": "element_at_point/Safari",
+    "tool": "element_at_point",
+    "args": {
+      "pid": 681,
+      "x": 900,
+      "y": 567
+    },
+    "n": 7,
+    "p50": 2.7,
+    "p95": 5.4,
+    "min": 2.2,
+    "max": 5.8,
+    "bytes": 539,
+    "errors": 0,
+    "info": {}
+  },
+  {
+    "label": "get_ui_tree/Chrome",
+    "tool": "get_ui_tree",
+    "args": {
+      "pid": 41308
+    },
+    "n": 7,
+    "p50": 43.0,
+    "p95": 46.9,
+    "min": 41.9,
+    "max": 48.3,
+    "bytes": 92499,
+    "errors": 0,
+    "info": {
+      "nodes_visited": 481,
+      "count": 481,
+      "bytes": 92505,
+      "truncated": false,
+      "node_cap_reached": false,
+      "max_depth_used": 24,
+      "n_nodes": 481
+    }
+  },
+  {
+    "label": "get_ui_tree(interactive,fields)/Chrome",
+    "tool": "get_ui_tree",
+    "args": {
+      "pid": 41308,
+      "interactive_only": true,
+      "fields": [
+        "id",
+        "role",
+        "title"
+      ]
+    },
+    "n": 7,
+    "p50": 32.6,
+    "p95": 36.0,
+    "min": 31.6,
+    "max": 37.0,
+    "bytes": 6854,
+    "errors": 0,
+    "info": {
+      "nodes_visited": 481,
+      "count": 77,
+      "bytes": 6841,
+      "truncated": false,
+      "node_cap_reached": false,
+      "max_depth_used": 24,
+      "n_nodes": 77
+    }
+  },
+  {
+    "label": "find_elements(AXButton,20)/Chrome",
+    "tool": "find_elements",
+    "args": {
+      "pid": 41308,
+      "role": "AXButton",
+      "limit": 20
+    },
+    "n": 7,
+    "p50": 8.1,
+    "p95": 9.8,
+    "min": 7.4,
+    "max": 10.3,
+    "bytes": 3524,
+    "errors": 0,
+    "info": {
+      "nodes_visited": 20,
+      "count": 20,
+      "bytes": 3511,
+      "truncated": false,
+      "max_depth_used": 24,
+      "n_elements": 20
+    }
+  },
+  {
+    "label": "query_elements(^Reload$)/Chrome",
+    "tool": "query_elements",
+    "args": {
+      "pid": 41308,
+      "title_regex": "^Reload$"
+    },
+    "n": 7,
+    "p50": 31.8,
+    "p95": 36.2,
+    "min": 28.5,
+    "max": 37.1,
+    "bytes": 276,
+    "errors": 0,
+    "info": {
+      "nodes_visited": 1,
+      "count": 1,
+      "bytes": 264,
+      "truncated": false,
+      "max_depth_used": 24,
+      "n_elements": 1
+    }
+  },
+  {
+    "label": "list_elements/Chrome",
+    "tool": "list_elements",
+    "args": {
+      "pid": 41308
+    },
+    "n": 7,
+    "p50": 28.8,
+    "p95": 33.2,
+    "min": 27.9,
+    "max": 33.4,
+    "bytes": 5277,
+    "errors": 0,
+    "info": {
+      "nodes_visited": 38,
+      "count": 38,
+      "bytes": 5265,
+      "truncated": false,
+      "max_depth_used": 24,
+      "n_elements": 38
+    }
+  },
+  {
+    "label": "element_at_point/Chrome",
+    "tool": "element_at_point",
+    "args": {
+      "pid": 41308,
+      "x": 622,
+      "y": 573
+    },
+    "n": 7,
+    "p50": 2.8,
+    "p95": 4.7,
+    "min": 2.5,
+    "max": 5.1,
+    "bytes": 536,
+    "errors": 0,
+    "info": {}
+  },
+  {
+    "label": "get_ui_tree/SysSettings",
+    "tool": "get_ui_tree",
+    "args": {
+      "pid": 76246
+    },
+    "n": 7,
+    "p50": 376.0,
+    "p95": 403.2,
+    "min": 284.8,
+    "max": 405.2,
+    "bytes": 74198,
+    "errors": 0,
+    "info": {
+      "nodes_visited": 384,
+      "count": 384,
+      "bytes": 74186,
+      "truncated": false,
+      "node_cap_reached": false,
+      "max_depth_used": 24,
+      "n_nodes": 384
+    }
+  },
+  {
+    "label": "get_ui_tree(interactive,fields)/SysSettings",
+    "tool": "get_ui_tree",
+    "args": {
+      "pid": 76246,
+      "interactive_only": true,
+      "fields": [
+        "id",
+        "role",
+        "title"
+      ]
+    },
+    "n": 7,
+    "p50": 379.8,
+    "p95": 417.5,
+    "min": 330.1,
+    "max": 433.4,
+    "bytes": 3046,
+    "errors": 0,
+    "info": {
+      "nodes_visited": 384,
+      "count": 36,
+      "bytes": 3033,
+      "truncated": false,
+      "node_cap_reached": false,
+      "max_depth_used": 24,
+      "n_nodes": 36
+    }
+  },
+  {
+    "label": "find_elements(AXButton,20)/SysSettings",
+    "tool": "find_elements",
+    "args": {
+      "pid": 76246,
+      "role": "AXButton",
+      "limit": 20
+    },
+    "n": 7,
+    "p50": 246.6,
+    "p95": 345.9,
+    "min": 199.8,
+    "max": 371.4,
+    "bytes": 2930,
+    "errors": 0,
+    "info": {
+      "nodes_visited": 17,
+      "count": 17,
+      "bytes": 2917,
+      "truncated": false,
+      "max_depth_used": 24,
+      "n_elements": 17
+    }
+  },
+  {
+    "label": "query_elements(^Search$)/SysSettings",
+    "tool": "query_elements",
+    "args": {
+      "pid": 76246,
+      "title_regex": "^Search$"
+    },
+    "n": 7,
+    "p50": 371.2,
+    "p95": 435.6,
+    "min": 188.7,
+    "max": 446.2,
+    "bytes": 442,
+    "errors": 0,
+    "info": {
+      "nodes_visited": 2,
+      "count": 2,
+      "bytes": 430,
+      "truncated": false,
+      "max_depth_used": 24,
+      "n_elements": 2
+    }
+  },
+  {
+    "label": "list_elements/SysSettings",
+    "tool": "list_elements",
+    "args": {
+      "pid": 76246
+    },
+    "n": 7,
+    "p50": 356.0,
+    "p95": 406.0,
+    "min": 213.0,
+    "max": 411.7,
+    "bytes": 2563,
+    "errors": 0,
+    "info": {
+      "nodes_visited": 20,
+      "count": 20,
+      "bytes": 2550,
+      "truncated": false,
+      "max_depth_used": 24,
+      "n_elements": 20
+    }
+  },
+  {
+    "label": "element_at_point/SysSettings",
+    "tool": "element_at_point",
+    "args": {
+      "pid": 76246,
+      "x": 800,
+      "y": 573
+    },
+    "n": 7,
+    "p50": 5.1,
+    "p95": 6.2,
+    "min": 3.2,
+    "max": 6.2,
+    "bytes": 425,
+    "errors": 0,
+    "info": {}
+  }
+]

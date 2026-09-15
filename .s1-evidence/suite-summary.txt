@@ -1,0 +1,48 @@
+ElementCacheTests
+✔ Suite "ElementCache" passed after 0.368 seconds.
+✔ Test run with 25 tests in 1 suite passed after 0.368 seconds.
+
+AXPathTests
+✔ Suite "AX path identity (C-5)" passed after 0.008 seconds.
+✔ Test run with 13 tests in 1 suite passed after 0.008 seconds.
+
+CodexR2RegressionTests
+✔ Suite "Codex r2 regressions" passed after 0.014 seconds.
+✔ Test run with 13 tests in 1 suite passed after 0.015 seconds.
+
+AnnotatedElementIdentityTests
+[annotated-identity] skipped: no Accessibility trust
+[annotated-identity] skipped: no Accessibility trust
+[annotated-identity] skipped: no Accessibility trust
+[annotated-identity] skipped: no AX trust / no Finder
+[annotated-identity] skipped: no Accessibility trust
+✔ Suite "capture_annotated element identity (C-5)" passed after 0.008 seconds.
+✔ Test run with 5 tests in 1 suite passed after 0.008 seconds.
+
+TextEditingTests
+✔ Suite "Text editing primitives (C-7)" passed after 0.013 seconds.
+✔ Test run with 30 tests in 1 suite passed after 0.013 seconds.
+
+Phase9ToolsTests
+✔ Suite "Phase 9 tools — reliability + observability substrate" passed after 0.023 seconds.
+✔ Test run with 14 tests in 1 suite passed after 0.023 seconds.
+
+AXHandleSafetyTests
+✔ Suite "AX handle safety (C-5 review)" passed after 0.003 seconds.
+✔ Test run with 15 tests in 1 suite passed after 0.004 seconds.
+
+AXAttributeBatchTests
+✔ Suite "AXAttributeBatch" passed after 0.001 seconds.
+✔ Test run with 8 tests in 1 suite passed after 0.001 seconds.
+
+Phase6ToolsTests
+✔ Suite "Phase 6 tools — control plane + event waits" passed after 1.251 seconds.
+✔ Test run with 12 tests in 1 suite passed after 1.251 seconds.
+
+TextEditingBackendTests
+✔ Suite "Text editing — AX backend seam (C-7 review)" passed after 0.001 seconds.
+✔ Test run with 24 tests in 1 suite passed after 0.001 seconds.
+
+AXPayloadBudgetTests
+✔ Suite "AX payload budget (C-9)" passed after 0.002 seconds.
+✔ Test run with 13 tests in 1 suite passed after 0.002 seconds.
