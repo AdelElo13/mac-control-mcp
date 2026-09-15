@@ -159,6 +159,64 @@ enum AXSearch {
         return rankedHit(attrs, index: index, field: chosen.field, quality: chosen.quality, menu: menu)
     }
 
+    private struct AliasPattern {
+        let name: String
+        let expression: NSRegularExpression
+    }
+
+    private struct AliasRules {
+        let prefixes: NSRegularExpression
+        let patterns: [AliasPattern]
+
+        init(_ names: [String]) {
+            patterns = names.map { name in
+                let escaped = NSRegularExpression.escapedPattern(for: name)
+                return AliasPattern(name: name, expression: try! NSRegularExpression(
+                    pattern: "(?<![\\p{L}\\p{N}])" + escaped + "(?![\\p{L}\\p{N}])", options: .caseInsensitive))
+            }
+            // v0.10 C5: a first word must already occur in the raw label,
+            // even when camelCase splitting is needed for the whole alias.
+            let stems = names.map { NSRegularExpression.escapedPattern(for: String($0.split(separator: " ")[0])) }
+            prefixes = try! NSRegularExpression(pattern: stems.joined(separator: "|"), options: .caseInsensitive)
+        }
+    }
+
+    // v0.10 C5: these constant patterns are shared across all nodes/calls.
+    // Compiling them inside alias() added seconds to Finder file-row scans.
+    private static let aliasRules: [String: AliasRules] = [
+        "search_field": AliasRules(["search", "zoeken", "zoek", "address and search", "adres en zoek", "omnibox"]),
+        "back": AliasRules(["back", "go back", "terug", "vorige"]),
+        "forward": AliasRules(["forward", "go forward", "vooruit", "volgende"]),
+        "close": AliasRules(["close", "sluiten"]),
+        "ok": AliasRules(["ok", "okay"]),
+        "cancel": AliasRules(["cancel", "annuleren"])
+    ]
+    private static let camelCaseSplitter = try! NSRegularExpression(pattern: "([a-z0-9])([A-Z])")
+    private static let acronymSplitter = try! NSRegularExpression(pattern: "([A-Z])([A-Z][a-z])")
+
+    private static func alias(_ labels: [(String, String)], _ rules: AliasRules) -> LabelMatch? {
+        let normalized: [(String, String)] = labels.compactMap { field, value in
+            let range = NSRange(location: 0, length: value.utf16.count)
+            // v0.10 C5: reject ordinary file names/identifiers before either
+            // normalization or the more expensive token-boundary patterns.
+            guard rules.prefixes.firstMatch(in: value, range: range) != nil else { return nil }
+            guard field.hasSuffix("identifier") || field == "subrole" else { return (field, value) }
+            let camel = camelCaseSplitter.stringByReplacingMatches(in: value, range: range, withTemplate: "$1 $2")
+            let text = acronymSplitter.stringByReplacingMatches(in: camel, range: NSRange(location: 0, length: camel.utf16.count), withTemplate: "$1 $2")
+            return (field, text)
+        }
+        guard !normalized.isEmpty else { return nil }
+        var best: LabelMatch?
+        for pattern in rules.patterns {
+            if let hit = match(normalized, pattern: pattern.name, exact: false, expression: pattern.expression),
+               best == nil || hit.quality < best!.quality {
+                best = hit
+                if hit.quality == 0 { break }
+            }
+        }
+        return best
+    }
+
     static func search(_ nodes: [Node], role: String? = nil, title: String? = nil, value: String? = nil, exact: Bool = false, semantic: String? = nil, regex: Bool = false, eligible: (AXAttributeBatch.Values) -> Bool = { _ in true }) -> [Hit] {
         func expression(_ pattern: String?) -> NSRegularExpression? {
             guard regex, let pattern, !pattern.isEmpty else { return nil }
@@ -189,53 +247,28 @@ enum AXSearch {
             }
             return result
         }
-        func alias(_ labels: [(String, String)], _ names: [String]) -> LabelMatch? {
-            // v0.10 C5: identifiers often use camelCase, but fragments such as
-            // "ok" in "Book" or "back" in "Background" are not semantic labels.
-            let normalized = labels.map { field, value in
-                let text = field.hasSuffix("identifier") || field == "subrole"
-                    ? value.replacingOccurrences(of: "([a-z0-9])([A-Z])", with: "$1 $2", options: .regularExpression)
-                        .replacingOccurrences(of: "([A-Z])([A-Z][a-z])", with: "$1 $2", options: .regularExpression)
-                    : value
-                return (field, text)
-            }
-            return names.compactMap { name -> LabelMatch? in
-                let escaped = NSRegularExpression.escapedPattern(for: name)
-                let pattern = "(?<![\\p{L}\\p{N}])" + escaped + "(?![\\p{L}\\p{N}])"
-                let expression = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
-                return match(normalized, pattern: name, exact: false, expression: expression)
-            }.min { $0.quality < $1.quality }
-        }
         func semanticMatch(_ target: String, index: Int, parents: [Int]) -> (LabelMatch, Int)? {
             let attrs = nodes[index].attrs, role = attrs.role ?? ""
             let own = labels(attrs)
             switch target {
             case "search_field":
-                let names = ["search", "zoeken", "zoek", "address and search", "adres en zoek", "omnibox"]
+                let rules = aliasRules["search_field"]!
                 if ["AXTextField", "AXComboBox", "AXSearchField"].contains(role) {
-                    if let label = alias(own + [("subrole", attrs.subrole ?? "")], names) { return (label, 0) }
+                    if let label = alias(own + [("subrole", attrs.subrole ?? "")], rules) { return (label, 0) }
                     // v0.10 C5: Settings publishes an untitled field beside its Search button.
                     if attrs.rawTitle == nil, attrs.description == nil, attrs.identifier == nil,
                        let parent = nodes[index].parent {
                         let siblingLabels = children[parent].filter { nodes[$0].attrs.role == "AXButton" }
                             .flatMap { labels(nodes[$0].attrs).map { ("sibling." + $0.0, $0.1) } }
-                        if let label = alias(siblingLabels, names) { return (label, 0) }
+                        if let label = alias(siblingLabels, rules) { return (label, 0) }
                     }
                 }
                 // v0.10 C5: Finder exposes only the search activation button until opened.
-                if role == "AXButton", let label = alias(own, names) { return (label, 1) }
+                if role == "AXButton", let label = alias(own, rules) { return (label, 1) }
             case "back", "forward", "close", "ok", "cancel":
                 guard role == "AXButton" else { return nil }
                 if target == "close", attrs.subrole == "AXCloseButton" { return (LabelMatch(field: "subrole", quality: 0), 0) }
-                let names: [String]
-                switch target {
-                case "back": names = ["back", "go back", "terug", "vorige"]
-                case "forward": names = ["forward", "go forward", "vooruit", "volgende"]
-                case "close": names = ["close", "sluiten"]
-                case "ok": names = ["ok", "okay"]
-                default: names = ["cancel", "annuleren"]
-                }
-                if let label = alias(own, names) { return (label, 0) }
+                if let label = alias(own, aliasRules[target]!) { return (label, 0) }
             default:
                 guard validSemantic(target), let opening = target.firstIndex(of: "(") else { return nil }
                 let name = String(target[..<opening])

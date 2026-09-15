@@ -11,6 +11,33 @@ struct SemanticSearchTests {
         return AXSearch.Node(attrs: AXAttributeBatch.decode(slots, includeChildren: false), parent: parent)
     }
 
+    // v0.10 C5: Finder publishes one text field per file; semantic alias
+    // checks must not compile regular expressions for every row.
+    @Test("search aliases reject 5000 ordinary file fields in under 50 ms")
+    func fileFieldAliasCost() {
+        let fields = (0..<5000).map { index in
+            node("AXTextField", "Document \(index).pdf", value: "Document \(index).pdf", identifier: "fileNameTextField")
+        }
+        _ = AXSearch.search([node("AXTextField", identifier: "toolbarSearchField")], semantic: "search_field")
+        let start = ProcessInfo.processInfo.systemUptime
+        let hits = AXSearch.search(fields, semantic: "search_field")
+        let milliseconds = (ProcessInfo.processInfo.systemUptime - start) * 1000
+        print("C5 search_field synthetic_fields=5000 elapsed_ms=\(milliseconds) hits=\(hits.count)")
+        #expect(hits.isEmpty)
+        #expect(milliseconds < 50)
+    }
+
+    @Test("alias prefix rejection preserves camelCase, acronyms and embedded words")
+    func aliasPrefixSemantics() {
+        for identifier in ["toolbarSearchField", "AXSearchField", "addressAndSearchField", "omniboxField"] {
+            #expect(AXSearch.search([node("AXTextField", identifier: identifier)], semantic: "search_field").count == 1)
+        }
+        #expect(AXSearch.search([node("AXButton", identifier: "toolbarGoBackButton")], semantic: "back").count == 1)
+        #expect(AXSearch.search([node("AXButton", "Search this folder")], semantic: "search_field").first?.kind == "prefix")
+        #expect(AXSearch.search([node("AXButton", "Start search now")], semantic: "search_field").first?.kind == "substring")
+        #expect(AXSearch.search([node("AXTextField", "Research notes")], semantic: "search_field").isEmpty)
+    }
+
     @Test("exact window button wins before menu item, prefix group and color well")
     func ranking() {
         let nodes = [node("AXMenuBar"), node("AXMenuItem", "Back", parent: 0), node("AXWindow"), node("AXGroup", "Back/Forward", parent: 2), node("AXColorWell", "Back", parent: 2), node("AXButton", "Back", parent: 3)]
