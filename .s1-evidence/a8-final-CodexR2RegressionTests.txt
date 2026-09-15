@@ -1,0 +1,56 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ids': failed storing manifest for 'wt10-ids' in cache: attempt to write a readonly database
+Building for debugging...
+[0/4] Write swift-version--58304C5D6DBC2206.txt
+Build complete! (0.10s)
+Test Suite 'Selected tests' started at 2026-09-15 20:10:17.047.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 20:10:17.052.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 20:10:17.052.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 20:10:17.052.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.005) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Codex r2 regressions" started.
+◇ Test "re-storing an element under a new title keeps its content-addressed id" started.
+✔ Test "re-storing an element under a new title keeps its content-addressed id" passed after 0.001 seconds.
+◇ Test "a genuinely different hashed path under the same id is still quarantined" started.
+✔ Test "a genuinely different hashed path under the same id is still quarantined" passed after 0.001 seconds.
+◇ Test "an app-reported selection whose end overflows Int is refused, not trapped" started.
+✔ Test "an app-reported selection whose end overflows Int is refused, not trapped" passed after 0.001 seconds.
+◇ Test "decoding an AX range rejects negative and overflowing components" started.
+◇ Test case passing 2 arguments location → -1, length → 5 to "decoding an AX range rejects negative and overflowing components" started.
+◇ Test case passing 2 arguments location → 0, length → -1 to "decoding an AX range rejects negative and overflowing components" started.
+◇ Test case passing 2 arguments location → 9223372036854775807, length → 1 to "decoding an AX range rejects negative and overflowing components" started.
+◇ Test case passing 2 arguments location → 1, length → 9223372036854775807 to "decoding an AX range rejects negative and overflowing components" started.
+◇ Test case passing 2 arguments location → -9223372036854775808, length → 0 to "decoding an AX range rejects negative and overflowing components" started.
+✔ Test "decoding an AX range rejects negative and overflowing components" with 5 test cases passed after 0.001 seconds.
+◇ Test "decoding a sane AX range is unchanged" started.
+✔ Test "decoding a sane AX range is unchanged" passed after 0.001 seconds.
+◇ Test "the image reader rejects a FIFO on the open descriptor without blocking" started.
+✔ Test "the image reader rejects a FIFO on the open descriptor without blocking" passed after 0.001 seconds.
+◇ Test "the image reader still reads a regular file and enforces the cap" started.
+✔ Test "the image reader still reads a regular file and enforces the cap" passed after 0.009 seconds.
+◇ Test "enrich: a stale exact id never falls back to a same-frame neighbour's id" started.
+✔ Test "enrich: a stale exact id never falls back to a same-frame neighbour's id" passed after 0.001 seconds.
+◇ Test "enrich: rows without any id still use the frame/title fallback" started.
+✔ Test "enrich: rows without any id still use the frame/title fallback" passed after 0.001 seconds.
+◇ Test "expectedCount refuses to overflow" started.
+◇ Test case passing 3 arguments before → 9223372036854775807, replaced → 0, inserted → 1 to "expectedCount refuses to overflow" started.
+◇ Test case passing 3 arguments before → -9223372036854775808, replaced → 1, inserted → 0 to "expectedCount refuses to overflow" started.
+◇ Test case passing 3 arguments before → 9223372036854775807, replaced → -1, inserted → 0 to "expectedCount refuses to overflow" started.
+✔ Test "expectedCount refuses to overflow" with 3 test cases passed after 0.001 seconds.
+◇ Test "an Int.max character count during verification is reported as unverified, not trapped" started.
+✔ Test "an Int.max character count during verification is reported as unverified, not trapped" passed after 0.001 seconds.
+◇ Test "count-based warnings never point at text_get_value (it reads the same unreadable AXValue)" started.
+◇ Test case passing 1 argument verification → "count_only" to "count-based warnings never point at text_get_value (it reads the same unreadable AXValue)" started.
+◇ Test case passing 1 argument verification → "count_unusable" to "count-based warnings never point at text_get_value (it reads the same unreadable AXValue)" started.
+◇ Test case passing 1 argument verification → "unverified" to "count-based warnings never point at text_get_value (it reads the same unreadable AXValue)" started.
+✔ Test "count-based warnings never point at text_get_value (it reads the same unreadable AXValue)" with 3 test cases passed after 0.001 seconds.
+◇ Test "a count that moved by the wrong amount reports applied:false WITH a warning" started.
+✔ Test "a count that moved by the wrong amount reports applied:false WITH a warning" passed after 0.001 seconds.
+✔ Suite "Codex r2 regressions" passed after 0.013 seconds.
+✔ Test run with 13 tests in 1 suite passed after 0.014 seconds.

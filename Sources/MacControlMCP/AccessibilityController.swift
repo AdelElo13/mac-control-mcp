@@ -184,6 +184,7 @@ actor AccessibilityController {
         let path: [AXPathComponent]?
         /// Nearest-first (role, title) pairs, capped by the caller.
         let ancestors: [(role: String?, title: String?)]
+        var identity: AXPath.Reconstruction? = nil
     }
 
     func describeHit(element: AXUIElement, ancestorLimit: Int = 8) -> HitTest? {
@@ -194,13 +195,15 @@ actor AccessibilityController {
             (role: AXPath.copyString($0, "AXRole"),
              title: AXPath.copyString($0, "AXTitle") ?? AXPath.copyString($0, "AXDescription"))
         }
+        let identity = AXPath.reconstruct(element: element)
         return HitTest(
             info: Self.elementInfo(from: attrs, depth: nil),
             enabled: enabled,
             pid: pid,
             appName: NSRunningApplication(processIdentifier: pid)?.localizedName,
-            path: AXPath.upwardPath(of: element),
-            ancestors: ancestors
+            path: identity.path,
+            ancestors: ancestors,
+            identity: identity
         )
     }
 

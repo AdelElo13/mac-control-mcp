@@ -10,7 +10,7 @@ extension ToolRegistry {
             name: "element_at_point",
             description: "AX hit-test: what accessibility element is under a global screen coordinate? "
                 + "The inverse of `ground` — use it to verify a coordinate BEFORE clicking it, to turn an OCR/vision box into a real AX element (with an element_id for perform_element_action / get_element_attributes), and to diagnose a click that did nothing. "
-                + "Returns role, title, value, bounds, enabled, owning pid + app name, an element_id with stable_id (and stable_id_reason when no rooted AX path is available), and the ancestor chain (nearest first, up to 8) so you can see which container you actually hit. "
+                + "Returns role, title, value, bounds, enabled, owning pid + app name, an element_id with stable_id, stable_id_strategy and stable_id_steps for a recovered path (or a specific stable_id_reason when no rooted AX path is available), and the ancestor chain (nearest first, up to 8) so you can see which container you actually hit. "
                 + "Omit pid to hit-test the whole screen (the topmost window wins); pass pid to ask that application specifically, which is the only way to hit-test a window another app is covering. "
                 + "Coordinates are global screen points, top-left origin — the same space find_elements' position/size and ground's x/y use.",
             inputSchema: schema(
@@ -120,7 +120,10 @@ extension ToolRegistry {
         ]
         // v0.10 A8: random ids cannot be correlated with a later tree walk.
         if hit.path == nil {
-            payload["stable_id_reason"] = .string("No verifiable path to the owning application: the parent chain is incomplete, cyclic, exceeds 32 levels, or a parent does not list its child.")
+            payload["stable_id_reason"] = .string(hit.identity?.reason ?? "no_app_root")
+        } else if let identity = hit.identity, let strategy = identity.strategy {
+            payload["stable_id_strategy"] = .string(strategy)
+            payload["stable_id_steps"] = .array(identity.steps.map(JSONValue.string))
         }
         if let position = hit.info.position, let size = hit.info.size {
             payload["bounds"] = .object([

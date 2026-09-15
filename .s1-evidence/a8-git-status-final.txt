@@ -1,0 +1,32 @@
+ M LIVE-CHECKS.md
+ M Sources/MacControlMCP/AXPath.swift
+ M Sources/MacControlMCP/AccessibilityController.swift
+ M Sources/MacControlMCP/Tools+V0_9AXCore.swift
+ M docs/TOOLS.md
+?? .s1-evidence/A8-REPORT.md
+?? .s1-evidence/a8-build-final.txt
+?? .s1-evidence/a8-commit-attempt.txt
+?? .s1-evidence/a8-final-AXPathTests.txt
+?? .s1-evidence/a8-final-AnnotatedElementIdentityTests.txt
+?? .s1-evidence/a8-final-CodexR2RegressionTests.txt
+?? .s1-evidence/a8-final-ElementCacheTests.txt
+?? .s1-evidence/a8-final-Phase9ToolsTests.txt
+?? .s1-evidence/a8-final-TextEditingTests.txt
+?? .s1-evidence/a8-final-ToolDocsDriftTests.txt
+?? .s1-evidence/a8-git-status-final.txt
+?? .s1-evidence/a8-probe-validation.txt
+?? .s1-evidence/a8-web-edge-green.txt
+?? .s1-evidence/a8-web-edge-red.txt
+?? .s1-evidence/a8-web-green.txt
+?? .s1-evidence/a8-web-prefix-green.txt
+?? .s1-evidence/a8-web-prefix-red.txt
+?? .s1-evidence/a8-web-red.txt
+?? .s1-evidence/a8-web-root-green.txt
+?? .s1-evidence/a8-web-root-red.txt
+?? .s1-evidence/a8-web-shared-green.txt
+?? .s1-evidence/a8-web-shared-red.txt
+?? .s1-evidence/a8-web-unreadable-green.txt
+?? .s1-evidence/a8-web-unreadable-red.txt
+?? .s1-evidence/reviewer/
+?? Sources/MacControlMCP/AXPathReconstruction.swift
+?? Tests/MacControlMCPTests/AXPathReconstructionTests.swift

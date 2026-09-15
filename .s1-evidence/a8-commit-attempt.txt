@@ -1,0 +1,1 @@
+fatal: Unable to create '/Users/a/projects/mac-control-mcp/.git/worktrees/wt10-ids/index.lock': Operation not permitted
