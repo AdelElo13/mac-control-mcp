@@ -45,6 +45,38 @@ struct SemanticSearchTests {
         }
     }
 
+    @Test("search activation buttons are fallback only, including prefix-named fields")
+    func searchButtonFallbackOnly() {
+        let nodes = [node("AXWindow"), node("AXButton", "Search", parent: 0), node("AXTextField", "Search query", parent: 0)]
+        #expect(AXSearch.search(nodes, semantic: "search_field").first?.index == 2)
+        let subrole = [node("AXWindow"), node("AXButton", "Search", parent: 0), node("AXTextField", parent: 0, subrole: "AXSearchField")]
+        #expect(AXSearch.search(subrole, semantic: "search_field").first?.index == 2)
+    }
+
+    @Test("semantic aliases do not match fragments of unrelated words")
+    func aliasesHaveBoundaries() {
+        let nodes = [node("AXButton", "Book"), node("AXButton", "Background Color"), node("AXButton", "Backup"), node("AXButton", "Research")]
+        for target in ["ok", "back", "search_field"] {
+            #expect(AXSearch.search(nodes, semantic: target).isEmpty)
+        }
+        #expect(AXSearch.search([node("AXButton", identifier: "goBackButton")], semantic: "back").count == 1)
+    }
+
+    @Test("a labeled unrelated field does not inherit a neighboring Search button")
+    func searchNeighborMustBeUntitled() {
+        let nodes = [node("AXWindow"), node("AXButton", "Search", parent: 0), node("AXTextField", "Name", parent: 0)]
+        #expect(AXSearch.search(nodes, semantic: "search_field").map(\.index) == [1])
+    }
+
+    @Test("role-only regex results report the actual prefix or substring match")
+    func roleRegexProvenance() {
+        let nodes = [node("AXButton"), node("AXRadioButton")]
+        let hits = AXSearch.search(nodes, role: "Button", regex: true)
+        #expect(hits.map(\.field) == ["role", "role"])
+        #expect(hits.map(\.kind) == ["substring", "substring"])
+        #expect(AXSearch.search(nodes, role: "AXRadio", regex: true).first?.kind == "prefix")
+    }
+
     @Test("regex labels cover description value and identifier with matched-field provenance")
     func regexLabels() {
         let nodes = [node("AXStaticText", "identifier-like-title", value: "Family", identifier: "family-id")]

@@ -34,10 +34,10 @@ struct AXAttributeBatchTests {
         var slots: [AnyObject] = Array(repeating: kCFNull, count: 10)
         slots += [NSURL(string: "https://example.org/path")!, "main-link" as NSString, ["nav", "active"] as NSArray]
         let attrs = AXAttributeBatch.decode(slots, includeChildren: true)
-        let metadata = Mirror(reflecting: attrs).children.first { $0.label == "web" }?.value as? [String: String]
-        #expect(metadata?["url"] == "https://example.org/path")
-        #expect(metadata?["dom_id"] == "main-link")
-        #expect(metadata?["dom_class"] == "nav active")
+        let metadata = attrs.web
+        #expect(metadata["url"] == "https://example.org/path")
+        #expect(metadata["dom_id"] == "main-link")
+        #expect(metadata["dom_class"] == "nav active")
     }
 
     // v0.10 C5: labels in value/description must remain searchable independently.

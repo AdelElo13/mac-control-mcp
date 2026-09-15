@@ -86,7 +86,21 @@ enum AXSearch {
             return result
         }
         func alias(_ labels: [(String, String)], _ names: [String]) -> LabelMatch? {
-            names.compactMap { match(labels, pattern: $0, exact: false) }.min { $0.quality < $1.quality }
+            // v0.10 C5: identifiers often use camelCase, but fragments such as
+            // "ok" in "Book" or "back" in "Background" are not semantic labels.
+            let normalized = labels.map { field, value in
+                let text = field.hasSuffix("identifier") || field == "subrole"
+                    ? value.replacingOccurrences(of: "([a-z0-9])([A-Z])", with: "$1 $2", options: .regularExpression)
+                        .replacingOccurrences(of: "([A-Z])([A-Z][a-z])", with: "$1 $2", options: .regularExpression)
+                    : value
+                return (field, text)
+            }
+            return names.compactMap { name -> LabelMatch? in
+                let escaped = NSRegularExpression.escapedPattern(for: name)
+                let pattern = "(?<![\\p{L}\\p{N}])" + escaped + "(?![\\p{L}\\p{N}])"
+                let expression = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+                return match(normalized, pattern: name, exact: false, expression: expression)
+            }.min { $0.quality < $1.quality }
         }
         func semanticMatch(_ target: String, index: Int, parents: [Int]) -> (LabelMatch, Int)? {
             let attrs = nodes[index].attrs, role = attrs.role ?? ""
@@ -97,7 +111,8 @@ enum AXSearch {
                 if ["AXTextField", "AXComboBox", "AXSearchField"].contains(role) {
                     if let label = alias(own + [("subrole", attrs.subrole ?? "")], names) { return (label, 0) }
                     // v0.10 C5: Settings publishes an untitled field beside its Search button.
-                    if let parent = nodes[index].parent {
+                    if attrs.rawTitle == nil, attrs.description == nil, attrs.identifier == nil,
+                       let parent = nodes[index].parent {
                         let siblingLabels = children[parent].filter { nodes[$0].attrs.role == "AXButton" }
                             .flatMap { labels(nodes[$0].attrs).map { ("sibling." + $0.0, $0.1) } }
                         if let label = alias(siblingLabels, names) { return (label, 0) }
@@ -144,13 +159,15 @@ enum AXSearch {
         var results: [Ranked] = []
         for (index, node) in nodes.enumerated() {
             let attrs = node.attrs
+            var roleMatch = LabelMatch(field: "role", quality: 0)
             if regex {
-                guard match([("role", attrs.role ?? "AXUnknown")], pattern: role, exact: false, expression: roleRegex) != nil else { continue }
+                guard let matched = match([("role", attrs.role ?? "AXUnknown")], pattern: role, exact: false, expression: roleRegex) else { continue }
+                roleMatch = matched
             } else if !roleMatches(role, attrs.role) { continue }
             guard let label = match(labels(attrs), pattern: title, exact: exact, expression: titleRegex),
                   let valueMatch = match([("value", attrs.value ?? "")], pattern: value, exact: exact, expression: valueRegex) else { continue }
             let parents = ancestors(index)
-            var chosen = (title?.isEmpty == false) ? label : ((value?.isEmpty == false) ? valueMatch : label)
+            var chosen = (title?.isEmpty == false) ? label : ((value?.isEmpty == false) ? valueMatch : roleMatch)
             var preference = 0
             if let semantic {
                 guard let (semanticLabel, priority) = semanticMatch(semantic, index: index, parents: parents) else { continue }
@@ -164,6 +181,11 @@ enum AXSearch {
             let kind = ["exact", "prefix", "substring"][chosen.quality]
             let reason = "\(kind); \(menu ? "menu" : "window content"); \(interactive ? "interactive" : (container ? "container" : "content")); smaller area first"
             results.append(Ranked(hit: Hit(index: index, field: chosen.field, kind: kind, reason: reason), score: [Double(chosen.quality), menu ? 1 : 0, Double(preference), interactive ? 0 : 1, container ? 1 : 0, area, Double(index)]))
+        }
+        // v0.10 C5: Finder's activation button is a fallback only. An exact
+        // "Search" button must not displace a real field with a longer label.
+        if semantic == "search_field", results.contains(where: { nodes[$0.hit.index].attrs.role != "AXButton" }) {
+            results.removeAll { nodes[$0.hit.index].attrs.role == "AXButton" }
         }
         return results.sorted { $0.score.lexicographicallyPrecedes($1.score) }.map(\.hit)
     }

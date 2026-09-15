@@ -32,7 +32,7 @@ extension ToolRegistry {
     static let definitionsTextEditing: [MCPToolDefinition] = [
         MCPToolDefinition(
             name: "text_get_selection",
-            description: "Offsets and lengths are UTF-16 code units: 👋 has length 2 and 🇳🇱 length 4 (Hello 👋 starts the emoji at offset 6). Read the selection state of an AX text element: selected text, the selected range as TYPED {location,length} (not the stringified \"range(2115,0)\" get_element_attributes returns), total character count, visible character range and the insertion-point line. "
+            description: "Offsets and lengths are UTF-16 code units: 👋 has length 2 and 🇳🇱 length 4 (Hello 👋 starts the emoji at offset 6). Read the selection state of an AX text element: selected text, the selected range as TYPED {location,length} (not the stringified \"range(2115,0)\" get_element_attributes returns), bounds for the entire selected range via AXBoundsForRange, total character count, freshly read visible character range bounded to the current text length, and the insertion-point line. "
                 + "Target it with element_id, or with pid to use that app's currently focused element. Read-only; does not change focus.",
             inputSchema: schema(
                 properties: [

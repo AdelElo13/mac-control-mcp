@@ -163,7 +163,7 @@ struct TextEditingBackendTests {
     func selectedRangeBounds() async throws {
         let element = FakeElement(value: "Hello 👋 wereld 🇳🇱 café", selection: .init(location: 6, length: 2))
         let selection = try await Self.controller(element).selection(of: Self.dummyElement())
-        let bounds = Mirror(reflecting: selection).children.first { $0.label == "bounds" }?.value as? TextEditingController.Bounds
+        let bounds = selection.bounds
         #expect(bounds?.width == 2)
         #expect(selection.text == "👋")
     }
