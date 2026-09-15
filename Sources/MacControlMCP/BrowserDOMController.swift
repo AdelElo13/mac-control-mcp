@@ -145,11 +145,17 @@ actor BrowserDOMController {
 
     static func domResult(evaluation r: BrowserController.EvalResult, browser browserName: String) -> DOMResult {
         guard r.success, let jsonStr = r.value else {
+            // v0.10 A7 review: a JS exception means Apple Events already
+            // worked; a page CSP error cannot be fixed by enabling that setting.
+            let code = r.errorCode ?? "js_error"
+            let hint = code == "js_error"
+                ? "Check the page's JavaScript error and Content Security Policy in \(browserName). Use AX tools such as get_ui_tree when the page blocks eval."
+                : "Check the active tab and browser connection in \(browserName), then retry."
             return DOMResult(ok: false, browser: browserName, root: nil,
                              nodeCount: 0, includeShadow: true,
                              error: r.error ?? "eval failed",
-                             errorCode: r.errorCode ?? "js_error",
-                             hint: r.hint ?? "Check the active page in \(browserName) and retry; if evaluation stays unavailable, check Allow JavaScript from Apple Events in the browser developer menu.",
+                             errorCode: code,
+                             hint: r.hint ?? hint,
                              pane: r.pane)
         }
         return Self.decodeDOM(jsonStr, browser: browserName)

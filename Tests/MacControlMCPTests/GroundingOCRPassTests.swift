@@ -23,14 +23,41 @@ struct GroundingOCRPassTests {
         #expect(passes == [.init(fast: true, languageCorrection: false)])
     }
 
-    @Test func weakFastMatchFallsBackAndIsRetained() throws {
+    @Test(arguments: [0.0, 0.4, 0.72])
+    func lowConfidenceFastExactMatchSkipsAccurate(confidence: Double) throws {
         var passes: [Bool] = []
-        let combined = try ScreenController.groundingOCR(capture: capture, target: "account", displays: displays) { options in
+        let recognized = try ScreenController.groundingOCR(capture: capture, target: "ＡＤＤ User…", displays: displays) { options in
             passes.append(options.fast)
-            return result(options.fast ? "Internet Accounts" : "Something else")
+            return result("Add User...", confidence: confidence)
         }
-        #expect(passes == [true, false])
-        #expect(combined.blocks.contains { $0.text == "Internet Accounts" })
+        #expect(passes == [true])
+        let candidates = try GroundingController.ocrCandidates(capture: capture, result: recognized,
+            target: "Add User…", anchors: [], displays: displays)
+        #expect(candidates.first?.confidence == confidence)
+    }
+
+    @Test func fastSubstringIsAHitWithoutInflatingConfidence() throws {
+        var passes: [Bool] = []
+        let recognized = try ScreenController.groundingOCR(capture: capture, target: "account", displays: displays) { options in
+            passes.append(options.fast)
+            return result("Internet Accounts", confidence: 0.72)
+        }
+        #expect(passes == [true])
+        let candidates = try GroundingController.ocrCandidates(capture: capture, result: recognized,
+            target: "account", anchors: [], displays: displays)
+        #expect(candidates.first?.confidence == 0.6)
+    }
+
+    @Test func missingFastTargetFallsBackToAccurate() throws {
+        var passes: [ScreenController.OCRRequestOptions] = []
+        let recognized = try ScreenController.groundingOCR(capture: capture, target: "Downloads", displays: displays) { options in
+            passes.append(options)
+            return result(options.fast ? "Documents" : "Downloads")
+        }
+        #expect(passes == [.init(fast: true, languageCorrection: false), .init(fast: false)])
+        let candidates = try GroundingController.ocrCandidates(capture: capture, result: recognized,
+            target: "Downloads", anchors: [], displays: displays)
+        #expect(candidates.first?.title == "Downloads")
     }
 
     @Test func weakAXCannotDisableOCRDistancePenalty() throws {

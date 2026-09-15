@@ -315,8 +315,8 @@ actor GroundingController {
 
         axCandidates = GroundingPolicy.ranked(axCandidates)
 
-        // Happy path: exactly one AX hit, or a clear winner with the rest weak.
-        if strategy == .ax || (strategy == .auto && axCandidates.count == 1) {
+        // v0.10 B5 review: return a ranked exact or strictly leading AX match without OCR.
+        if strategy == .ax || (strategy == .auto && GroundingPolicy.prefersAX(axCandidates)) {
             if let best = axCandidates.first {
                 return GroundResult(
                     ok: true,

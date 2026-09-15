@@ -36,6 +36,57 @@ struct GeometricHitTestTests {
         #expect(empty.quality == "container")
     }
 
+    @Test func outlineLeafCellWinsAndPlainCellsStayExcluded() {
+        let frame = CGRect(x: 0, y: 0, width: 200, height: 40)
+        let tree: [Int: GeometricHitTest.Node<Int>] = [
+            0: .init(role: "AXOutline", frame: frame, children: [1]),
+            1: .init(role: "AXRow", frame: frame, children: [2]),
+            2: .init(role: "AXCell", frame: frame, children: [])]
+        let hit = GeometricHitTest.refine(hit: 0, window: nil, point: CGPoint(x: 10, y: 10), read: { tree[$0]! })
+        #expect(hit.element == 2)
+        #expect(hit.quality == "geometric")
+        #expect(GeometricHitTest.search(root: 2, point: CGPoint(x: 10, y: 10), read: { tree[$0]! }) == nil)
+    }
+
+    @Test func coarseCellHitDescendsToItsButton() {
+        let frame = CGRect(x: 0, y: 0, width: 200, height: 40)
+        let tree: [Int: GeometricHitTest.Node<Int>] = [
+            0: .init(role: "AXCell", frame: frame, children: [1]),
+            1: .init(role: "AXButton", frame: frame, children: [])]
+        #expect(GeometricHitTest.refine(hit: 0, window: nil, point: CGPoint(x: 10, y: 10), read: { tree[$0]! }).element == 1)
+    }
+
+    @Test func collectionHitCanResolveSiblingScrollbarWithinItsScrollArea() {
+        let tree: [Int: GeometricHitTest.Node<Int>] = [
+            0: .init(role: "AXScrollArea", frame: CGRect(x: 447, y: 359, width: 215, height: 519), children: [1, 3]),
+            1: .init(role: "AXOutline", frame: CGRect(x: 447, y: 359, width: 215, height: 519), children: [2]),
+            2: .init(role: "AXCell", frame: CGRect(x: 457, y: 836, width: 195, height: 32), children: []),
+            3: .init(role: "AXButton", frame: CGRect(x: 653, y: 840, width: 6, height: 30), children: [])]
+        for hit in [1, 2] {
+            let refined = GeometricHitTest.refine(hit: hit, window: nil, point: CGPoint(x: 656, y: 859),
+                inCollection: true, scrollContainer: 0, read: { tree[$0]! })
+            #expect(refined.element == 3)
+            #expect(refined.quality == "geometric")
+        }
+        // v0.10 C2: unrelated grouped overlays still keep their own subtree.
+        let overlay: [Int: GeometricHitTest.Node<Int>] = [
+            0: .init(role: "AXScrollArea", frame: CGRect(x: 0, y: 0, width: 100, height: 100), children: [1, 2]),
+            1: .init(role: "AXGroup", frame: nil, children: []),
+            2: .init(role: "AXButton", frame: CGRect(x: 0, y: 0, width: 20, height: 20), children: [])]
+        #expect(GeometricHitTest.refine(hit: 1, window: nil, point: CGPoint(x: 10, y: 10),
+            inCollection: true, scrollContainer: 0, read: { overlay[$0]! }).element == 1)
+    }
+
+    @Test func deeperControlWinsWithinTenPercentOfSmallestArea() {
+        for (width, expected) in [(109.0, 2), (111.0, 1)] {
+            let tree: [Int: GeometricHitTest.Node<Int>] = [
+                0: .init(role: "AXGroup", frame: nil, children: [1]),
+                1: .init(role: "AXButton", frame: CGRect(x: 0, y: 0, width: 100, height: 20), children: [2]),
+                2: .init(role: "AXButton", frame: CGRect(x: 0, y: 0, width: width, height: 20), children: [])]
+            #expect(GeometricHitTest.search(root: 0, point: CGPoint(x: 10, y: 10), read: { tree[$0]! }) == expected)
+        }
+    }
+
     @Test func boundsDepthCyclesAndBudget() {
         var reads = 0
         let result = GeometricHitTest.search(root: 0, point: .zero, nodeCap: 4) { id in

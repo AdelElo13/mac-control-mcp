@@ -1,34 +1,39 @@
-# S3 — eindrapport, 15 september 2026
+# S3 — revisie na live review
 
-## Status
+## Resultaat
 
-Codewijzigingen aanwezig; build en 90 tests in 13 gefilterde suites geslaagd. Onafhankelijke review meldt geen resterende materiële bevindingen ([review.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/review.txt)). **De opdracht is niet volledig afgevinkt:** echte desktopprecisie, OCR-recall, geldige prestatiewaarden en nieuwe commits zijn geblokkeerd door deze uitvoeromgeving.
+**De B5-regressie is live vastgesteld door de reviewer:** Finder `ground(ocr)` ging van de aangeleverde 0.9.0-baseline 948 ms naar p50 1116 ms. De eerdere tests bewezen de beslislogica, maar die logica veroorzaakte in echte UI-tekst onnodig twee Vision-passes. Deze revisie corrigeert dat; de nieuwe latencydoelen moeten nog worden nagemeten.
+
+De reviewer heeft A5 (alle zes labels), A7 en Finder-hit-testing live goedgekeurd. System Settings stond op 16/18 = 88,9%; deze revisie richt zich op de twee scrollbar-misses.
+
+**Lokale verificatie:** build geslaagd; 98 tests in 13 gefilterde suites groen; onafhankelijke codereview zonder materiële bevindingen. Nieuwe commits blijven geblokkeerd door `index.lock` buiten de schrijfbare sandbox. Deze revisie staat ongecommit in de worktree.
 
 ## Commits
 
-- Branch: `feat/v0.10-ground`; baseline `cb435a8` (`integration/v0.10`).
-- Bestaande WIP: `0b2bd9e` — `wip(codex): partial S-ground work before usage-limit stop (uncompiled, do not merge)`. Niet geamendeerd of teruggedraaid.
-- Geen nieuwe commits: `git add` faalde vóór de afhankelijke commit kon starten. Vervolgwijzigingen staan ongecommit in deze worktree.
+- `0b2bd9e`: bestaande WIP, intact.
+- `187034e`: voorafgaande implementatie door reviewer gecommit, intact.
+- Nieuwe commitpoging stopte bij `git add`, exit 128:
 
 ```text
 fatal: Unable to create '/Users/a/projects/mac-control-mcp/.git/worktrees/wt10-ground/index.lock': Operation not permitted
-exit_code: 128
 ```
 
-Bewijs: [commit-attempt.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/commit-attempt.txt). Geen push, merge of rebase uitgevoerd.
+Bewijs: [revision-commit-attempt.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/revision-commit-attempt.txt). Geen amend, revert, push, merge of rebase.
 
-## Bestanden sinds integration/v0.10
+## Wijzigingen en bestanden
 
-- [Sources/MacControlMCP/AXAttributeBatch.swift](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/AXAttributeBatch.swift)
+- **B5 OCR:** accurate alleen bij nul zichtbare fast-matches. Een exact/genormaliseerd label bij recognition-confidence 0,72 (ook 0 of 0,4) is een hit. De response behoudt die lagere confidence. Substringmatches blijven maximaal 0,6. Een werkelijk ontbrekend target en een onbruikbaar klein tekstvak veroorzaken nog wel fallback.
+- **B5 auto:** een AX-topkandidaat met confidence 1,0, ook bij gelijke exact-matches, of een strikt hogere score dan de tweede kandidaat stopt vóór OCR. De bestaande sortering bepaalt de winnaar.
+- **C2:** directe Outline/Table/Row/Cell-hits worden verfijnd. Rows/cells tellen binnen outlines/tables als selecteerbaar. Binnen 10% van het globaal kleinste oppervlak wint de diepere kandidaat. De echte misses lagen bij x=656 op een scrollbar: collection-hits mogen daarom hun dichtstbijzijnde scrollcontainer doorzoeken als die het punt bevat. Geen verbreding door sheet/popover/dialog/window-grenzen; gewone overlays behouden hun subtree. Eén zoekactie met maximaal diepte 24 en 2000 nodes.
+- **A7 hint:** `js_error` verwijst naar de paginafout/Content Security Policy en AX-tools. De instructie om Apple Events toe te staan blijft bij de betreffende beleidsfout horen.
+- Toolbeschrijving en `docs/TOOLS.md` bijgewerkt; toolaantal en versies ongewijzigd.
+
 - [Sources/MacControlMCP/AccessibilityController.swift](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/AccessibilityController.swift)
 - [Sources/MacControlMCP/BrowserDOMController.swift](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/BrowserDOMController.swift)
-- [Sources/MacControlMCP/BrowserErrorClassifier.swift](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/BrowserErrorClassifier.swift)
 - [Sources/MacControlMCP/GeometricHitTest.swift](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/GeometricHitTest.swift)
 - [Sources/MacControlMCP/GroundingController.swift](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/GroundingController.swift)
 - [Sources/MacControlMCP/GroundingPolicy.swift](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/GroundingPolicy.swift)
 - [Sources/MacControlMCP/ScreenController.swift](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/ScreenController.swift)
-- [Sources/MacControlMCP/Tools+V0_9AXCore.swift](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/Tools+V0_9AXCore.swift)
-- [Sources/MacControlMCP/Tools+V2Phase2.swift](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/Tools+V2Phase2.swift)
 - [Sources/MacControlMCP/Tools+V2Phase9.swift](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/Tools+V2Phase9.swift)
 - [Tests/MacControlMCPTests/BrowserDOMFailureTests.swift](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Tests/MacControlMCPTests/BrowserDOMFailureTests.swift)
 - [Tests/MacControlMCPTests/GeometricHitTestTests.swift](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Tests/MacControlMCPTests/GeometricHitTestTests.swift)
@@ -36,113 +41,81 @@ Bewijs: [commit-attempt.txt](/private/tmp/claude-501/-Users-a-projects-mac-contr
 - [Tests/MacControlMCPTests/GroundingPrecisionTests.swift](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Tests/MacControlMCPTests/GroundingPrecisionTests.swift)
 - [docs/TOOLS.md](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/docs/TOOLS.md)
 
-Aanvullende test- en probe-uitvoer staat in `s3-evidence/`. De baseline is uitsluitend onder de genegeerde `.build/` geëxporteerd en gebouwd; geen branchwissel. `README.md`, `RELEASE_NOTES*`, `server.json`, `npm/` en versies hebben geen diff. Toolaantal bleef gelijk.
-
-## Getoetst gedrag
-
-- **A5:** titel/waarde/beschrijving; NFKC, case-folding en ellipsis; uitgesloten containerrollen; minimaal 2 punten en intersectie met een werkelijk display; kleinere match bij gelijke score; substringscore maximaal 0,6; OCR-afstandsstraf; `matched_field` en maximaal drie alternatieven. Fake AX-labels en OCR-resultaten toetsen deze regels.
-- **B5:** fast met taalcorrectie uit; accurate alleen als geen zichtbare kandidaat score ≥0,8 heeft. Beide passes gebruiken dezelfde capture. Fast-only labels blijven bewaard; overlappende OCR-dubbelen worden samengevoegd. `ocr_screen(level=fast)` gebruikt standaard taalcorrectie uit; expliciete instelling blijft mogelijk.
-- **C2:** geometrische zoekactie binnen de geraakte container, kleinste interactieve kandidaat, maximaal diepte 24 / 2000 nodes, met tijdsgrens; kwaliteit `direct`, `geometric` of `container`. Fake tree toetst ook cycli, budget en overlappende zustergroepen.
-- **A7:** DOM-fouten krijgen codes en herstelhints; fixtures toetsen Safari `missing value`, ontbrekend document, kapotte JSON, browserbeleid en generieke evaluatiefouten. Live Safari-classificatie blijft onbevestigd.
-
 ## RED → GREEN
 
-RED-logbestanden uit de oorspronkelijke en hervatte cyclus, vóór de betreffende fixes:
-
-- [red-grounding.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/red-grounding.txt): `✘ Test run with 5 tests in 1 suite failed after 0.001 seconds with 19 issues.`
-- [red-hit-browser.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/red-hit-browser.txt): `✘ Test run with 5 tests in 2 suites failed after 0.002 seconds with 11 issues.`
-- [red-ocr-duplicates.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/red-ocr-duplicates.txt): `✘ Test run with 6 tests in 1 suite failed after 0.001 seconds with 1 issue.`
-- [red-ocr-passes.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/red-ocr-passes.txt): `✘ Test run with 3 tests in 1 suite failed after 0.001 seconds with 4 issues.`
-- [red-browser-hint.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/red-browser-hint.txt): `✘ Test run with 4 tests in 1 suite failed after 0.001 seconds with 2 issues.`
-- [red-hit-scope.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/red-hit-scope.txt): `✘ Test run with 3 tests in 1 suite failed after 0.001 seconds with 1 issue.`
-- [red-ocr-anchor.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/red-ocr-anchor.txt): `✘ Test run with 4 tests in 1 suite failed after 0.001 seconds with 1 issue.`
-
-GREEN op de uiteindelijke code:
+Eerste regressieronde, [revision-red.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/revision-red.txt):
 
 ```text
-✔ Suite "AXAttributeBatch" passed after 0.003 seconds.
-✔ Suite "AX scope policy (Codex r2 #2)" passed after 0.007 seconds.
+✘ Test run with 24 tests in 4 suites failed after 0.003 seconds with 13 issues.
+```
+
+Onder meer: fast-confidence 0,72 geeft `[true, false]` in plaats van `[true]`; exact AX-ties stoppen niet; outline-leaf wordt gemist; CSP-hint noemt de verkeerde instelling. Vervolgens: [revision-green.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/revision-green.txt) (`24 tests in 4 suites passed`).
+
+Aanvullende fixture op basis van de scrollbar-geometrie uit de live-review:
+
+- [revision-scrollbar-red.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/revision-scrollbar-red.txt): `7 tests in 1 suite failed ... with 4 issues` — beide collection-hits bleven containers.
+- [revision-scrollbar-green.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/revision-scrollbar-green.txt): `7 tests in 1 suite passed` — beide kiezen de scrollbar-button; overlay blijft geïsoleerd.
+
+Afsluitende volledige **gefilterde** selectie, inclusief aangescherpte overlay-fixture ([revision-suites.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/revision-suites.txt)):
+
+```text
+✔ Suite "AXAttributeBatch" passed after 0.001 seconds.
+✔ Suite "AX scope policy (Codex r2 #2)" passed after 0.002 seconds.
 ✔ Suite "Browser DOM failures" passed after 0.001 seconds.
 ✔ Suite "Browser error classification" passed after 0.001 seconds.
-✔ Suite "element_at_point (C-4)" passed after 0.007 seconds.
+✔ Suite "element_at_point (C-4)" passed after 0.004 seconds.
 ✔ Suite "Geometric hit test" passed after 0.001 seconds.
 ✔ Suite "Grounding OCR pixel→point conversion" passed after 0.001 seconds.
 ✔ Suite "Grounding OCR passes" passed after 0.001 seconds.
 ✔ Suite "Grounding precision" passed after 0.001 seconds.
 ✔ Suite "Grounding depth + window-scoped OCR mapping" passed after 0.001 seconds.
-✔ Suite "Phase 2 tools — browser + screen" passed after 0.007 seconds.
-✔ Suite "Phase 9 tools — reliability + observability substrate" passed after 0.021 seconds.
-✔ Suite "Tool docs drift" passed after 0.017 seconds.
-✔ Test run with 90 tests in 13 suites passed after 0.068 seconds.
+✔ Suite "Phase 2 tools — browser + screen" passed after 0.006 seconds.
+✔ Suite "Phase 9 tools — reliability + observability substrate" passed after 0.017 seconds.
+✔ Suite "Tool docs drift" passed after 0.013 seconds.
+✔ Test run with 98 tests in 13 suites passed after 0.051 seconds.
 ```
-
-Volledige uitvoer: [green-final.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/green-final.txt). Command:
 
 ```sh
 CLANG_MODULE_CACHE_PATH=/private/tmp/s3-clang-cache script -q /dev/null swift test --disable-sandbox --no-parallel --filter 'Grounding.*Tests|GeometricHitTestTests|BrowserDOM.*Tests|BrowserErrorClassificationTests|AXAttributeBatchTests|AXScopePolicyTests|Phase9ToolsTests|ElementAtPointTests|Phase2ToolsTests|ToolDocsDriftTests'
 ```
 
-Geen volledige testsuite gestart. Sommige bestaande live-smoketests keren zonder AX-toestemming vroeg terug; hun groene status bewijst geen desktopresultaat.
+Geen volledige desktopsuite gestart. Bestaande live-smoketests kunnen zonder AX-toestemming vroeg terugkeren; hun groene status is geen live bewijs. Eerdere RED/GREEN-logs blijven in deze map bewaard.
 
-`swift build` werd eerst uitgevoerd maar kon de standaard modulecache niet schrijven. Met de tijdelijke modulecache en `--disable-sandbox` slaagde de afsluitende build: `Build complete! (0.16s)`. [build-final.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/build-final.txt) bevat de resterende cache/resourcewaarschuwingen; [build-baseline.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/build-baseline.txt) bevat de baseline-build.
+Build: [revision-build-before.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/revision-build-before.txt) en [revision-build-final.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/revision-build-final.txt). `swift build` werd eerst zonder opties geprobeerd; de standaard modulecache is niet schrijfbaar. De tijdelijke modulecache en `--disable-sandbox` maken de build hier uitvoerbaar. Tooldocs gegenereerd met `UPDATE_TOOL_DOCS=1` en de `script`-wrapper: [revision-docs-regenerate.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/revision-docs-regenerate.txt); driftcheck daarna opnieuw zonder die variabele groen. Codereview: [revision-review.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/revision-review.txt).
 
-Tooldocs zijn gegenereerd met `UPDATE_TOOL_DOCS=1` en dezelfde `script`-wrapper: [docs-regenerate.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/docs-regenerate.txt) (`4 tests in 1 suite passed`). Daarna slaagde de driftcheck zonder die variabele in de 90-testselectie.
+## Live-review: gemeten waarden en nieuwe meetdoelen
 
-## Voor/na-metingen
+Bron: de door de gebruiker aangeleverde review, bewaard in [reviewer-live-review.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/reviewer-live-review.txt). Onderstaande meetwaarden zijn van **vóór deze revisie**, uit de revieweromgeving met desktoptoegang.
 
-Exact dezelfde cases, hetzelfde `SCRATCH/perf.py`, één opwarming en zeven metingen per case. Voor: `.build/s3-baseline-build/debug/mac-control-mcp` (gebouwd uit `integration/v0.10`); na: `.build/debug/mac-control-mcp`.
+| Controle | Live vastgesteld vóór revisie | Verwacht acceptatiecriterium na revisie |
+|---|---|---|
+| Finder ground OCR, Downloads | p50 1116 ms, 7 runs; 0.9.0-baseline 948 ms | **≤400 ms** |
+| Safari ground OCR | Nieuwe waarde niet aangeleverd | **≤100 ms** |
+| Chrome ground OCR | Nieuwe waarde niet aangeleverd | **≤100 ms** |
+| Finder ocr_screen fast | p50 158 ms | Blijft fast; geen accurate pass toegevoegd |
+| Finder ocr_screen accurate | p50 947 ms | Accurate-route ongewijzigd |
+| auto met correcte AX-ties | 2141 ms gemeld | **≤ AX-tijd + 5 ms** |
+| Finder hit-test | **70/71 = 98,6%** same id, goedgekeurd | ≥90%, behoud controleren |
+| System Settings hit-test | **16/18 = 88,9%** | **≥90%**, beide scrollbar-punten opnieuw testen |
 
-Cases: [perf-cases.json](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/perf-cases.json). Ruwe data: [perf-before.json](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/perf-before.json) en [perf-after.json](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/perf-after.json).
+De nieuwe getallen in de rechterkolom zijn **meetdoelen, geen gemeten uitkomsten**. Er wordt geen gerealiseerde snelheidswinst geclaimd. De reviewer zal opnieuw meten met dezelfde probe/cases. B5 is dus als regressie geverifieerd; herstel van de prestatiedoelen wacht op die nameting.
 
-**Alle metingen faalden met `no_such_window`. Onderstaande p50-waarden zijn uitsluitend foutresponstijden; ze meten geen OCR en onderbouwen geen snelheidswinst.**
+### A5 en A7
 
-| Case | Voor p50 ms | Na p50 ms | Fouten voor → na |
-|---|---:|---:|---:|
-| ground(ocr,Downloads)/Finder | 0.2 | 0.2 | 7/7 → 7/7 |
-| ground(ocr,Manage cookies)/Safari | 0.2 | 0.2 | 7/7 → 7/7 |
-| ground(ocr,Sign in)/Chrome | 0.2 | 0.1 | 7/7 → 7/7 |
-| ground(ocr,Users)/SysSettings | 0.3 | 0.1 | 7/7 → 7/7 |
-| ocr_screen(accurate)/Finder | 0.2 | 0.1 | 7/7 → 7/7 |
-| ocr_screen(fast)/Finder | 0.3 | 0.1 | 7/7 → 7/7 |
+Volgens de live-review zijn alle zes A5-labels correct: `Untitled` via AXStaticText/value; `Recents`, `Shared`, `Add User…`, `account` correct; verkeerde hits als alternatieven gedemoteerd; `Skip to content` niet meer als verborgen 1×1-link gekozen. A7 geeft Safari `js_error` en Chrome `permission_policy_denied`, beide met hints. Deze revisie verfijnt de Safari-hint.
 
-De aangeleverde historische audit noemt Finder ground-OCR 948 ms en ocr_screen accurate 1045 ms. Deze omgeving kan die succesvolle calls niet reproduceren. De doelen Finder ≤400 ms en Safari/Chrome ≤100 ms zijn dus **niet geverifieerd**.
+Ruwe revieweroutputs zijn beschikbaar als [/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/ground-after.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/ground-after.txt), [/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/eap-sys-out.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/eap-sys-out.txt) en [/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/eap-finder-out.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/eap-finder-out.txt). De System Settings-centra staan in [/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/eap-sys-centers.json](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/eap-sys-centers.json). De B5-probecases staan in [/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/b5-calls.json](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/b5-calls.json).
 
-## Live-probes
+## Lokale live-hercontrole en beperkingen
 
-Op beide binaries zijn dezelfde 30 NDJSON-calls uitgevoerd via `PROBE_MAX=300000 python3 SCRATCH/probe.py <binary> <calls>`. Cases: [live-calls.json](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/live-calls.json). Volledige outputs: [baseline-probes.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/baseline-probes.txt) en [after-probes.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/after-probes.txt); compact: [baseline-summary.json](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/baseline-summary.json) en [after-summary.json](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/after-summary.json).
+De huidige `.build/debug/mac-control-mcp` is met `PROBE_MAX=300000 python3 SCRATCH/probe.py` opnieuw aangeroepen voor permissions, Finder Downloads (`ocr`/`auto`) en de twee gemiste System Settings-punten `(656,859)` en `(656,483.5)`. Volledige output: [revision-live.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/revision-live.txt).
 
-De na-probe rapporteert:
-
-```json
-{"list_apps":{"ok":true,"count":0},"list_windows":{"ok":true,"count":0},"permissions_status":{"accessibility":"not_granted","screen_recording":"not_granted"}}
+```text
+permissions_status: accessibility=not_granted, screen_recording=not_granted
+ground Downloads ocr/auto: error_code=no_such_window
+element_at_point beide scrollbar-centra: error_code=permission_missing
 ```
 
-De responsible app is `com.anthropic.claude-code`. Browsercalls krijgen een ongeldige XPC-verbinding / osascript-fout (`error_code: failed`); de huidige DOM-response bevat een herstelhint.
+Daarom kan deze uitvoercontext geen geldige nieuwe p50 of nieuwe System Settings-overeenkomst leveren. De eerdere `perf-before.json`/`perf-after.json` in deze map bevatten sandbox-foutresponstijden; ze mogen niet als OCR-performance worden gebruikt. Er zijn geen base64-afbeeldingen in de nieuwe lokale probe-output. Geen desktopklik, tekstinvoer, vensterverplaatsing, instellingenwijziging of klembordwijziging uitgevoerd.
 
-Alle zes gevraagde labels zijn met `ax`, `ocr` en `auto` aangeroepen; `Skip to content` bovendien in beide browsers. De gebruikte pids kwamen uit de audit en konden niet actueel bevestigd worden:
-
-| Label | App | AX | OCR / auto |
-|---|---|---|---|
-| Untitled | TextEdit | not_found | capture_failed |
-| Skip to content | Safari en Chrome | not_found | capture_failed |
-| Shared | Finder | not_found | capture_failed |
-| Recents | Finder | not_found | capture_failed |
-| Add User… | System Settings | not_found | capture_failed |
-| account | System Settings | not_found | capture_failed |
-
-Dit is **geen bewijs van labelrecall of een recallregressie**: de server kon de doelapps niet lezen. Geen TextEdit-document aangemaakt omdat de server geen bereikbare desktop kon vaststellen. Geen klik, tekstinvoer, vensterverplaatsing, klembordwijziging of instellingenwijziging uitgevoerd.
-
-### C2-overeenkomst
-
-De verse `capture_annotated`-calls voor Finder (window 31954, pid 742) en System Settings (window 29712, pid 76246) geven beide `no_such_window`. Daardoor zijn geen verse annotatiecentra beschikbaar.
-
-Als diagnose zijn daarnaast de 88 opgeslagen centra uit `SCRATCH/audit/exp1.json` door `element_at_point` gehaald; alle 88 geven `permission_missing`. De 90 calls en outputs staan in [agreement-calls.json](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/agreement-calls.json), [agreement-probes.txt](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/agreement-probes.txt) en [agreement-summary.json](/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/s3-evidence/agreement-summary.json). Historische centra leveren geen geldige verse overeenkomstmeting. **≥90% is niet geverifieerd.** Er zijn geen base64-afbeeldingen in deze outputs.
-
-## Nog geblokkeerd
-
-1. Nieuwe conventionele commits: Git-worktreeadministratie buiten de schrijfbare sandbox.
-2. Live labelprecisie en ongewijzigde OCR-recall: AX/Screen Recording niet toegekend aan deze uitvoercontext; apps/vensters onzichtbaar.
-3. Succesvolle voor/na-OCR-metingen en de prestatiedoelen: dezelfde desktopblokkade.
-4. Verse Finder/System Settings-overeenkomst en Safari/Chrome-beleidsclassificatie: dezelfde desktop/XPC-blokkade.
-
-De toegankelijke code-, test-, documentatie- en reviewwerkzaamheden zijn uitgevoerd; bovenstaande punten moeten in een uitvoercontext met de benodigde desktop- en Git-toegang worden voltooid.
+**Resterend:** reviewer-nameting van de nieuwe B5-doelen en C2-uitkomst; conventionele commits vanuit een omgeving die de Git-worktreeadministratie kan schrijven.

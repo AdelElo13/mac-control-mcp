@@ -169,17 +169,26 @@ actor AccessibilityController {
     }
 
     /// v0.10 C2: SwiftUI/Finder can report a whole container for a precise
-    /// point. Search inside the actual hit to keep sheets and sibling groups isolated.
+    /// point. Preserve overlay scope while allowing a sidebar hit to resolve its scrollbar.
     func refinedHit(element: AXUIElement, x: Double, y: Double) -> (element: AXUIElement, quality: String) {
         func frame(_ values: AXAttributeBatch.Values) -> CGRect? {
             guard let position = values.position, let size = values.size else { return nil }
             return CGRect(origin: position, size: size)
         }
-        let window = ([element] + AXPath.ancestors(of: element, limit: 24)).first {
-            AXPath.copyString($0, "AXRole") == "AXWindow"
+        let lineage = ([element] + AXPath.ancestors(of: element, limit: 24)).map {
+            (element: $0, role: AXPath.copyString($0, "AXRole"))
         }
+        let window = lineage.first { $0.role == "AXWindow" }?.element
+        // v0.10 C2 review: a direct cell hit still inherits its outline/table
+        // context even though the bounded search starts below that ancestor.
+        let localAncestors = lineage.prefix { !["AXSheet", "AXPopover", "AXDialog", "AXWindow"].contains($0.role) }
+        let inCollection = localAncestors.contains { $0.role == "AXOutline" || $0.role == "AXTable" }
+        // v0.10 C2 review: scrollbar siblings share this scroll area. Never
+        // broaden through a sheet/popover boundary or to the owning window.
+        let scrollContainer = localAncestors.first { $0.role == "AXScrollArea" }?.element
         let refined = GeometricHitTest.refine(hit: AXKey(element: element),
-            window: window.map { AXKey(element: $0) }, point: CGPoint(x: x, y: y)) { key in
+            window: window.map { AXKey(element: $0) }, point: CGPoint(x: x, y: y), inCollection: inCollection,
+            scrollContainer: scrollContainer.map { AXKey(element: $0) }) { key in
             let values = AXAttributeBatch.fetch(key.element, includeChildren: true)
             return .init(role: values.role, frame: frame(values), children: values.children.map { AXKey(element: $0) })
         }

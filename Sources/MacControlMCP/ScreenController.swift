@@ -548,7 +548,9 @@ actor ScreenController {
         let fast = try recognize(OCRRequestOptions(fast: true, languageCorrection: false))
         let candidates = try GroundingController.ocrCandidates(capture: capture, result: fast,
             target: target, anchors: [], displays: displays)
-        guard GroundingPolicy.needsAccurate(confidences: candidates.map(\.confidence)) else { return fast }
+        // v0.10 B5 review: Vision fast scores real UI text around 0.72. A
+        // found label is sufficient; its confidence remains honest in the response.
+        guard candidates.isEmpty else { return fast }
         let accurate = try recognize(OCRRequestOptions())
         // v0.10 B5: retain fast-only labels; candidate ranking merges duplicate boxes.
         return OCRResult(blocks: accurate.blocks + fast.blocks, joinedText: accurate.joinedText)

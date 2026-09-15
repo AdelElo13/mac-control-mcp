@@ -60,12 +60,19 @@ struct GroundingPrecisionTests {
         #expect(GroundingPolicy.ranked([first, duplicate]).count == 1)
     }
 
+    @Test(arguments: [([Double](), false), ([1.0, 1.0], true), ([1.0, 0.6], true),
+                      ([0.6, 0.4], true), ([0.6, 0.6], false), ([0.6], true)])
+    func autoUsesRankedAXWinner(scores: [Double], expected: Bool) {
+        let candidates = scores.map { score in
+            GroundingController.Candidate(role: "AXStaticText", title: "Downloads", x: 50, y: 50,
+                bounds: nil, elementId: nil, source: "ax", confidence: score)
+        }
+        #expect(GroundingPolicy.prefersAX(candidates) == expected)
+    }
+
     @Test func distantOCRIsWeakerAndFastFallbackPreservesRecall() {
         #expect(GroundingPolicy.ocrConfidence(text: "Internet Accounts", target: "account", recognition: 1, distance: 302) < 0.6)
         #expect(GroundingPolicy.ocrConfidence(text: "Account", target: "account", recognition: 0.4, distance: nil) <= 0.4)
-        #expect(GroundingPolicy.needsAccurate(confidences: []))
-        #expect(GroundingPolicy.needsAccurate(confidences: [0.6]))
-        #expect(!GroundingPolicy.needsAccurate(confidences: [0.9]))
         #expect(ScreenController.OCRRequestOptions(fast: true).languageCorrection == false)
         #expect(ScreenController.OCRRequestOptions(fast: false).languageCorrection == true)
     }

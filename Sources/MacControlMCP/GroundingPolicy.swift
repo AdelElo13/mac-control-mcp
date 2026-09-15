@@ -78,7 +78,11 @@ enum GroundingPolicy {
         return score * penalty
     }
 
-    static func needsAccurate(confidences: [Double]) -> Bool {
-        !confidences.contains { $0 >= 0.8 }
+    /// v0.10 B5 review: exact AX ties are already ranked by area. OCR
+    /// cannot improve that winner and would add a complete capture/recognition pass.
+    static func prefersAX(_ rankedCandidates: [GroundingController.Candidate]) -> Bool {
+        guard let best = rankedCandidates.first else { return false }
+        return best.confidence == 1 || rankedCandidates.count == 1
+            || best.confidence > rankedCandidates[1].confidence
     }
 }

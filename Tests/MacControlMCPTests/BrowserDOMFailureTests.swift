@@ -18,6 +18,15 @@ struct BrowserDOMFailureTests {
         #expect(failure.hint == "Allow JavaScript from Apple Events")
     }
 
+    @Test func pageScriptFailureDoesNotSuggestEnablingAppleEvents() {
+        let failure = BrowserDOMController.domResult(evaluation: .init(success: false, value: nil,
+            error: "Refused to evaluate a string as JavaScript because unsafe-eval is not allowed by Content Security Policy",
+            errorCode: nil, hint: nil, pane: nil), browser: "Safari")
+        #expect(failure.errorCode == "js_error")
+        #expect(failure.hint?.contains("Content Security Policy") == true)
+        #expect(failure.hint?.contains("Allow JavaScript from Apple Events") == false)
+    }
+
     @Test func missingSafariResultHasCodeAndSetting() {
         let failure = BrowserDOMController.decodeDOM("missing value", browser: "Safari")
         #expect(!failure.ok)

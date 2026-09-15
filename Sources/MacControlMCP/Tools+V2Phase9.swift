@@ -33,7 +33,7 @@ extension ToolRegistry {
                 are covered by other windows), 'auto' (AX first, OCR fallback). \
                 Returns (x,y) plus the match's bounds, element_id and \
                 max_depth_used, matched_field (title/value/description/ocr), alternatives (up to 3 runners-up), with confidence 0..1 + candidate list.
-                OCR tries fast recognition without language correction first, then accurate if no match reaches 0.8 confidence.
+                OCR tries fast recognition without language correction first, then accurate only if no visible target match is found. Low recognition confidence lowers the reported score without triggering another pass. Auto returns an exact AX winner (including ranked ties) or a strictly leading AX candidate without OCR.
                 Pass window_id (from list_windows) to scope BOTH strategies \
                 to one window: the AX search is rooted at that window's \
                 Accessibility window and the OCR pass captures exactly that \

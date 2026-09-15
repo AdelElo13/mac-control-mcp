@@ -1,0 +1,135 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ground': failed storing manifest for 'wt10-ground' in cache: attempt to write a readonly database
+Building for debugging...
+[0/6] Write sources
+[2/6] Write swift-version--58304C5D6DBC2206.txt
+[4/14] Compiling MacControlMCP GroundingPolicy.swift
+[5/14] Compiling MacControlMCP GeometricHitTest.swift
+[6/14] Compiling MacControlMCP GroundingController.swift
+[7/14] Compiling MacControlMCP Tools+V2Phase9.swift
+[8/14] Compiling MacControlMCP ScreenController.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/ScreenController.swift:660:24: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+658 |         // When this works it gives us the window even if occluded. Returns
+659 |         // nil on macOS 15+ in many cases — that's why SCK is Strategy 1.
+660 |         if let image = CGWindowListCreateImage(
+    |                        `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+661 |             .null,
+662 |             .optionIncludingWindow,
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/ScreenController.swift:681:27: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+679 |         }
+680 | 
+681 |         guard let image = CGWindowListCreateImage(
+    |                           `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+682 |             bounds,
+683 |             .optionOnScreenOnly,
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/ScreenController.swift:807:27: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+805 |     private func regionImage(_ region: CaptureRegion) throws -> CGImage {
+806 |         let rect = CGRect(x: region.x, y: region.y, width: region.width, height: region.height)
+807 |         guard let image = CGWindowListCreateImage(
+    |                           `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+808 |             rect,
+809 |             .optionOnScreenOnly,
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[9/14] Compiling MacControlMCP AccessibilityController.swift
+[10/17] Compiling MacControlMCP BrowserDOMController.swift
+[11/17] Emitting module MacControlMCP
+[12/17] Compiling MacControlMCP Tools+V2Phase5.swift
+[13/17] Compiling MacControlMCP Tools.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/Tools.swift:848:27: warning: no 'async' operations occur within 'await' expression
+ 846 |             }
+ 847 | 
+ 848 |             let pressed = await accessibility.pressKey(keyCode: keyCode, modifiers: modifiers)
+     |                           `- warning: no 'async' operations occur within 'await' expression
+ 849 |             if pressed {
+ 850 |                 return successResult(
+[14/17] Compiling MacControlMCP Tools+V2.swift
+[14/19] Write Objects.LinkFileList
+[15/19] Linking mac-control-mcp
+[16/19] Applying mac-control-mcp
+[18/23] Compiling MacControlMCPTests GeometricHitTestTests.swift
+[19/23] Compiling MacControlMCPTests GroundingPrecisionTests.swift
+[20/23] Compiling MacControlMCPTests AXTreeAugmentedScopeTests.swift
+[21/23] Emitting module MacControlMCPTests
+[21/23] Write Objects.LinkFileList
+[22/23] Linking mac-control-mcpPackageTests
+Build complete! (4.91s)
+Test Suite 'Selected tests' started at 2026-09-15 19:41:18.991.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 19:41:18.997.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 19:41:18.997.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 19:41:18.997.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.005) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Browser DOM failures" started.
+◇ Test evaluationFailuresAlwaysHaveRecoveryHints() started.
+✔ Test evaluationFailuresAlwaysHaveRecoveryHints() passed after 0.001 seconds.
+◇ Test pageScriptFailureDoesNotSuggestEnablingAppleEvents() started.
+✔ Test pageScriptFailureDoesNotSuggestEnablingAppleEvents() passed after 0.001 seconds.
+◇ Test missingSafariResultHasCodeAndSetting() started.
+✔ Test missingSafariResultHasCodeAndSetting() passed after 0.001 seconds.
+◇ Test nullDOMAndMalformedResultAreExplicit() started.
+✔ Test nullDOMAndMalformedResultAreExplicit() passed after 0.001 seconds.
+◇ Test browserPolicyAndMissingTabs() started.
+✔ Test browserPolicyAndMissingTabs() passed after 0.001 seconds.
+✔ Suite "Browser DOM failures" passed after 0.001 seconds.
+◇ Suite "Geometric hit test" started.
+◇ Test smallestInteractiveDescendantWins() started.
+✔ Test smallestInteractiveDescendantWins() passed after 0.001 seconds.
+◇ Test refinementStaysInHitSubtreeAndReportsQuality() started.
+✔ Test refinementStaysInHitSubtreeAndReportsQuality() passed after 0.001 seconds.
+◇ Test outlineLeafCellWinsAndPlainCellsStayExcluded() started.
+✔ Test outlineLeafCellWinsAndPlainCellsStayExcluded() passed after 0.001 seconds.
+◇ Test coarseCellHitDescendsToItsButton() started.
+✔ Test coarseCellHitDescendsToItsButton() passed after 0.001 seconds.
+◇ Test deeperControlWinsWithinTenPercentOfSmallestArea() started.
+✔ Test deeperControlWinsWithinTenPercentOfSmallestArea() passed after 0.001 seconds.
+◇ Test boundsDepthCyclesAndBudget() started.
+✔ Test boundsDepthCyclesAndBudget() passed after 0.001 seconds.
+✔ Suite "Geometric hit test" passed after 0.001 seconds.
+◇ Suite "Grounding OCR passes" started.
+◇ Test strongFastMatchSkipsAccurate() started.
+✔ Test strongFastMatchSkipsAccurate() passed after 0.001 seconds.
+◇ Test lowConfidenceFastExactMatchSkipsAccurate(confidence:) started.
+◇ Test case passing 1 argument confidence → 0.0 to lowConfidenceFastExactMatchSkipsAccurate(confidence:) started.
+◇ Test case passing 1 argument confidence → 0.4 to lowConfidenceFastExactMatchSkipsAccurate(confidence:) started.
+◇ Test case passing 1 argument confidence → 0.72 to lowConfidenceFastExactMatchSkipsAccurate(confidence:) started.
+✔ Test lowConfidenceFastExactMatchSkipsAccurate(confidence:) with 3 test cases passed after 0.001 seconds.
+◇ Test fastSubstringIsAHitWithoutInflatingConfidence() started.
+✔ Test fastSubstringIsAHitWithoutInflatingConfidence() passed after 0.001 seconds.
+◇ Test missingFastTargetFallsBackToAccurate() started.
+✔ Test missingFastTargetFallsBackToAccurate() passed after 0.001 seconds.
+◇ Test weakAXCannotDisableOCRDistancePenalty() started.
+✔ Test weakAXCannotDisableOCRDistancePenalty() passed after 0.001 seconds.
+◇ Test tinyFastBoxCannotSuppressAccurate() started.
+✔ Test tinyFastBoxCannotSuppressAccurate() passed after 0.001 seconds.
+✔ Suite "Grounding OCR passes" passed after 0.001 seconds.
+◇ Suite "Grounding precision" started.
+◇ Test containersAndHiddenLinksCannotBeTargets() started.
+✔ Test containersAndHiddenLinksCannotBeTargets() passed after 0.001 seconds.
+◇ Test valueAndDescriptionBeatPartialImageTitle() started.
+✔ Test valueAndDescriptionBeatPartialImageTitle() passed after 0.001 seconds.
+◇ Test unicodeAndEllipsisAreEquivalent() started.
+✔ Test unicodeAndEllipsisAreEquivalent() passed after 0.001 seconds.
+◇ Test exactTiesPreferSmallestArea() started.
+✔ Test exactTiesPreferSmallestArea() passed after 0.001 seconds.
+◇ Test repeatedOCRPassesDoNotInventAlternatives() started.
+✔ Test repeatedOCRPassesDoNotInventAlternatives() passed after 0.001 seconds.
+◇ Test autoUsesRankedAXWinner(scores:expected:) started.
+◇ Test case passing 2 arguments scores → [], expected → false to autoUsesRankedAXWinner(scores:expected:) started.
+◇ Test case passing 2 arguments scores → [1.0, 1.0], expected → true to autoUsesRankedAXWinner(scores:expected:) started.
+◇ Test case passing 2 arguments scores → [1.0, 0.6], expected → true to autoUsesRankedAXWinner(scores:expected:) started.
+◇ Test case passing 2 arguments scores → [0.6, 0.4], expected → true to autoUsesRankedAXWinner(scores:expected:) started.
+◇ Test case passing 2 arguments scores → [0.6, 0.6], expected → false to autoUsesRankedAXWinner(scores:expected:) started.
+◇ Test case passing 2 arguments scores → [0.6], expected → true to autoUsesRankedAXWinner(scores:expected:) started.
+✔ Test autoUsesRankedAXWinner(scores:expected:) with 6 test cases passed after 0.001 seconds.
+◇ Test distantOCRIsWeakerAndFastFallbackPreservesRecall() started.
+✔ Test distantOCRIsWeakerAndFastFallbackPreservesRecall() passed after 0.001 seconds.
+✔ Suite "Grounding precision" passed after 0.001 seconds.
+✔ Test run with 24 tests in 4 suites passed after 0.003 seconds.
