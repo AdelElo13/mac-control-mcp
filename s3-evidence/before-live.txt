@@ -1,0 +1,33 @@
+initialize: 316 ms, serverInfo={'version': '0.9.0', 'name': 'mac-control-mcp'}
+--- list_apps {} -> 1 ms
+{
+ "ok": true,
+ "count": 0,
+ "apps": []
+}
+--- browser_dom_tree {"browser": "Safari"} -> 596 ms
+{
+ "ok": false,
+ "result": {
+  "ok": false,
+  "error": "2026-09-15 17:14:52.998 osascript[61351:23825249] Connection Invalid error for service com.apple.hiservices-xpcservice.\n2026-09-15 17:14:52.998 osascript[61351:23825247] Error received in message reply handler: Connection invalid\n60:70: syntax error: Expected “,” but found identifier. (-2741)",
+  "error_code": "failed",
+  "includeShadow": true,
+  "browser": "Safari",
+  "nodeCount": 0
+ },
+ "error_code": "failed"
+}
+--- browser_dom_tree {"browser": "Chrome"} -> 264 ms
+{
+ "ok": false,
+ "result": {
+  "ok": false,
+  "error": "2026-09-15 17:14:53.267 osascript[61504:23825584] Error received in message reply handler: Connection invalid\n2026-09-15 17:14:53.267 osascript[61504:23825585] Connection Invalid error for service com.apple.hiservices-xpcservice.\n72:78: syntax error: Expected “,” but found identifier. (-2741)",
+  "error_code": "failed",
+  "includeShadow": true,
+  "browser": "Chrome",
+  "nodeCount": 0
+ },
+ "error_code": "failed"
+}

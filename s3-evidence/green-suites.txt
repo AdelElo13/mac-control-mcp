@@ -1,0 +1,210 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ground': failed storing manifest for 'wt10-ground' in cache: attempt to write a readonly database
+Building for debugging...
+[0/5] Write sources
+[1/5] Write swift-version--58304C5D6DBC2206.txt
+[3/9] Compiling MacControlMCP GroundingController.swift
+[4/9] Compiling MacControlMCP AccessibilityController.swift
+[5/9] Compiling MacControlMCP GeometricHitTest.swift
+[6/9] Emitting module MacControlMCP
+[6/11] Write Objects.LinkFileList
+[7/11] Linking mac-control-mcp
+[8/11] Applying mac-control-mcp
+[10/12] Emitting module MacControlMCPTests
+[10/12] Write Objects.LinkFileList
+[11/12] Linking mac-control-mcpPackageTests
+Build complete! (4.49s)
+Test Suite 'Selected tests' started at 2026-09-15 17:58:22.106.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 17:58:22.113.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 17:58:22.113.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 17:58:22.113.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.006) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "AXAttributeBatch" started.
+◇ Test "attribute name order matches decode indices" started.
+✔ Test "attribute name order matches decode indices" passed after 0.001 seconds.
+◇ Test "decodes a fully populated node" started.
+✔ Test "decodes a fully populated node" passed after 0.001 seconds.
+◇ Test "axError slots decode as absent" started.
+✔ Test "axError slots decode as absent" passed after 0.001 seconds.
+◇ Test "title falls back past empty/whitespace AXTitle to AXDescription, then AXIdentifier" started.
+✔ Test "title falls back past empty/whitespace AXTitle to AXDescription, then AXIdentifier" passed after 0.001 seconds.
+◇ Test "value conversions mirror the per-attribute helper" started.
+✔ Test "value conversions mirror the per-attribute helper" passed after 0.001 seconds.
+◇ Test "geometry slots require the matching AXValue type" started.
+✔ Test "geometry slots require the matching AXValue type" passed after 0.001 seconds.
+◇ Test "children are ignored unless requested, and non-elements are filtered" started.
+✔ Test "children are ignored unless requested, and non-elements are filtered" passed after 0.001 seconds.
+◇ Test "live fetch on a non-existent pid degrades to all-absent, not a crash" started.
+✔ Test "live fetch on a non-existent pid degrades to all-absent, not a crash" passed after 0.001 seconds.
+✔ Suite "AXAttributeBatch" passed after 0.001 seconds.
+◇ Suite "AX scope policy (Codex r2 #2)" started.
+◇ Test "no window requested → app-root walk is legitimate and says so" started.
+✔ Test "no window requested → app-root walk is legitimate and says so" passed after 0.001 seconds.
+◇ Test "window requested and resolved to an AXWindow → subtree walk" started.
+✔ Test "window requested and resolved to an AXWindow → subtree walk" passed after 0.001 seconds.
+◇ Test "window requested but no AXWindow → AX is withheld, never app-root" started.
+✔ Test "window requested but no AXWindow → AX is withheld, never app-root" passed after 0.001 seconds.
+◇ Test "window requested but several indistinguishable AXWindows → withheld as ambiguous" started.
+✔ Test "window requested but several indistinguishable AXWindows → withheld as ambiguous" passed after 0.001 seconds.
+◇ Test "an AX element wins over a stale ambiguity flag" started.
+✔ Test "an AX element wins over a stale ambiguity flag" passed after 0.001 seconds.
+◇ Test "a WindowScope without an AX element reports ax_scope none, not frame_only" started.
+✔ Test "a WindowScope without an AX element reports ax_scope none, not frame_only" passed after 0.001 seconds.
+◇ Test "a WindowScope with ambiguous candidates reports ambiguous_window" started.
+✔ Test "a WindowScope with ambiguous candidates reports ambiguous_window" passed after 0.001 seconds.
+◇ Test "ground strategy=ax with a window that has no AXWindow → ok false, error_code no_ax_window" started.
+✔ Test "ground strategy=ax with a window that has no AXWindow → ok false, error_code no_ax_window" passed after 0.001 seconds.
+◇ Test "ground strategy=ax with an ambiguous window → ok false, error_code ambiguous_window" started.
+✔ Test "ground strategy=ax with an ambiguous window → ok false, error_code ambiguous_window" passed after 0.001 seconds.
+◇ Test "the withheld capture_annotated payload has no elements and names the reason" started.
+✔ Test "the withheld capture_annotated payload has no elements and names the reason" passed after 0.001 seconds.
+◇ Test "the ambiguous withheld payload carries the candidates" started.
+✔ Test "the ambiguous withheld payload carries the candidates" passed after 0.001 seconds.
+✔ Suite "AX scope policy (Codex r2 #2)" passed after 0.002 seconds.
+◇ Suite "Browser DOM failures" started.
+◇ Test evaluationFailuresAlwaysHaveRecoveryHints() started.
+✔ Test evaluationFailuresAlwaysHaveRecoveryHints() passed after 0.001 seconds.
+◇ Test missingSafariResultHasCodeAndSetting() started.
+✔ Test missingSafariResultHasCodeAndSetting() passed after 0.001 seconds.
+◇ Test nullDOMAndMalformedResultAreExplicit() started.
+✔ Test nullDOMAndMalformedResultAreExplicit() passed after 0.001 seconds.
+◇ Test browserPolicyAndMissingTabs() started.
+✔ Test browserPolicyAndMissingTabs() passed after 0.001 seconds.
+✔ Suite "Browser DOM failures" passed after 0.001 seconds.
+◇ Suite "Browser error classification" started.
+◇ Test "Chrome -1743 Apple Events denial classifies as permission_missing" started.
+✔ Test "Chrome -1743 Apple Events denial classifies as permission_missing" passed after 0.001 seconds.
+◇ Test "Safari -1743 Apple Events denial classifies as permission_missing" started.
+✔ Test "Safari -1743 Apple Events denial classifies as permission_missing" passed after 0.001 seconds.
+◇ Test "Chrome JS-from-AppleScript-disabled classifies as permission_policy_denied" started.
+✔ Test "Chrome JS-from-AppleScript-disabled classifies as permission_policy_denied" passed after 0.001 seconds.
+◇ Test "Safari JS-from-AppleEvents-disabled classifies as permission_policy_denied" started.
+✔ Test "Safari JS-from-AppleEvents-disabled classifies as permission_policy_denied" passed after 0.001 seconds.
+◇ Test "-600 application isn't running classifies as not_running" started.
+✔ Test "-600 application isn't running classifies as not_running" passed after 0.001 seconds.
+◇ Test "'isn't running' text without the numeric code still classifies as not_running" started.
+✔ Test "'isn't running' text without the numeric code still classifies as not_running" passed after 0.001 seconds.
+◇ Test "-1712 timeout classifies as timeout" started.
+✔ Test "-1712 timeout classifies as timeout" passed after 0.001 seconds.
+◇ Test "OsascriptRunner's own subprocess timeout message classifies as timeout" started.
+✔ Test "OsascriptRunner's own subprocess timeout message classifies as timeout" passed after 0.001 seconds.
+◇ Test "Unrecognized stderr classifies as failed and preserves raw text" started.
+✔ Test "Unrecognized stderr classifies as failed and preserves raw text" passed after 0.001 seconds.
+◇ Test "permission_missing is not confused with the JS policy error" started.
+✔ Test "permission_missing is not confused with the JS policy error" passed after 0.001 seconds.
+◇ Test "parseTabs handles a tab character embedded in a page title" started.
+✔ Test "parseTabs handles a tab character embedded in a page title" passed after 0.001 seconds.
+◇ Test "parseTabs returns empty array for empty input" started.
+✔ Test "parseTabs returns empty array for empty input" passed after 0.001 seconds.
+✔ Suite "Browser error classification" passed after 0.001 seconds.
+◇ Suite "element_at_point (C-4)" started.
+◇ Test "the tool is registered with x/y required and pid optional" started.
+✔ Test "the tool is registered with x/y required and pid optional" passed after 0.001 seconds.
+◇ Test "missing or non-numeric coordinates are rejected" started.
+✔ Test "missing or non-numeric coordinates are rejected" passed after 0.001 seconds.
+◇ Test "a malformed or dead pid is an explicit error, not a silent system-wide hit-test" started.
+✔ Test "a malformed or dead pid is an explicit error, not a silent system-wide hit-test" passed after 0.002 seconds.
+◇ Test "without Accessibility trust the failure names the permission and the pane" started.
+✔ Test "without Accessibility trust the failure names the permission and the pane" passed after 0.001 seconds.
+◇ Test "an off-screen coordinate reports not_found, not a bare false" started.
+✔ Test "an off-screen coordinate reports not_found, not a bare false" passed after 0.001 seconds.
+◇ Test "hit-testing a real control returns its role, bounds, owner and a stable id" started.
+✔ Test "hit-testing a real control returns its role, bounds, owner and a stable id" passed after 0.001 seconds.
+✔ Suite "element_at_point (C-4)" passed after 0.005 seconds.
+◇ Suite "Geometric hit test" started.
+◇ Test smallestInteractiveDescendantWins() started.
+✔ Test smallestInteractiveDescendantWins() passed after 0.001 seconds.
+◇ Test refinementStaysInHitSubtreeAndReportsQuality() started.
+✔ Test refinementStaysInHitSubtreeAndReportsQuality() passed after 0.001 seconds.
+◇ Test boundsDepthCyclesAndBudget() started.
+✔ Test boundsDepthCyclesAndBudget() passed after 0.001 seconds.
+✔ Suite "Geometric hit test" passed after 0.001 seconds.
+◇ Suite "Grounding OCR pixel→point conversion" started.
+◇ Test "2× Retina capture halves the OCR center into points" started.
+✔ Test "2× Retina capture halves the OCR center into points" passed after 0.001 seconds.
+◇ Test "1× display is identity (points == pixels)" started.
+✔ Test "1× display is identity (points == pixels)" passed after 0.001 seconds.
+◇ Test "fractional scaled mode converts exactly" started.
+✔ Test "fractional scaled mode converts exactly" passed after 0.001 seconds.
+◇ Test "zero image dimensions fall back to identity, no divide-by-zero" started.
+✔ Test "zero image dimensions fall back to identity, no divide-by-zero" passed after 0.001 seconds.
+◇ Test "AX-frame geometric join matches only after pixel→point conversion" started.
+✔ Test "AX-frame geometric join matches only after pixel→point conversion" passed after 0.001 seconds.
+✔ Suite "Grounding OCR pixel→point conversion" passed after 0.001 seconds.
+◇ Suite "Grounding OCR passes" started.
+◇ Test strongFastMatchSkipsAccurate() started.
+✔ Test strongFastMatchSkipsAccurate() passed after 0.001 seconds.
+◇ Test weakFastMatchFallsBackAndIsRetained() started.
+✔ Test weakFastMatchFallsBackAndIsRetained() passed after 0.001 seconds.
+◇ Test weakAXCannotDisableOCRDistancePenalty() started.
+✔ Test weakAXCannotDisableOCRDistancePenalty() passed after 0.001 seconds.
+◇ Test tinyFastBoxCannotSuppressAccurate() started.
+✔ Test tinyFastBoxCannotSuppressAccurate() passed after 0.001 seconds.
+✔ Suite "Grounding OCR passes" passed after 0.001 seconds.
+◇ Suite "Grounding precision" started.
+◇ Test containersAndHiddenLinksCannotBeTargets() started.
+✔ Test containersAndHiddenLinksCannotBeTargets() passed after 0.001 seconds.
+◇ Test valueAndDescriptionBeatPartialImageTitle() started.
+✔ Test valueAndDescriptionBeatPartialImageTitle() passed after 0.001 seconds.
+◇ Test unicodeAndEllipsisAreEquivalent() started.
+✔ Test unicodeAndEllipsisAreEquivalent() passed after 0.001 seconds.
+◇ Test exactTiesPreferSmallestArea() started.
+✔ Test exactTiesPreferSmallestArea() passed after 0.001 seconds.
+◇ Test repeatedOCRPassesDoNotInventAlternatives() started.
+✔ Test repeatedOCRPassesDoNotInventAlternatives() passed after 0.001 seconds.
+◇ Test distantOCRIsWeakerAndFastFallbackPreservesRecall() started.
+✔ Test distantOCRIsWeakerAndFastFallbackPreservesRecall() passed after 0.001 seconds.
+✔ Suite "Grounding precision" passed after 0.001 seconds.
+◇ Suite "Grounding depth + window-scoped OCR mapping" started.
+◇ Test "ground's default AX depth is the project-wide AXDepth.default, not 16" started.
+✔ Test "ground's default AX depth is the project-wide AXDepth.default, not 16" passed after 0.001 seconds.
+◇ Test "caller-supplied max_depth is honoured and clamped to a sane range" started.
+✔ Test "caller-supplied max_depth is honoured and clamped to a sane range" passed after 0.001 seconds.
+◇ Test "window-image pixel center maps to a global screen point" started.
+✔ Test "window-image pixel center maps to a global screen point" passed after 0.001 seconds.
+◇ Test "a window at the origin on a 1× display is identity plus offset" started.
+✔ Test "a window at the origin on a 1× display is identity plus offset" passed after 0.001 seconds.
+◇ Test "zero-size window bounds cannot divide by zero" started.
+✔ Test "zero-size window bounds cannot divide by zero" passed after 0.001 seconds.
+◇ Test "window capture failures map to explicit error codes, never a display fallback" started.
+✔ Test "window capture failures map to explicit error codes, never a display fallback" passed after 0.001 seconds.
+◇ Test "every other capture failure classifies, none fall through unlabelled" started.
+✔ Test "every other capture failure classifies, none fall through unlabelled" passed after 0.001 seconds.
+✔ Suite "Grounding depth + window-scoped OCR mapping" passed after 0.001 seconds.
+◇ Suite "Phase 9 tools — reliability + observability substrate" started.
+◇ Test "all 10 phase 9 tools are registered" started.
+✔ Test "all 10 phase 9 tools are registered" passed after 0.001 seconds.
+◇ Test "ground requires target and pid" started.
+✔ Test "ground requires target and pid" passed after 0.001 seconds.
+◇ Test "ax_tree_augmented requires pid" started.
+✔ Test "ax_tree_augmented requires pid" passed after 0.001 seconds.
+◇ Test "ax_snapshot_capture requires pid" started.
+✔ Test "ax_snapshot_capture requires pid" passed after 0.001 seconds.
+◇ Test "ax_snapshot_diff requires from + to ids" started.
+✔ Test "ax_snapshot_diff requires from + to ids" passed after 0.001 seconds.
+◇ Test "audit_log_append requires event" started.
+✔ Test "audit_log_append requires event" passed after 0.001 seconds.
+◇ Test "audit_log_append + audit_log_read round-trip" started.
+✔ Test "audit_log_append + audit_log_read round-trip" passed after 0.006 seconds.
+◇ Test "agent_memory_store requires key + value" started.
+✔ Test "agent_memory_store requires key + value" passed after 0.001 seconds.
+◇ Test "agent_memory store + recall round-trip" started.
+✔ Test "agent_memory store + recall round-trip" passed after 0.002 seconds.
+◇ Test "redact_pii_text blurs email + api key" started.
+✔ Test "redact_pii_text blurs email + api key" passed after 0.001 seconds.
+◇ Test "redact_pii_text Luhn-validates credit cards" started.
+✔ Test "redact_pii_text Luhn-validates credit cards" passed after 0.001 seconds.
+◇ Test "redact_image_regions requires path + regions" started.
+✔ Test "redact_image_regions requires path + regions" passed after 0.001 seconds.
+◇ Test "PermissionGrant has allowSubDelegation with default true" started.
+✔ Test "PermissionGrant has allowSubDelegation with default true" passed after 0.004 seconds.
+◇ Test "tool count >= 127 after phase 9 (Phase 5 tests own the exact count)" started.
+✔ Test "tool count >= 127 after phase 9 (Phase 5 tests own the exact count)" passed after 0.001 seconds.
+✔ Suite "Phase 9 tools — reliability + observability substrate" passed after 0.019 seconds.
+✔ Test run with 80 tests in 11 suites passed after 0.032 seconds.

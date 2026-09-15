@@ -111,6 +111,8 @@ actor AccessibilityController {
         var matchedField: String = "role"
         var match: String = "exact"
         var rankReason: String = ""
+        /// v0.10 A5: set only by the grounding walk (`groundingTarget`).
+        var groundingMatch: GroundingPolicy.Match? = nil
     }
 
     /// Result of querying attributes. Missing attrs are omitted.
@@ -170,6 +172,37 @@ actor AccessibilityController {
         let status = AXUIElementCopyElementAtPosition(root, Float(x), Float(y), &element)
         guard status == .success else { return nil }
         return element
+    }
+
+    /// v0.10 C2: SwiftUI/Finder can report a whole container for a precise
+    /// point. Preserve overlay scope while allowing a sidebar hit to resolve its scrollbar.
+    func refinedHit(element: AXUIElement, x: Double, y: Double) -> (element: AXUIElement, quality: String) {
+        func frame(_ values: AXAttributeBatch.Values) -> CGRect? {
+            guard let position = values.position, let size = values.size else { return nil }
+            return CGRect(origin: position, size: size)
+        }
+        let lineage = ([element] + AXPath.ancestors(of: element, limit: 24)).map {
+            (element: $0, role: AXPath.copyString($0, "AXRole"))
+        }
+        let window = lineage.first { $0.role == "AXWindow" }?.element
+        // v0.10 C2 review: a direct cell hit still inherits its outline/table
+        // context even though the bounded search starts below that ancestor.
+        let localAncestors = lineage.prefix { !["AXSheet", "AXPopover", "AXDialog", "AXWindow"].contains($0.role) }
+        let inCollection = localAncestors.contains { $0.role == "AXOutline" || $0.role == "AXTable" }
+        // v0.10 C2 round 3: inconsistent direct hits can need a wider search,
+        // but an enclosing overlay must still exclude background controls.
+        let recoveryRoot = lineage.first { ["AXSheet", "AXPopover", "AXDialog", "AXWindow"].contains($0.role) }?.element
+        // v0.10 C2 review: scrollbar siblings share this scroll area. Never
+        // broaden the scroll scope through a sheet/popover boundary.
+        let scrollContainer = localAncestors.first { $0.role == "AXScrollArea" }?.element
+        let refined = GeometricHitTest.refine(hit: AXKey(element: element),
+            window: window.map { AXKey(element: $0) }, point: CGPoint(x: x, y: y), inCollection: inCollection,
+            scrollContainer: scrollContainer.map { AXKey(element: $0) },
+            recoveryRoot: recoveryRoot.map { AXKey(element: $0) }) { key in
+            let values = AXAttributeBatch.fetch(key.element, includeChildren: true)
+            return .init(role: values.role, frame: frame(values), children: values.children.map { AXKey(element: $0) })
+        }
+        return (refined.element.element, refined.quality)
     }
 
     /// pid that owns an element handle.
@@ -707,10 +740,60 @@ actor AccessibilityController {
         exact: Bool = false,
         maxDepth: Int = AXDepth.default,
         limit: Int = 100,
-        semantic: String? = nil
+        semantic: String? = nil,
+        groundingTarget: String? = nil
     ) -> [Match] {
-        findElementsWithStats(pid: pid, root: axRoot, role: role, title: title, value: value,
+        // v0.10 merge of S3 (grounding) and S5 (ranked search): a grounding
+        // target scores every label field with GroundingPolicy inside one
+        // bounded walk and must not go through the ranked-search filters;
+        // every other query takes the ranked AXSearch path.
+        if let groundingTarget {
+            return groundingWalk(pid: pid, root: axRoot, maxDepth: maxDepth, limit: limit, target: groundingTarget)
+        }
+        return findElementsWithStats(pid: pid, root: axRoot, role: role, title: title, value: value,
                               exact: exact, maxDepth: maxDepth, limit: limit, semantic: semantic).matches
+    }
+
+    /// v0.10 A5 (S3): grounding search — GroundingPolicy.match on role /
+    /// title / value / description of every node in a bounded DFS.
+    private func groundingWalk(pid: pid_t, root axRoot: WalkRoot?, maxDepth: Int, limit: Int, target: String) -> [Match] {
+        let deadline = Date().addingTimeInterval(5.0)
+        enableManualAccessibility(pid: pid)
+        let root = axRoot?.element ?? AXUIElementCreateApplication(pid)
+        let rootPath = axRoot?.path ?? []
+        var visited = Set<AXKey>()
+        var matches: [Match] = []
+        let displays = WindowIdentity.displayBounds().map { $0.rect }
+
+        func recurse(element: AXUIElement, depth: Int, parentPath: [AXPathComponent], ordinal: Int) {
+            guard matches.count < limit, depth <= maxDepth else { return }
+            guard Date() < deadline else { return }
+            guard visited.insert(AXKey(element: element)).inserted else { return }
+            let attrs = AXAttributeBatch.fetch(element, includeChildren: true)
+            let path = depth == 0
+                ? parentPath
+                : AXPath.appending(
+                    parentPath, role: attrs.role, index: ordinal, identifier: attrs.identifier,
+                    title: attrs.title, subrole: attrs.subrole
+                )
+            let groundingMatch: GroundingPolicy.Match? = {
+                guard let position = attrs.position, let size = attrs.size else { return nil }
+                return GroundingPolicy.match(.init(role: attrs.role, title: attrs.rawTitle,
+                    value: attrs.value, description: attrs.description,
+                    bounds: CGRect(origin: position, size: size)), target: target, displays: displays)
+            }()
+            if let groundingMatch {
+                matches.append(Match(element: element, info: Self.elementInfo(from: attrs, depth: depth),
+                                     path: path, groundingMatch: groundingMatch))
+                if matches.count >= limit { return }
+            }
+            for (childOrdinal, child) in attrs.children.enumerated() {
+                recurse(element: child, depth: depth + 1, parentPath: path, ordinal: childOrdinal)
+                if matches.count >= limit { return }
+            }
+        }
+        recurse(element: root, depth: 0, parentPath: rootPath, ordinal: 0)
+        return matches
     }
 
     struct SearchResult {

@@ -62,6 +62,7 @@ enum AXAttributeBatch {
         /// AXChildren followed by AXSheets. Empty when children were not
         /// requested.
         let children: [AXUIElement]
+        // v0.10 A5: preserve provenance instead of labelling description fallbacks as titles.
         var rawTitle: String? = nil
         var description: String? = nil
         var web: [String: String] = [:]

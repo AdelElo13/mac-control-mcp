@@ -1,0 +1,125 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ground': failed storing manifest for 'wt10-ground' in cache: attempt to write a readonly database
+warning: 'wt10-ground': found 1 file(s) which are unhandled; explicitly declare them as resources or exclude from the target
+    /private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/Resources/well-known-mcp.json
+[0/1] Planning build
+Building for debugging...
+[0/6] Write sources
+[2/6] Write swift-version--58304C5D6DBC2206.txt
+[4/10] Compiling MacControlMCP GroundingController.swift
+[5/10] Emitting module MacControlMCP
+[6/10] Compiling MacControlMCP BrowserDOMController.swift
+[7/10] Compiling MacControlMCP ScreenController.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/ScreenController.swift:658:24: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+656 |         // When this works it gives us the window even if occluded. Returns
+657 |         // nil on macOS 15+ in many cases — that's why SCK is Strategy 1.
+658 |         if let image = CGWindowListCreateImage(
+    |                        `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+659 |             .null,
+660 |             .optionIncludingWindow,
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/ScreenController.swift:679:27: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+677 |         }
+678 | 
+679 |         guard let image = CGWindowListCreateImage(
+    |                           `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+680 |             bounds,
+681 |             .optionOnScreenOnly,
+
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/ScreenController.swift:805:27: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+803 |     private func regionImage(_ region: CaptureRegion) throws -> CGImage {
+804 |         let rect = CGRect(x: region.x, y: region.y, width: region.width, height: region.height)
+805 |         guard let image = CGWindowListCreateImage(
+    |                           `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead. [#DeprecatedDeclaration]
+806 |             rect,
+807 |             .optionOnScreenOnly,
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[8/32] Compiling MacControlMCP Tools+V2Phase5.swift
+[9/32] Compiling MacControlMCP Tools+V2Phase7.swift
+[10/32] Compiling MacControlMCP Tools+V2Phase3.swift
+[11/32] Compiling MacControlMCP Tools+V2Phase4.swift
+[12/32] Compiling MacControlMCP Tools+WindowTarget.swift
+[13/32] Compiling MacControlMCP Tools+V2Phase8.swift
+[14/32] Compiling MacControlMCP Tools+V2Phase11.swift
+[15/32] Compiling MacControlMCP Tools+V2Phase2.swift
+[16/32] Compiling MacControlMCP Tools+V2.swift
+[17/32] Compiling MacControlMCP Tools+V2Phase10.swift
+[18/32] Compiling MacControlMCP Tools+V2Phase6.swift
+[19/32] Compiling MacControlMCP Tools+Batch.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/Tools+Permissions.swift:227:19: warning: consider using asynchronous alternative function
+225 |             let store = CNContactStore()
+226 |             let keeper = ObjectKeeper(store)
+227 |             store.requestAccess(for: .contacts) { _, _ in keeper.release() }
+    |                   `- warning: consider using asynchronous alternative function
+228 |             return .triggered
+229 |             #else
+
+Contacts.CNContactStore.requestAccess:2:11: note: 'requestAccess(for:)' declared here
+1 | class CNContactStore {
+2 | open func requestAccess(for entityType: CNEntityType) async throws -> Bool}
+  |           `- note: 'requestAccess(for:)' declared here
+3 | 
+[20/32] Compiling MacControlMCP Tools+Permissions.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/Tools+Permissions.swift:227:19: warning: consider using asynchronous alternative function
+225 |             let store = CNContactStore()
+226 |             let keeper = ObjectKeeper(store)
+227 |             store.requestAccess(for: .contacts) { _, _ in keeper.release() }
+    |                   `- warning: consider using asynchronous alternative function
+228 |             return .triggered
+229 |             #else
+
+Contacts.CNContactStore.requestAccess:2:11: note: 'requestAccess(for:)' declared here
+1 | class CNContactStore {
+2 | open func requestAccess(for entityType: CNEntityType) async throws -> Bool}
+  |           `- note: 'requestAccess(for:)' declared here
+3 | 
+[21/32] Compiling MacControlMCP main.swift
+[22/32] Compiling MacControlMCP Tools+V2Phase9.swift
+[23/32] Compiling MacControlMCP Tools.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/Tools.swift:848:27: warning: no 'async' operations occur within 'await' expression
+ 846 |             }
+ 847 | 
+ 848 |             let pressed = await accessibility.pressKey(keyCode: keyCode, modifiers: modifiers)
+     |                           `- warning: no 'async' operations occur within 'await' expression
+ 849 |             if pressed {
+ 850 |                 return successResult(
+[24/32] Compiling MacControlMCP Tools+TextEditing.swift
+[25/32] Compiling MacControlMCP Tools+V0_9AXCore.swift
+[26/32] Compiling MacControlMCP SystemInfoController.swift
+[27/32] Compiling MacControlMCP Tools+Annotate.swift
+[28/32] Compiling MacControlMCP AppleAppsController.swift
+[29/32] Compiling MacControlMCP HardwareController.swift
+[29/33] Write Objects.LinkFileList
+[30/33] Linking mac-control-mcp
+[31/33] Applying mac-control-mcp
+[33/35] Emitting module MacControlMCPTests
+[34/35] Compiling MacControlMCPTests BrowserDOMFailureTests.swift
+[34/36] Write Objects.LinkFileList
+[35/36] Linking mac-control-mcpPackageTests
+Build complete! (6.36s)
+Test Suite 'Selected tests' started at 2026-09-15 17:56:17.875.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 17:56:17.880.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 17:56:17.880.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 17:56:17.880.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.005) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Browser DOM failures" started.
+◇ Test evaluationFailuresAlwaysHaveRecoveryHints() started.
+✘ Test evaluationFailuresAlwaysHaveRecoveryHints() recorded an issue at BrowserDOMFailureTests.swift:12:13: Expectation failed: (failure.hint?.isEmpty → nil) == false
+✘ Test evaluationFailuresAlwaysHaveRecoveryHints() recorded an issue at BrowserDOMFailureTests.swift:12:13: Expectation failed: (failure.hint?.isEmpty → nil) == false
+✘ Test evaluationFailuresAlwaysHaveRecoveryHints() failed after 0.001 seconds with 2 issues.
+◇ Test missingSafariResultHasCodeAndSetting() started.
+✔ Test missingSafariResultHasCodeAndSetting() passed after 0.001 seconds.
+◇ Test nullDOMAndMalformedResultAreExplicit() started.
+✔ Test nullDOMAndMalformedResultAreExplicit() passed after 0.001 seconds.
+◇ Test browserPolicyAndMissingTabs() started.
+✔ Test browserPolicyAndMissingTabs() passed after 0.001 seconds.
+✘ Suite "Browser DOM failures" failed after 0.001 seconds with 2 issues.
+↳ /// v0.10 A7: Safari's empty result and browser policy denials need actionable codes.
+✘ Test run with 4 tests in 1 suite failed after 0.001 seconds with 2 issues.

@@ -1,0 +1,64 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ground': failed storing manifest for 'wt10-ground' in cache: attempt to write a readonly database
+warning: 'wt10-ground': found 1 file(s) which are unhandled; explicitly declare them as resources or exclude from the target
+    /private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ground/Sources/MacControlMCP/Resources/well-known-mcp.json
+[0/1] Planning build
+Building for debugging...
+[0/5] Write sources
+[1/5] Write swift-version--58304C5D6DBC2206.txt
+[3/5] Compiling MacControlMCPTests GeometricHitTestTests.swift
+[4/5] Emitting module MacControlMCPTests
+[4/6] Write Objects.LinkFileList
+[5/6] Linking mac-control-mcpPackageTests
+Build complete! (2.73s)
+Test Suite 'Selected tests' started at 2026-09-15 20:19:46.944.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 20:19:46.950.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 20:19:46.950.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 20:19:46.950.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.005) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Geometric hit test" started.
+◇ Test interactiveOutOfFrameHitSearchesWindowForContainingHeader() started.
+✘ Test interactiveOutOfFrameHitSearchesWindowForContainingHeader() recorded an issue at GeometricHitTestTests.swift:15:9: Expectation failed: (hit.element → 1) == 2
+✘ Test interactiveOutOfFrameHitSearchesWindowForContainingHeader() recorded an issue at GeometricHitTestTests.swift:16:9: Expectation failed: (hit.quality → "direct") == "geometric"
+✘ Test interactiveOutOfFrameHitSearchesWindowForContainingHeader() failed after 0.001 seconds with 2 issues.
+◇ Test outOfFrameHitWithoutReplacementIsLabelledHonestly() started.
+✘ Test outOfFrameHitWithoutReplacementIsLabelledHonestly() recorded an issue at GeometricHitTestTests.swift:24:9: Expectation failed: (hit.quality → "direct") == "direct_out_of_frame"
+✘ Test outOfFrameHitWithoutReplacementIsLabelledHonestly() failed after 0.001 seconds with 1 issue.
+◇ Test directHitFrameToleranceIsOnePointAndRequiresUsableGeometry() started.
+✘ Test directHitFrameToleranceIsOnePointAndRequiresUsableGeometry() recorded an issue at GeometricHitTestTests.swift:39:9: Expectation failed: (beyond.quality → "direct") == "direct_out_of_frame"
+✘ Test directHitFrameToleranceIsOnePointAndRequiresUsableGeometry() failed after 0.001 seconds with 1 issue.
+◇ Test smallestInteractiveDescendantWins() started.
+✔ Test smallestInteractiveDescendantWins() passed after 0.001 seconds.
+◇ Test refinementStaysInHitSubtreeAndReportsQuality() started.
+✔ Test refinementStaysInHitSubtreeAndReportsQuality() passed after 0.001 seconds.
+◇ Test outlineLeafCellWinsAndPlainCellsStayExcluded() started.
+✔ Test outlineLeafCellWinsAndPlainCellsStayExcluded() passed after 0.001 seconds.
+◇ Test coarseCellHitDescendsToItsButton() started.
+✔ Test coarseCellHitDescendsToItsButton() passed after 0.001 seconds.
+◇ Test collectionHitCanResolveSiblingScrollbarWithinItsScrollArea() started.
+✔ Test collectionHitCanResolveSiblingScrollbarWithinItsScrollArea() passed after 0.001 seconds.
+◇ Test deeperControlWinsWithinTenPercentOfSmallestArea() started.
+✔ Test deeperControlWinsWithinTenPercentOfSmallestArea() passed after 0.001 seconds.
+◇ Test floatingHeaderWinsOverSmallerDeeperRowCell() started.
+✔ Test floatingHeaderWinsOverSmallerDeeperRowCell() passed after 0.001 seconds.
+◇ Test cappedOutlineNeverReturnsRowInsteadOfLaterHeader() started.
+✔ Test cappedOutlineNeverReturnsRowInsteadOfLaterHeader() passed after 0.001 seconds.
+◇ Test deadlineCannotPromoteAnIncompleteCellMatch() started.
+✔ Test deadlineCannotPromoteAnIncompleteCellMatch() passed after 0.001 seconds.
+◇ Test laterSlowSiblingCannotDiscardAnAlreadyFoundHeader() started.
+✔ Test laterSlowSiblingCannotDiscardAnAlreadyFoundHeader() passed after 0.001 seconds.
+◇ Test containingChildrenAreVisitedFirstWithoutDuplicateReads() started.
+✔ Test containingChildrenAreVisitedFirstWithoutDuplicateReads() passed after 0.001 seconds.
+◇ Test offPointRowsArePrunedButCoarseFramesKeepDescendants() started.
+✔ Test offPointRowsArePrunedButCoarseFramesKeepDescendants() passed after 0.001 seconds.
+◇ Test boundsDepthCyclesAndBudget() started.
+✔ Test boundsDepthCyclesAndBudget() passed after 0.001 seconds.
+✘ Suite "Geometric hit test" failed after 0.001 seconds with 4 issues.
+↳ /// v0.10 C2: a fake tree reproduces window-sized SwiftUI hits without IPC.
+✘ Test run with 16 tests in 1 suite failed after 0.001 seconds with 4 issues.

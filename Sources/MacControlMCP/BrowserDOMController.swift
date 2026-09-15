@@ -140,25 +140,49 @@ actor BrowserDOMController {
     func domTree(browser browserName: String) async -> DOMResult {
         let b = BrowserController.Browser.detect(browserName)
         let r = await browser.evalJS(browser: b, code: Self.domTreeScript)
+        return Self.domResult(evaluation: r, browser: browserName)
+    }
+
+    static func domResult(evaluation r: BrowserController.EvalResult, browser browserName: String) -> DOMResult {
         guard r.success, let jsonStr = r.value else {
+            // v0.10 A7 review: a JS exception means Apple Events already
+            // worked; a page CSP error cannot be fixed by enabling that setting.
+            let code = r.errorCode ?? "js_error"
+            let hint = code == "js_error"
+                ? "Check the page's JavaScript error and Content Security Policy in \(browserName). Use AX tools such as get_ui_tree when the page blocks eval."
+                : "Check the active tab and browser connection in \(browserName), then retry."
             return DOMResult(ok: false, browser: browserName, root: nil,
                              nodeCount: 0, includeShadow: true,
                              error: r.error ?? "eval failed",
-                             errorCode: r.errorCode, hint: r.hint, pane: r.pane)
+                             errorCode: code,
+                             hint: r.hint ?? hint,
+                             pane: r.pane)
         }
+        return Self.decodeDOM(jsonStr, browser: browserName)
+    }
+
+    static func decodeDOM(_ jsonStr: String, browser browserName: String) -> DOMResult {
         guard let data = jsonStr.data(using: .utf8),
               let root = try? JSONDecoder().decode(DOMNode.self, from: data) else {
+            // v0.10 A7: Safari returns "missing value" when page JavaScript
+            // is disabled, distinct from denying JavaScript via Apple Events.
+            let missing = jsonStr.trimmingCharacters(in: .whitespacesAndNewlines)
+            let disabled = browserName.lowercased().contains("safari") && (missing == "missing value" || missing.isEmpty)
+            let noDocument = missing == "null" || missing == "undefined"
             return DOMResult(ok: false, browser: browserName, root: nil,
-                             nodeCount: 0, includeShadow: true,
-                             error: "DOM JSON parse failed",
-                             errorCode: nil, hint: nil, pane: nil)
+                nodeCount: 0, includeShadow: true,
+                error: disabled ? "Safari returned no JavaScript result" : "DOM JSON parse failed",
+                errorCode: disabled ? "js_disabled" : (noDocument ? "no_active_tab" : "invalid_response"),
+                hint: disabled ? "In Safari: Settings → Security → Enable JavaScript; also check Develop → Allow JavaScript from Apple Events."
+                    : (noDocument ? "Open an active web page with a document body, then retry." : "Reload the active page and retry browser_dom_tree."),
+                pane: nil)
         }
         return DOMResult(ok: true, browser: browserName, root: root,
                          nodeCount: count(node: root), includeShadow: true, error: nil,
                          errorCode: nil, hint: nil, pane: nil)
     }
 
-    private func count(node: DOMNode) -> Int {
+    private static func count(node: DOMNode) -> Int {
         1 + node.children.reduce(0) { $0 + count(node: $1) }
     }
 

@@ -1,0 +1,4 @@
+Independent code review: no material production issues. OCR presence-based fallback, AX winner selection, CSP hints and collection-aware geometry reviewed.
+Additional scrollbar review: nearest containing scroll area only for collection hits; do not cross sheet/popover/window boundaries; one bounded search.
+Requested overlay fixture strengthening was applied (valid scroll frame and inCollection true).
+No live checks by code-review agent.

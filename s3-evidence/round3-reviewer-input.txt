@@ -1,0 +1,4 @@
+Source: user REVIEW ROUND 3, accepted f1d7da1 (before current hardening).
+"header buttons 8/8 each in 17–41 ms, Finder sweep 71/71 = 100% in 489 ms total, System Settings 17/17, ground ocr Finder p50 175 ms, auto = AX time"
+Remaining observed failure: 1/34 fresh-process first Name hit at (809.5,105) returned direct AXButton Share with frame x1333–1374,y39–91, outside the point.
+These are reviewer-supplied results, not measurements from this restricted execution context or from the current uncommitted hardening.
