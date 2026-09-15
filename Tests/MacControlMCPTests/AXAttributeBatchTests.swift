@@ -28,6 +28,37 @@ struct AXAttributeBatchTests {
         return AXValueCreate(.cgSize, &s)!
     }
 
+    // v0.10 C6: AXURL is a URL object and DOM classes may be an array.
+    @Test("decodes web attributes appended to the same node batch")
+    func webMetadata() {
+        var slots: [AnyObject] = Array(repeating: kCFNull, count: 10)
+        slots += [NSURL(string: "https://example.org/path")!, "main-link" as NSString, ["nav", "active"] as NSArray]
+        let attrs = AXAttributeBatch.decode(slots, includeChildren: true)
+        let metadata = Mirror(reflecting: attrs).children.first { $0.label == "web" }?.value as? [String: String]
+        #expect(metadata?["url"] == "https://example.org/path")
+        #expect(metadata?["dom_id"] == "main-link")
+        #expect(metadata?["dom_class"] == "nav active")
+    }
+
+    // v0.10 C5: labels in value/description must remain searchable independently.
+    @Test("searches all label attributes and uses normalized exact role names")
+    func independentLabels() {
+        var slots: [AnyObject] = Array(repeating: kCFNull, count: 8)
+        slots[0] = "AXStaticText" as NSString
+        slots[1] = "com.apple.Family-Settings.extension*Family" as NSString
+        slots[2] = "Family settings" as NSString
+        slots[3] = "family-id" as NSString
+        slots[4] = "Family" as NSString
+        let attrs = AXAttributeBatch.decode(slots, includeChildren: false)
+        for title in ["Family", "Family settings", "family-id"] {
+            #expect(AccessibilityController.matchesFilter(attrs: attrs, role: nil, title: title, value: nil, exact: true))
+        }
+        slots[0] = "AXRadioButton" as NSString
+        #expect(!AccessibilityController.matchesFilter(attrs: AXAttributeBatch.decode(slots, includeChildren: false), role: "Button", title: nil, value: nil))
+        slots[0] = "AXButton" as NSString
+        #expect(AccessibilityController.matchesFilter(attrs: AXAttributeBatch.decode(slots, includeChildren: false), role: "Button", title: nil, value: nil, exact: true))
+    }
+
     @Test("attribute name order matches decode indices")
     func nameOrder() {
         #expect(AXAttributeBatch.infoAttributes == [

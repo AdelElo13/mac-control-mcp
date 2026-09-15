@@ -42,6 +42,8 @@ struct TextEditingBackendTests {
         var forcedCharacterCount: Int?
         var selectedTextWriteStatus: AXError = .success
         var rangeWriteStatus: AXError = .success
+        var visibleRange: TextEditingController.TextRange?
+        var insertionLine: Int?
 
         init(
             role: String = "AXTextArea",
@@ -88,12 +90,13 @@ struct TextEditingBackendTests {
         }
 
         func intAttribute(_: AXUIElement, _ name: String) -> Int? {
+            if name == "AXInsertionPointLineNumber" { return element.insertionLine }
             guard name == "AXNumberOfCharacters", element.exposesCharacterCount else { return nil }
             return element.forcedCharacterCount ?? element.value.utf16.count
         }
 
         func rangeAttribute(_: AXUIElement, _ name: String) -> TextEditingController.TextRange? {
-            name == "AXSelectedTextRange" ? element.selection : nil
+            name == "AXSelectedTextRange" ? element.selection : element.visibleRange
         }
 
         func setRangeAttribute(
@@ -141,6 +144,28 @@ struct TextEditingBackendTests {
 
     static func controller(_ element: FakeElement) -> TextEditingController {
         TextEditingController(backend: FakeBackend(element: element), isTrusted: { true })
+    }
+
+    // v0.10 C7: stale app ranges must not survive a shorter value.
+    @Test("selection clamps stale visible range after an emoji edit")
+    func refreshedVisibleRange() async throws {
+        let element = FakeElement(value: "Hello 👋 wereld 🇳🇱 café")
+        element.visibleRange = .init(location: 0, length: 25)
+        element.insertionLine = 3
+        let controller = Self.controller(element)
+        _ = try await controller.replaceRange(of: Self.dummyElement(), location: 6, length: 2, text: "")
+        let selection = try await controller.selection(of: Self.dummyElement())
+        #expect(selection.visibleRange == .init(location: 0, length: 23))
+        #expect(selection.insertionPointLine == 3)
+    }
+
+    @Test("selection reports bounds for the entire selected UTF-16 range")
+    func selectedRangeBounds() async throws {
+        let element = FakeElement(value: "Hello 👋 wereld 🇳🇱 café", selection: .init(location: 6, length: 2))
+        let selection = try await Self.controller(element).selection(of: Self.dummyElement())
+        let bounds = Mirror(reflecting: selection).children.first { $0.label == "bounds" }?.value as? TextEditingController.Bounds
+        #expect(bounds?.width == 2)
+        #expect(selection.text == "👋")
     }
 
     // MARK: - UTF-16 units

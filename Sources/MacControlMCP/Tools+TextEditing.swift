@@ -32,7 +32,7 @@ extension ToolRegistry {
     static let definitionsTextEditing: [MCPToolDefinition] = [
         MCPToolDefinition(
             name: "text_get_selection",
-            description: "Read the selection state of an AX text element: selected text, the selected range as TYPED {location,length} (not the stringified \"range(2115,0)\" get_element_attributes returns), total character count, visible character range and the insertion-point line. "
+            description: "Offsets and lengths are UTF-16 code units: 👋 has length 2 and 🇳🇱 length 4 (Hello 👋 starts the emoji at offset 6). Read the selection state of an AX text element: selected text, the selected range as TYPED {location,length} (not the stringified \"range(2115,0)\" get_element_attributes returns), total character count, visible character range and the insertion-point line. "
                 + "Target it with element_id, or with pid to use that app's currently focused element. Read-only; does not change focus.",
             inputSchema: schema(
                 properties: [
@@ -49,7 +49,7 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "text_get_caret",
-            description: "Caret position of an AX text element: character index, line number, and on-screen bounds via the AXBoundsForRange parameterized attribute (useful to scroll to or click at the caret). "
+            description: "Offsets and lengths are UTF-16 code units: 👋 has length 2 and 🇳🇱 length 4 (Hello 👋 starts the emoji at offset 6). Caret position of an AX text element: character index, line number, and on-screen bounds via the AXBoundsForRange parameterized attribute (useful to scroll to or click at the caret). "
                 + "Target it with element_id or pid (focused element). Read-only.",
             inputSchema: schema(
                 properties: [
@@ -66,7 +66,7 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "text_set_selection",
-            description: "Set the selection (or collapsed caret, length=0) of an AX text element via AXSelectedTextRange. Validated against AXNumberOfCharacters before writing. "
+            description: "Offsets and lengths are UTF-16 code units: 👋 has length 2 and 🇳🇱 length 4 (Hello 👋 starts the emoji at offset 6). Set the selection (or collapsed caret, length=0) of an AX text element via AXSelectedTextRange. Validated against AXNumberOfCharacters before writing. "
                 + "Does not type anything and does not steal focus.",
             inputSchema: schema(
                 properties: [
@@ -92,7 +92,7 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "text_insert_at_caret",
-            description: "Insert text at the caret of an AX text element by writing AXSelectedText — surrounding text is untouched and no synthetic keystrokes are posted. "
+            description: "Offsets and lengths are UTF-16 code units: 👋 has length 2 and 🇳🇱 length 4 (Hello 👋 starts the emoji at offset 6). Insert text at the caret of an AX text element by writing AXSelectedText — surrounding text is untouched and no synthetic keystrokes are posted. "
                 + "A non-empty selection is collapsed to its end first (use text_replace_range to overwrite a selection). "
                 + "Elements that expose AXSelectedText read-only return error_code=not_supported with a pointer at type_text.",
             inputSchema: schema(
@@ -115,7 +115,7 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "text_replace_range",
-            description: "Replace an exact character range of an AX text element: sets AXSelectedTextRange to {location,length}, then writes AXSelectedText. "
+            description: "Offsets and lengths are UTF-16 code units: 👋 has length 2 and 🇳🇱 length 4 (Hello 👋 starts the emoji at offset 6). Replace an exact character range of an AX text element: sets AXSelectedTextRange to {location,length}, then writes AXSelectedText. "
                 + "Pass an empty string to delete the range. Elements that reject the write return error_code=not_supported.",
             inputSchema: schema(
                 properties: [
@@ -145,7 +145,7 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "text_get_value",
-            description: "Read the full AXValue of a text element with number_of_characters and an explicit `truncated` flag when max_chars cuts it short. "
+            description: "Offsets and lengths are UTF-16 code units: 👋 has length 2 and 🇳🇱 length 4 (Hello 👋 starts the emoji at offset 6). Read the full AXValue of a text element with number_of_characters and an explicit `truncated` flag when max_chars cuts it short. "
                 + "Use it to verify an edit instead of re-reading the whole UI tree.",
             inputSchema: schema(
                 properties: [
@@ -295,7 +295,11 @@ extension ToolRegistry {
                 "range": selection.range.map(Self.rangePayload) ?? .null,
                 "number_of_characters": selection.numberOfCharacters.map { .number(Double($0)) } ?? .null,
                 "visible_range": selection.visibleRange.map(Self.rangePayload) ?? .null,
-                "insertion_point_line": selection.insertionPointLine.map { .number(Double($0)) } ?? .null
+                "insertion_point_line": selection.insertionPointLine.map { .number(Double($0)) } ?? .null,
+                "bounds": selection.bounds.map { bounds in
+                    .object(["x": .number(bounds.x), "y": .number(bounds.y),
+                             "width": .number(bounds.width), "height": .number(bounds.height)])
+                } ?? .null
             ]
             payload.merge(target.identity) { current, _ in current }
             let described = selection.range.map { "\($0.location)+\($0.length)" } ?? "unknown"

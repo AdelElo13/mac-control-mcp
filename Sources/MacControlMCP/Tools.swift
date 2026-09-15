@@ -550,15 +550,17 @@ final class ToolRegistry: @unchecked Sendable {
         }
         if let dead = noSuchProcessResult(pid: pid, tool: "find_element") { return dead }
 
+        if let error = validateSemantic(arguments) { return error }
         let role = arguments["role"]?.stringValue
         let title = arguments["title"]?.stringValue
         // v0.9 (A-9): opt-in equality matching. Default stays substring.
         let exact = AXPayload.flag(arguments["exact"])
         let maxDepth = AXDepth.resolve(arguments["max_depth"]?.intValue)
 
-        guard let hit = await accessibility.findElementWithPath(
-            pid: pid, role: role, title: title, exact: exact, maxDepth: maxDepth
-        ) else {
+        guard let hit = await accessibility.findElements(
+            pid: pid, role: role, title: title, value: arguments["value"]?.stringValue, exact: exact, maxDepth: maxDepth,
+            limit: 1, semantic: arguments["semantic"]?.stringValue
+        ).first else {
             var payload: [String: JSONValue] = [
                 "ok": .bool(false),
                 "pid": .number(Double(pid)),
@@ -573,7 +575,7 @@ final class ToolRegistry: @unchecked Sendable {
             return errorResult("No matching element found.", payload)
         }
 
-        let info = await accessibility.getElementInfo(element: hit.element)
+        let info = hit.info
         // v0.9 (C-5 / A-9): find_element now returns an element_id too,
         // so the cheapest entry-point tool no longer forces a second
         // find_elements call just to get a handle.
@@ -586,7 +588,10 @@ final class ToolRegistry: @unchecked Sendable {
                 "element_id": .string(id),
                 "exact": .bool(exact),
                 "max_depth_used": .number(Double(maxDepth)),
-                "element": encodeAsJSONValue(info)
+                "matched_field": .string(hit.matchedField),
+                "match": .string(hit.match),
+                "rank_reason": .string(hit.rankReason),
+                "element": encodeElement(info: info, id: id)
             ]
         )
     }
@@ -1094,19 +1099,18 @@ final class ToolRegistry: @unchecked Sendable {
         ),
         MCPToolDefinition(
             name: "find_element",
-            description: "Return the FIRST element (depth-first, max_depth default 24, 5 s budget) whose role contains `role` and whose title contains `title` — case-insensitive SUBSTRING by default; title matches AXTitle → AXDescription → AXIdentifier and falls back to AXValue. "
-                + "WARNING: substring matching on role is wider than it looks — role \"Button\" also matches AXRadioButton, AXMenuButton and AXPopUpButton (a Safari tab was returned for role=Button title=Sign). Pass exact:true for equality matching when you know the exact role/title. "
-                + "Returns role/title/value/position/size plus a content-addressed element_id usable with perform_element_action / get_element_attributes / set_element_attribute. "
-                + "Use find_elements when you need every match; query_elements for regex (e.g. ^Save$); list_elements to survey controls; get_ui_tree for full structure.",
+            description: "Return the highest-ranked matching element with a stable element_id (max_depth default 24, 5 s / 5000-node traversal budget). " + axSearchDoc + axSemanticDoc,
             inputSchema: schema(
                 properties: [
                     "pid": .object([
                         "type": .array([.string("integer"), .string("string")]),
                         "description": .string("Target process ID.")
                     ]),
+                    "semantic": .object(["type": .string("string"), "description": .string(axSemanticDoc)]),
+                    "value": .object(["type": .string("string"), "description": .string("Case-insensitive value filter.")]),
                     "role": .object([
                         "type": .string("string"),
-                        "description": .string("Case-insensitive role filter (substring unless exact=true).")
+                        "description": .string("Exact case-insensitive role name; Button is normalized to AXButton.")
                     ]),
                     "title": .object([
                         "type": .string("string"),
@@ -1114,7 +1118,7 @@ final class ToolRegistry: @unchecked Sendable {
                     ]),
                     "exact": .object([
                         "type": .string("boolean"),
-                        "description": .string("Match role and title by case-insensitive EQUALITY instead of substring. Default false for compatibility.")
+                        "description": .string("Match title/value by case-insensitive equality; roles always use exact normalized names.")
                     ]),
                     "max_depth": .object([
                         "type": .array([.string("integer"), .string("string")]),
