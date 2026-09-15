@@ -31,10 +31,10 @@ extension ToolRegistry {
                 Strategy: 'ax' (fastest, structured), 'ocr' (OCRs the target \
                 app's own window — works on Electron/Canvas and on windows that \
                 are covered by other windows), 'auto' (AX first, OCR fallback). \
-                AX searches depth 8 first, then the full max_depth only if \
-                no usable candidate is found, within one 5 s budget. This \
-                prefers shallow candidates over earlier deep descendants; \
-                confidence ranking applies within the successful pass. \
+                AX uses one breadth-first pass (shallow before deep) within a \
+                5 s budget, stopping on the first exact usable label. Up to 20 \
+                shallow substring candidates remain fallbacks when no exact \
+                label is found. Reports nodes_visited, timings_ms and truncated. \
                 AXMenuBar subtrees are excluded by default (menus_excluded=true); \
                 pass include_menus:true to include them. \
                 Returns (x,y) plus the match's bounds, element_id and \
@@ -297,7 +297,10 @@ extension ToolRegistry {
             "menus_excluded": .bool(!AXPayload.flag(arguments["include_menus"])),
             // Snake-case echoes alongside the nested camelCase result, so a
             // caller does not have to know both spellings (A-2 / A-14 / D-4).
-            "max_depth_used": .number(Double(r.maxDepthUsed))
+            "max_depth_used": .number(Double(r.maxDepthUsed)),
+            "nodes_visited": .number(Double(r.nodesVisited)),
+            "timings_ms": .object(r.timingsMS.mapValues(JSONValue.number)),
+            "truncated": .bool(r.truncated)
         ]
         if let scope {
             payload.merge(scope.payload) { existing, _ in existing }

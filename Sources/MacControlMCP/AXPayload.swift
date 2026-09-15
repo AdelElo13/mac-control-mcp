@@ -180,6 +180,8 @@ enum AXPayload {
     /// Only number formatting is delegated to the transport's encoder;
     /// repeated coordinates/depths reuse their scalar count. Bit-pattern
     /// keys preserve the different encodings of zero and negative zero.
+    /// Keep hand-rolled escaping covered by the JSONEncoder parity test
+    /// `AXPayloadBudgetTests.transportByteCount` (v0.10 B6).
     static func encodedSize(
         _ value: JSONValue,
         using encode: (JSONValue) -> Int = { (try? JSONEncoder().encode($0))?.count ?? 0 }
@@ -237,6 +239,12 @@ enum AXPayload {
             kept.append(item)
         }
         return (kept, false)
+    }
+
+    /// v0.10 B1/B3: budget synchronous AX work between reads; one in-flight
+    /// AX IPC can overrun it. Callers report timed_out/truncated explicitly.
+    static func walkBudget(_ arguments: [String: JSONValue], defaultMS: Int) -> TimeInterval {
+        Double(max(1, min(arguments["time_budget_ms"]?.intValue ?? defaultMS, 5000))) / 1000
     }
 
     /// Parse `max_bytes`. Values <= 0 are treated as "no cap" rather than

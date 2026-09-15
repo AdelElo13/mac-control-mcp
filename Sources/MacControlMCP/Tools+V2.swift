@@ -11,7 +11,7 @@ extension ToolRegistry {
     static let definitionsV2: [MCPToolDefinition] = [
         MCPToolDefinition(
             name: "get_ui_tree",
-            description: "Walk the full accessibility tree of a process and return every node (including containers and static text) with child indices and element IDs for follow-up calls. Element IDs are content-addressed (pid + AX path), so the same node keeps the same id across calls and sessions. Bounded by a 5 s budget and node_cap nodes (= element-cache capacity, 2000 by default, so every returned id stays valid); node_cap_reached=true means the tree was cut off — lower max_depth or use find_elements. "
+            description: "Walk the full accessibility tree of a process and return every node (including containers and static text) with child indices and element IDs for follow-up calls. Element IDs are content-addressed (pid + AX path), so the same node keeps the same id across calls and sessions. Bounded by node_cap (default 1000, max 2000) and time_budget_ms (default 350, or 200 with viewport_only; max 5000). node_cap_reached or timed_out sets truncated=true. timings_ms separates queue, preparation, AX fetch, walk, shape, cache and payload costs. A cutoff means the tree is incomplete — lower max_depth or use find_elements. "
                 + "The heaviest AX tool (hundreds of KB for a browser or Finder window — 327 KB measured) — when you know what you are looking for, find_elements / query_elements are far smaller and also return ids. "
                 + "viewport_only prunes off-window subtrees during traversal; zero-size containers are still explored. To reduce the payload, use interactive_only / viewport_only / fields / max_bytes. " + axPayloadBudgetDoc,
             inputSchema: schema(
@@ -21,9 +21,13 @@ extension ToolRegistry {
                         "type": .string("boolean"),
                         "description": .string("Include the AXMenuBar subtree. Default false; responses report menus_excluded. Dedicated menu tools are unaffected.")
                     ]),
+                    "time_budget_ms": .object([
+                        "type": .array([.string("integer"), .string("string")]),
+                        "description": .string("AX walk budget in milliseconds, checked between reads. Default 350 (200 with viewport_only), clamped 1-5000. One in-flight AX call can overrun it; timed_out/truncated report a cutoff.")
+                    ]),
                     "node_cap": .object([
                         "type": .array([.string("integer"), .string("string")]),
-                        "description": .string("Maximum visited nodes. Default 2000 (element-cache capacity), clamped 1-2000. node_cap_reached and truncated report a cutoff.")
+                        "description": .string("Maximum visited nodes. Default 1000, clamped 1-2000. node_cap_reached and truncated report a cutoff.")
                     ]),
                     "max_depth": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Traversal depth limit. Default 24 (project-wide AX default), max 64.")]),
                     "fields": .object([
@@ -93,7 +97,7 @@ extension ToolRegistry {
         MCPToolDefinition(
             name: "query_elements",
             description: "Like find_elements, but role_regex / title_regex / value_regex are case-insensitive regular expressions (e.g. title_regex \"^Save$\" for an exact label, \"Save|Opslaan\" for alternatives). Invalid regex falls back to case-insensitive substring. Returns element ids. "
-                + "Bounded by node_cap (default 2000, max 2000) and 5 seconds; node_cap_reached=true means the search was cut off. Prefer find_elements for plain substring matches. " + axPayloadBudgetDoc,
+                + "Anchored literal equality patterns (e.g. ^Save$) use breadth-first order and stop once limit equally best matches are found; other regexes retain depth-first order. Bounded by node_cap (default 500, max 2000) and time_budget_ms (default 250, max 5000); node_cap_reached or timed_out sets truncated=true. A sparse query can reach either budget before limit. timings_ms reports queue, preparation, AX fetch, walk and payload/cache costs. Prefer find_elements for plain substring matches. " + axPayloadBudgetDoc,
             inputSchema: schema(
                 properties: [
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
@@ -104,9 +108,13 @@ extension ToolRegistry {
                         "type": .string("boolean"),
                         "description": .string("Include the AXMenuBar subtree. Default false; responses report menus_excluded. Dedicated menu tools are unaffected.")
                     ]),
+                    "time_budget_ms": .object([
+                        "type": .array([.string("integer"), .string("string")]),
+                        "description": .string("AX walk budget in milliseconds, checked between reads. Default 250, clamped 1-5000. One in-flight AX call can overrun it; timed_out/truncated report a cutoff.")
+                    ]),
                     "node_cap": .object([
                         "type": .array([.string("integer"), .string("string")]),
-                        "description": .string("Maximum visited nodes. Default 2000 (element-cache capacity), clamped 1-2000. node_cap_reached and truncated report a cutoff.")
+                        "description": .string("Maximum visited nodes. Default 500, clamped 1-2000. node_cap_reached and truncated report a cutoff.")
                     ]),
                     "max_depth": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Traversal depth limit. Default 24 (project-wide AX default), max 64.")]),
                     "limit": .object(["type": .array([.string("integer"), .string("string")])]),
@@ -286,16 +294,21 @@ extension ToolRegistry {
         }
         if let dead = noSuchProcessResult(pid: pid, tool: "get_ui_tree") { return dead }
         let maxDepth = AXDepth.resolve(arguments["max_depth"]?.intValue)
-        // Node cap = element-cache capacity, so every returned node gets
-        // a live id. (Before v0.8.3 the walk allowed 5000 nodes but the
-        // 2000-entry cache evicted the first nodes' ids while storing the
-        // rest, so ids beyond 2000 nodes were already dangling.)
-        let nodeCap = max(1, min(arguments["node_cap"]?.intValue ?? elementCache.maxEntries, elementCache.maxEntries))
+        // v0.10 B1/B3: excluding cheap menu nodes otherwise spends the
+        // entire old 2000-node allowance on costly offscreen list rows.
+        // Bound the default; explicit node_cap still reaches cache capacity.
+        let nodeCap = max(1, min(arguments["node_cap"]?.intValue ?? 1000, elementCache.maxEntries))
         let budget = PayloadOptions(arguments, known: AXPayload.treeFields)
         let includeMenus = AXPayload.flag(arguments["include_menus"])
+        let timeBudget = AXPayload.walkBudget(arguments, defaultMS: budget.viewportOnly ? 200 : 350)
+        let windowsStarted = ProcessInfo.processInfo.systemUptime
         let windows = budget.viewportOnly ? await accessibility.windowFrames(pid: pid) : []
+        let windowsMS = (ProcessInfo.processInfo.systemUptime - windowsStarted) * 1000
         let walk = await accessibility.treeWalkResult(pid: pid, maxDepth: maxDepth, nodeCap: nodeCap,
-                                                      includeMenus: includeMenus, clipRects: windows)
+                                                      includeMenus: includeMenus, clipRects: windows, timeBudget: timeBudget)
+        var phases = walk.timingsMS
+        phases["windows"] = windowsMS
+        let shapeStarted = ProcessInfo.processInfo.systemUptime
         let nodes = walk.nodes
 
         // v0.9 (C-9): interactive_only / viewport_only shape the tree
@@ -312,7 +325,12 @@ extension ToolRegistry {
         )
         // One actor hop + one eviction pass for the whole tree (see
         // ElementCache.storeMany) instead of one per node.
+        phases["shape"] = (ProcessInfo.processInfo.systemUptime - shapeStarted) * 1000
+        let cacheStarted = ProcessInfo.processInfo.systemUptime
         let ids = await elementCache.storeMany(withPaths: kept.map { (nodes[$0].element, nodes[$0].path) }, pid: pid)
+
+        phases["cache"] = (ProcessInfo.processInfo.systemUptime - cacheStarted) * 1000
+        let payloadStarted = ProcessInfo.processInfo.systemUptime
 
         // Encode → measure → (if the cap bit) drop the tail and RE-MAP.
         // Remapping has to happen against the surviving set, otherwise a
@@ -338,11 +356,15 @@ extension ToolRegistry {
             emitted = budgeted.items
         }
 
+        phases["payload"] = (ProcessInfo.processInfo.systemUptime - payloadStarted) * 1000
         var payload: [String: JSONValue] = [
             "ok": .bool(true),
             "pid": .number(Double(pid)),
             "max_depth": .number(Double(maxDepth)),
             "count": .number(Double(emitted.count)),
+            "timings_ms": .object(phases.mapValues(JSONValue.number)),
+            "time_budget_ms": .number(timeBudget * 1000),
+            "timed_out": .bool(walk.timedOut),
             "node_cap": .number(Double(nodeCap)),
             "node_cap_reached": .bool(walk.nodeCapReached),
             "menus_excluded": .bool(!includeMenus),
@@ -417,8 +439,11 @@ extension ToolRegistry {
         let budget = PayloadOptions(arguments, known: AXPayload.elementFields)
 
         let includeMenus = AXPayload.flag(arguments["include_menus"])
-        let nodeCap = max(1, min(arguments["node_cap"]?.intValue ?? elementCache.maxEntries, elementCache.maxEntries))
+        let nodeCap = max(1, min(arguments["node_cap"]?.intValue ?? 500, elementCache.maxEntries))
+        let timeBudget = AXPayload.walkBudget(arguments, defaultMS: 250)
+        let windowsStarted = ProcessInfo.processInfo.systemUptime
         let windows = budget.viewportOnly ? await accessibility.windowFrames(pid: pid) : []
+        let windowsMS = (ProcessInfo.processInfo.systemUptime - windowsStarted) * 1000
         let result = await accessibility.queryElements(
             pid: pid,
             rolePattern: rolePattern,
@@ -426,19 +451,26 @@ extension ToolRegistry {
             valuePattern: valuePattern,
             maxDepth: maxDepth,
             limit: limit, nodeCap: nodeCap, includeMenus: includeMenus,
-            clipRects: windows, viewportOnly: budget.viewportOnly, interactiveOnly: budget.interactiveOnly
+            clipRects: windows, viewportOnly: budget.viewportOnly, interactiveOnly: budget.interactiveOnly, timeBudget: timeBudget
         )
+        var phases = result.walk.timingsMS
+        phases["windows"] = windowsMS
+        let payloadStarted = ProcessInfo.processInfo.systemUptime
         let matches = result.matches
 
         let encoded = await encodeMatches(matches, pid: pid, budget: budget)
         let budgeted = AXPayload.applyByteBudget(encoded, maxBytes: budget.maxBytes)
 
+        phases["payload_and_cache"] = (ProcessInfo.processInfo.systemUptime - payloadStarted) * 1000
         var payload: [String: JSONValue] = [
             "ok": .bool(true),
             "pid": .number(Double(pid)),
             "count": .number(Double(budgeted.items.count)),
             "elements": .array(budgeted.items),
             "menus_excluded": .bool(!includeMenus),
+            "timings_ms": .object(phases.mapValues(JSONValue.number)),
+            "time_budget_ms": .number(timeBudget * 1000),
+            "timed_out": .bool(result.walk.timedOut),
             "node_cap": .number(Double(nodeCap)),
             "node_cap_reached": .bool(result.walk.nodeCapReached),
             "limit_reached": .bool(matches.count >= limit)
@@ -993,6 +1025,20 @@ struct PayloadOptions: Sendable {
         if !unknownFields.isEmpty {
             payload["unknown_fields"] = .array(unknownFields.map(JSONValue.string))
         }
-        payload["bytes"] = .number(Double(AXPayload.encodedSize(.object(payload))))
+        // v0.10 B6: include accounting itself in the phase evidence without
+        // traversing the payload twice. Replace a counted numeric placeholder
+        // and adjust only that scalar's byte size; the parity test guards it.
+        if var phases = payload["timings_ms"]?.objectValue {
+            phases["byte_accounting"] = .number(0)
+            payload["timings_ms"] = .object(phases)
+            let started = ProcessInfo.processInfo.systemUptime
+            let bytes = AXPayload.encodedSize(.object(payload))
+            let elapsed = JSONValue.number((ProcessInfo.processInfo.systemUptime - started) * 1000)
+            phases["byte_accounting"] = elapsed
+            payload["timings_ms"] = .object(phases)
+            payload["bytes"] = .number(Double(bytes + AXPayload.encodedSize(elapsed) - 1))
+        } else {
+            payload["bytes"] = .number(Double(AXPayload.encodedSize(.object(payload))))
+        }
     }
 }

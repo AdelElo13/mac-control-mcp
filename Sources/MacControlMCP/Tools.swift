@@ -511,15 +511,23 @@ final class ToolRegistry: @unchecked Sendable {
         let maxDepth = AXDepth.resolve(arguments["max_depth"]?.intValue)
         let budget = PayloadOptions(arguments, known: AXPayload.elementFields)
         let includeMenus = AXPayload.flag(arguments["include_menus"])
-        let nodeCap = max(1, min(arguments["node_cap"]?.intValue ?? elementCache.maxEntries, elementCache.maxEntries))
-        let windows = budget.viewportOnly ? await accessibility.windowFrames(pid: pid) : []
+        let nodeCap = max(1, min(arguments["node_cap"]?.intValue ?? 500, elementCache.maxEntries))
+        let pruneOffscreen = !AXPayload.flag(arguments["include_offscreen"]) || budget.viewportOnly
+        let timeBudget = AXPayload.walkBudget(arguments, defaultMS: 250)
+        let windowsStarted = ProcessInfo.processInfo.systemUptime
+        let windows = pruneOffscreen ? await accessibility.windowFrames(pid: pid) : []
+        let windowsMS = (ProcessInfo.processInfo.systemUptime - windowsStarted) * 1000
         let walk = await accessibility.search(pid: pid, maxDepth: maxDepth, nodeCap: nodeCap,
                                               includeMenus: includeMenus, clipRects: windows,
-                                              viewportOnly: budget.viewportOnly, interactiveOnly: true)
+                                              viewportOnly: pruneOffscreen, interactiveOnly: true, timeBudget: timeBudget)
+        var phases = walk.timingsMS
+        phases["windows"] = windowsMS
+        let payloadStarted = ProcessInfo.processInfo.systemUptime
         let elements = walk.matches.map(\.info)
         let encoded = elements.map { encodeElement(info: $0, id: nil, fields: budget.fields) }
         let budgeted = AXPayload.applyByteBudget(encoded, maxBytes: budget.maxBytes)
 
+        phases["payload"] = (ProcessInfo.processInfo.systemUptime - payloadStarted) * 1000
         var payload: [String: JSONValue] = [
             "ok": .bool(true),
             "pid": .number(Double(pid)),
@@ -527,6 +535,10 @@ final class ToolRegistry: @unchecked Sendable {
             "count": .number(Double(budgeted.items.count)),
             "elements": .array(budgeted.items),
             "menus_excluded": .bool(!includeMenus),
+            "offscreen_excluded": .bool(pruneOffscreen),
+            "timings_ms": .object(phases.mapValues(JSONValue.number)),
+            "time_budget_ms": .number(timeBudget * 1000),
+            "timed_out": .bool(walk.timedOut),
             "node_cap": .number(Double(nodeCap)),
             "node_cap_reached": .bool(walk.nodeCapReached)
         ]
@@ -556,9 +568,16 @@ final class ToolRegistry: @unchecked Sendable {
 
         let includeMenus = AXPayload.flag(arguments["include_menus"])
 
-        guard let hit = await accessibility.findElementWithPath(
-            pid: pid, role: role, title: title, exact: exact, maxDepth: maxDepth, includeMenus: includeMenus, shallowFirst: true
-        ) else {
+        let walk = await accessibility.search(
+            pid: pid, maxDepth: maxDepth, limit: 1, includeMenus: includeMenus, shallowFirst: true,
+            stopOnBest: AccessibilityController.exactTitlePreference(title),
+            predicate: { attrs in
+                AccessibilityController.textMatches(filter: role, candidate: attrs.role ?? "AXUnknown", exact: exact)
+                    && (AccessibilityController.textMatches(filter: title, candidate: attrs.title ?? "", exact: exact)
+                        || AccessibilityController.textMatches(filter: title, candidate: attrs.value ?? "", exact: exact))
+            }
+        )
+        guard let hit = walk.matches.first else {
             var payload: [String: JSONValue] = [
                 "ok": .bool(false),
                 "pid": .number(Double(pid)),
@@ -566,6 +585,9 @@ final class ToolRegistry: @unchecked Sendable {
                 "title": title.map(JSONValue.string) ?? .null,
                 "exact": .bool(exact),
                 "menus_excluded": .bool(!includeMenus),
+                "nodes_visited": .number(Double(walk.nodesVisited)),
+                "timings_ms": .object(walk.timingsMS.mapValues(JSONValue.number)),
+                "truncated": .bool(walk.timedOut || walk.nodeCapReached),
                 "max_depth_used": .number(Double(maxDepth))
             ]
             if let hint = await axEmptyHint(pid: pid, whenEmpty: true) {
@@ -574,7 +596,8 @@ final class ToolRegistry: @unchecked Sendable {
             return errorResult("No matching element found.", payload)
         }
 
-        let info = await accessibility.getElementInfo(element: hit.element)
+        // v0.10 B4: the search already fetched this info in its batch.
+        let info = hit.info
         // v0.9 (C-5 / A-9): find_element now returns an element_id too,
         // so the cheapest entry-point tool no longer forces a second
         // find_elements call just to get a handle.
@@ -587,6 +610,9 @@ final class ToolRegistry: @unchecked Sendable {
                 "element_id": .string(id),
                 "exact": .bool(exact),
                 "menus_excluded": .bool(!includeMenus),
+                "nodes_visited": .number(Double(walk.nodesVisited)),
+                "timings_ms": .object(walk.timingsMS.mapValues(JSONValue.number)),
+                "truncated": .bool(walk.timedOut || walk.nodeCapReached),
                 "max_depth_used": .number(Double(maxDepth)),
                 "element": encodeAsJSONValue(info)
             ]
@@ -1066,7 +1092,7 @@ final class ToolRegistry: @unchecked Sendable {
         MCPToolDefinition(
             name: "list_elements",
             description: "Survey the ACTIONABLE controls of an app (fixed role whitelist: buttons, links, text fields/areas, checkboxes, radio buttons, pop-up/menu buttons, sliders, switches, steppers… — no containers, rows or static text) down to max_depth (default 24). "
-                + "Bounded by node_cap (default 2000, max 2000) and 5 seconds; node_cap_reached=true means the walk was cut off. No text filters and no element ids. Use it to answer \"what can I interact with here?\"; use find_elements / query_elements to target specific elements and get ids for follow-up calls, and get_ui_tree for the full structure including containers. " + axPayloadBudgetDoc,
+                + "Off-window subtrees are pruned by default; include_offscreen:true restores them (explicit viewport_only:true still filters). Zero-size/unknown containers are explored. Bounded by node_cap (default 500, max 2000) and time_budget_ms (default 250, max 5000); node_cap_reached or timed_out sets truncated=true. timings_ms separates queue, preparation, AX fetch, walk and payload costs. No text filters and no element ids. Use it to answer \"what can I interact with here?\"; use find_elements / query_elements to target specific elements and get ids for follow-up calls, and get_ui_tree for the full structure including containers. " + axPayloadBudgetDoc,
             inputSchema: schema(
                 properties: [
                     "pid": .object([
@@ -1077,9 +1103,17 @@ final class ToolRegistry: @unchecked Sendable {
                         "type": .string("boolean"),
                         "description": .string("Include the AXMenuBar subtree. Default false; responses report menus_excluded. Dedicated menu tools are unaffected.")
                     ]),
+                    "include_offscreen": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Include off-window elements and their subtrees. Default false; explicit viewport_only:true takes precedence. Responses report offscreen_excluded.")
+                    ]),
+                    "time_budget_ms": .object([
+                        "type": .array([.string("integer"), .string("string")]),
+                        "description": .string("AX walk budget in milliseconds, checked between reads. Default 250, clamped 1-5000. One in-flight AX call can overrun it; timed_out/truncated report a cutoff.")
+                    ]),
                     "node_cap": .object([
                         "type": .array([.string("integer"), .string("string")]),
-                        "description": .string("Maximum visited nodes. Default 2000 (element-cache capacity), clamped 1-2000. node_cap_reached and truncated report a cutoff.")
+                        "description": .string("Maximum visited nodes. Default 500, clamped 1-2000. node_cap_reached and truncated report a cutoff.")
                     ]),
                     "max_depth": .object([
                         "type": .array([.string("integer"), .string("string")]),
@@ -1108,7 +1142,7 @@ final class ToolRegistry: @unchecked Sendable {
         ),
         MCPToolDefinition(
             name: "find_element",
-            description: "Return the FIRST element (depth-first through depth 8 first, then the full max_depth only if no match; max_depth default 24, shared 5 s budget) whose role contains `role` and whose title contains `title` — case-insensitive SUBSTRING by default; title matches AXTitle → AXDescription → AXIdentifier and falls back to AXValue. "
+            description: "Return the first exact label in one breadth-first search (shallow before deep, original sibling order); if no exact label exists, return the first substring match within max_depth (default 24, 5 s budget) whose role contains `role` and whose title contains `title` — case-insensitive SUBSTRING by default; title matches AXTitle → AXDescription → AXIdentifier and falls back to AXValue. "
                 + "WARNING: substring matching on role is wider than it looks — role \"Button\" also matches AXRadioButton, AXMenuButton and AXPopUpButton (a Safari tab was returned for role=Button title=Sign). Pass exact:true for equality matching when you know the exact role/title. "
                 + "This shallow-first order may select a shallow match after a sibling whose matching descendant is deeper than 8. AXMenuBar subtrees are excluded by default (menus_excluded=true); include_menus:true restores them. Returns role/title/value/position/size plus a content-addressed element_id usable with perform_element_action / get_element_attributes / set_element_attribute. "
                 + "Use find_elements when you need every match; query_elements for regex (e.g. ^Save$); list_elements to survey controls; get_ui_tree for full structure.",

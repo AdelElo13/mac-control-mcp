@@ -53,6 +53,9 @@ actor GroundingController {
         /// ran (or was not asked for). Lets a caller tell "AX found
         /// nothing" from "AX was never consulted".
         let axSkippedReason: String?
+        var nodesVisited: Int = 0
+        var timingsMS: [String: Double] = [:]
+        var truncated: Bool = false
     }
 
     struct Candidate: Codable, Sendable {
@@ -216,6 +219,7 @@ actor GroundingController {
     ) async -> GroundResult {
         let pid = window?.pid ?? rawPID
         let depth = Self.resolveMaxDepth(maxDepth)
+        var walk = AccessibilityController.WalkResult()
 
         // Codex r2 #2: a window scope with no attributable AXWindow means
         // the AX strategy cannot keep its promise, so it does not run at
@@ -242,7 +246,9 @@ actor GroundingController {
                     windowID: window.windowID, ownerName: window.ownerName
                 ),
                 errorCode: axSkippedReason,
-                axSkippedReason: axSkippedReason
+                axSkippedReason: axSkippedReason,
+                nodesVisited: walk.nodesVisited, timingsMS: walk.timingsMS,
+                truncated: walk.nodeCapReached || walk.timedOut
             )
         }
 
@@ -283,12 +289,13 @@ actor GroundingController {
             let parkedHeights: [Double] = displayList.isEmpty
                 ? [Double(CGDisplayBounds(CGMainDisplayID()).height)]
                 : WindowIdentity.bottomEdges(of: displayList)
-            // v0.10 B4: only usable candidates end the eight-level pass.
-            // Hidden/zero-size shallow hits must not suppress the full
-            // search, or consume the match limit before visible controls.
+            // v0.10 B4: BFS reads each node once; the first exact usable
+            // label ends the search. Keep shallow substring fallbacks while
+            // looking for an exact hit, filtering geometry before selection.
             let result = await accessibility.search(
                 pid: pid, root: walkRoot, maxDepth: depth, limit: 20,
                 includeMenus: includeMenus, shallowFirst: true,
+                stopOnBest: { AccessibilityController.textMatches(filter: target, candidate: $0.title ?? "", exact: true) },
                 predicate: { attrs in
                     guard AccessibilityController.textMatches(filter: target, candidate: attrs.title ?? "", exact: false),
                           attrs.role != "AXApplication",
@@ -301,6 +308,7 @@ actor GroundingController {
                     return true
                 }
             )
+            walk = result
             let survivors = result.matches
 
             // Element ids for every surviving AX match, in ONE cache hop,
@@ -347,7 +355,9 @@ actor GroundingController {
                     candidates: axCandidates,
                     error: nil,
                     errorCode: nil,
-                    axSkippedReason: axSkippedReason
+                    axSkippedReason: axSkippedReason,
+                nodesVisited: walk.nodesVisited, timingsMS: walk.timingsMS,
+                truncated: walk.nodeCapReached || walk.timedOut
                 )
             }
             if strategy == .ax {
@@ -358,7 +368,9 @@ actor GroundingController {
                     candidates: [],
                     error: "no AX match at depth \(depth)",
                     errorCode: "not_found",
-                    axSkippedReason: axSkippedReason
+                    axSkippedReason: axSkippedReason,
+                nodesVisited: walk.nodesVisited, timingsMS: walk.timingsMS,
+                truncated: walk.nodeCapReached || walk.timedOut
                 )
             }
         }
@@ -392,7 +404,9 @@ actor GroundingController {
                 candidates: all,
                 error: nil,
                 errorCode: nil,
-                axSkippedReason: axSkippedReason
+                axSkippedReason: axSkippedReason,
+                nodesVisited: walk.nodesVisited, timingsMS: walk.timingsMS,
+                truncated: walk.nodeCapReached || walk.timedOut
             )
         }
 
@@ -407,7 +421,9 @@ actor GroundingController {
                 candidates: [],
                 error: ocrFailure.message,
                 errorCode: ocrFailure.code,
-                axSkippedReason: axSkippedReason
+                axSkippedReason: axSkippedReason,
+                nodesVisited: walk.nodesVisited, timingsMS: walk.timingsMS,
+                truncated: walk.nodeCapReached || walk.timedOut
             )
         }
 
@@ -418,7 +434,9 @@ actor GroundingController {
             candidates: [],
             error: "no grounding candidate from \(strategy.rawValue)",
             errorCode: "not_found",
-            axSkippedReason: axSkippedReason
+            axSkippedReason: axSkippedReason,
+                nodesVisited: walk.nodesVisited, timingsMS: walk.timingsMS,
+                truncated: walk.nodeCapReached || walk.timedOut
         )
     }
 

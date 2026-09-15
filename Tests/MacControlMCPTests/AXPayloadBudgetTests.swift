@@ -219,5 +219,17 @@ struct AXPayloadBudgetTests {
             #expect(AXPayload.encodedSize(value) == (try JSONEncoder().encode(value)).count)
         }
     }
+    @Test("B6 phase reporting includes byte accounting without changing encoded size")
+    func byteAccountingPhase() throws {
+        var payload: [String: JSONValue] = [
+            "nodes": .array((0..<100).map { .object(["title": .string("row/\($0)")]) }),
+            "timings_ms": .object(["walk": .number(1.25)])
+        ]
+        PayloadOptions([:], known: AXPayload.treeFields).annotate(
+            &payload, maxDepthUsed: 24, nodesVisited: 100, truncated: false)
+        #expect(payload["timings_ms"]?.objectValue?["byte_accounting"] != nil)
+        let bytes = payload.removeValue(forKey: "bytes")?.intValue
+        #expect(bytes == (try JSONEncoder().encode(JSONValue.object(payload))).count)
+    }
 
 }
