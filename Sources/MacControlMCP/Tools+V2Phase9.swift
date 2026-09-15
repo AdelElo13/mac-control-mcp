@@ -34,7 +34,8 @@ extension ToolRegistry {
                 AX uses one breadth-first pass (shallow before deep) within a \
                 5 s budget, stopping on the first exact usable label. Up to 20 \
                 shallow substring candidates remain fallbacks when no exact \
-                label is found. Reports nodes_visited, timings_ms and truncated. \
+                label is found. After 20 fallbacks, at most 100 ms remains for \
+                an exact match. Reports nodes_visited, timings_ms and truncated. \
                 AXMenuBar subtrees are excluded by default (menus_excluded=true); \
                 pass include_menus:true to include them. \
                 Returns (x,y) plus the match's bounds, element_id and \

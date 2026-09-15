@@ -11,7 +11,7 @@ extension ToolRegistry {
     static let definitionsV2: [MCPToolDefinition] = [
         MCPToolDefinition(
             name: "get_ui_tree",
-            description: "Walk the full accessibility tree of a process and return every node (including containers and static text) with child indices and element IDs for follow-up calls. Element IDs are content-addressed (pid + AX path), so the same node keeps the same id across calls and sessions. Bounded by node_cap (default 1000, max 2000) and time_budget_ms (default 350, or 200 with viewport_only; max 5000). node_cap_reached or timed_out sets truncated=true. timings_ms separates queue, preparation, AX fetch, walk, shape, cache and payload costs. A cutoff means the tree is incomplete — lower max_depth or use find_elements. "
+            description: "Walk the full accessibility tree of a process and return every node (including containers and static text) with child indices and element IDs for follow-up calls. Element IDs are content-addressed (pid + AX path), so the same node keeps the same id across calls and sessions. Bounded by node_cap (default 2000, the element-cache capacity) and time_budget_ms (default 5000, or 500 with viewport_only; max 5000). node_cap_reached or timed_out sets truncated=true. timings_ms separates queue, preparation, AX fetch, walk, shape, cache and payload costs. A cutoff means the tree is incomplete — lower max_depth or use find_elements. "
                 + "The heaviest AX tool (hundreds of KB for a browser or Finder window — 327 KB measured) — when you know what you are looking for, find_elements / query_elements are far smaller and also return ids. "
                 + "viewport_only prunes off-window subtrees during traversal; zero-size containers are still explored. To reduce the payload, use interactive_only / viewport_only / fields / max_bytes. " + axPayloadBudgetDoc,
             inputSchema: schema(
@@ -23,11 +23,11 @@ extension ToolRegistry {
                     ]),
                     "time_budget_ms": .object([
                         "type": .array([.string("integer"), .string("string")]),
-                        "description": .string("AX walk budget in milliseconds, checked between reads. Default 350 (200 with viewport_only), clamped 1-5000. One in-flight AX call can overrun it; timed_out/truncated report a cutoff.")
+                        "description": .string("AX walk budget in milliseconds, checked between reads. Default 5000 (500 with viewport_only), clamped 1-5000. One in-flight AX call can overrun it; timed_out/truncated report a cutoff.")
                     ]),
                     "node_cap": .object([
                         "type": .array([.string("integer"), .string("string")]),
-                        "description": .string("Maximum visited nodes. Default 1000, clamped 1-2000. node_cap_reached and truncated report a cutoff.")
+                        "description": .string("Maximum visited nodes. Default 2000 (element-cache capacity), clamped 1-2000. node_cap_reached and truncated report a cutoff.")
                     ]),
                     "max_depth": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Traversal depth limit. Default 24 (project-wide AX default), max 64.")]),
                     "fields": .object([
@@ -97,7 +97,7 @@ extension ToolRegistry {
         MCPToolDefinition(
             name: "query_elements",
             description: "Like find_elements, but role_regex / title_regex / value_regex are case-insensitive regular expressions (e.g. title_regex \"^Save$\" for an exact label, \"Save|Opslaan\" for alternatives). Invalid regex falls back to case-insensitive substring. Returns element ids. "
-                + "Anchored literal equality patterns (e.g. ^Save$) use breadth-first order and stop once limit equally best matches are found; other regexes retain depth-first order. Bounded by node_cap (default 500, max 2000) and time_budget_ms (default 250, max 5000); node_cap_reached or timed_out sets truncated=true. A sparse query can reach either budget before limit. timings_ms reports queue, preparation, AX fetch, walk and payload/cache costs. Prefer find_elements for plain substring matches. " + axPayloadBudgetDoc,
+                + "Anchored literal equality patterns (e.g. ^Save$) use breadth-first order and stop once limit equally best matches are found; other regexes retain depth-first order. Bounded by node_cap (default 2000, max 10000; only matches consume cache entries) and time_budget_ms (default 1000, max 5000); node_cap_reached or timed_out sets truncated=true. A sparse query can reach either budget before limit. timings_ms reports queue, preparation, AX fetch, walk and payload/cache costs. Prefer find_elements for plain substring matches. " + axPayloadBudgetDoc,
             inputSchema: schema(
                 properties: [
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
@@ -110,11 +110,11 @@ extension ToolRegistry {
                     ]),
                     "time_budget_ms": .object([
                         "type": .array([.string("integer"), .string("string")]),
-                        "description": .string("AX walk budget in milliseconds, checked between reads. Default 250, clamped 1-5000. One in-flight AX call can overrun it; timed_out/truncated report a cutoff.")
+                        "description": .string("AX walk budget in milliseconds, checked between reads. Default 1000, clamped 1-5000. One in-flight AX call can overrun it; timed_out/truncated report a cutoff.")
                     ]),
                     "node_cap": .object([
                         "type": .array([.string("integer"), .string("string")]),
-                        "description": .string("Maximum visited nodes. Default 500, clamped 1-2000. node_cap_reached and truncated report a cutoff.")
+                        "description": .string("Maximum visited nodes, independent of the match cache. Default 2000, clamped 1-10000. node_cap_reached and truncated report a cutoff.")
                     ]),
                     "max_depth": .object(["type": .array([.string("integer"), .string("string")]), "description": .string("Traversal depth limit. Default 24 (project-wide AX default), max 64.")]),
                     "limit": .object(["type": .array([.string("integer"), .string("string")])]),
@@ -294,13 +294,13 @@ extension ToolRegistry {
         }
         if let dead = noSuchProcessResult(pid: pid, tool: "get_ui_tree") { return dead }
         let maxDepth = AXDepth.resolve(arguments["max_depth"]?.intValue)
-        // v0.10 B1/B3: excluding cheap menu nodes otherwise spends the
-        // entire old 2000-node allowance on costly offscreen list rows.
-        // Bound the default; explicit node_cap still reaches cache capacity.
-        let nodeCap = max(1, min(arguments["node_cap"]?.intValue ?? 1000, elementCache.maxEntries))
+        // v0.10 B1/B3: every emitted tree node needs a live cache entry.
+        // Preserve that full allowance by default; smaller caps are opt-in,
+        // otherwise a cheaper response silently loses accessible content.
+        let nodeCap = max(1, min(arguments["node_cap"]?.intValue ?? elementCache.maxEntries, elementCache.maxEntries))
         let budget = PayloadOptions(arguments, known: AXPayload.treeFields)
         let includeMenus = AXPayload.flag(arguments["include_menus"])
-        let timeBudget = AXPayload.walkBudget(arguments, defaultMS: budget.viewportOnly ? 200 : 350)
+        let timeBudget = AXPayload.walkBudget(arguments, defaultMS: budget.viewportOnly ? 500 : 5000)
         let windowsStarted = ProcessInfo.processInfo.systemUptime
         let windows = budget.viewportOnly ? await accessibility.windowFrames(pid: pid) : []
         let windowsMS = (ProcessInfo.processInfo.systemUptime - windowsStarted) * 1000
@@ -439,8 +439,9 @@ extension ToolRegistry {
         let budget = PayloadOptions(arguments, known: AXPayload.elementFields)
 
         let includeMenus = AXPayload.flag(arguments["include_menus"])
-        let nodeCap = max(1, min(arguments["node_cap"]?.intValue ?? 500, elementCache.maxEntries))
-        let timeBudget = AXPayload.walkBudget(arguments, defaultMS: 250)
+        // v0.10 B3: only matches consume cache entries, not visited nodes.
+        let nodeCap = max(1, min(arguments["node_cap"]?.intValue ?? 2000, 10_000))
+        let timeBudget = AXPayload.walkBudget(arguments, defaultMS: 1000)
         let windowsStarted = ProcessInfo.processInfo.systemUptime
         let windows = budget.viewportOnly ? await accessibility.windowFrames(pid: pid) : []
         let windowsMS = (ProcessInfo.processInfo.systemUptime - windowsStarted) * 1000

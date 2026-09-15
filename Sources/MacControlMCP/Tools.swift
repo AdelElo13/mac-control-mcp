@@ -511,9 +511,10 @@ final class ToolRegistry: @unchecked Sendable {
         let maxDepth = AXDepth.resolve(arguments["max_depth"]?.intValue)
         let budget = PayloadOptions(arguments, known: AXPayload.elementFields)
         let includeMenus = AXPayload.flag(arguments["include_menus"])
-        let nodeCap = max(1, min(arguments["node_cap"]?.intValue ?? 500, elementCache.maxEntries))
+        // v0.10 B3: listing visits do not consume element-cache entries.
+        let nodeCap = max(1, min(arguments["node_cap"]?.intValue ?? 2000, 10_000))
         let pruneOffscreen = !AXPayload.flag(arguments["include_offscreen"]) || budget.viewportOnly
-        let timeBudget = AXPayload.walkBudget(arguments, defaultMS: 250)
+        let timeBudget = AXPayload.walkBudget(arguments, defaultMS: 1000)
         let windowsStarted = ProcessInfo.processInfo.systemUptime
         let windows = pruneOffscreen ? await accessibility.windowFrames(pid: pid) : []
         let windowsMS = (ProcessInfo.processInfo.systemUptime - windowsStarted) * 1000
@@ -1092,7 +1093,7 @@ final class ToolRegistry: @unchecked Sendable {
         MCPToolDefinition(
             name: "list_elements",
             description: "Survey the ACTIONABLE controls of an app (fixed role whitelist: buttons, links, text fields/areas, checkboxes, radio buttons, pop-up/menu buttons, sliders, switches, steppers… — no containers, rows or static text) down to max_depth (default 24). "
-                + "Off-window subtrees are pruned by default; include_offscreen:true restores them (explicit viewport_only:true still filters). Zero-size/unknown containers are explored. Bounded by node_cap (default 500, max 2000) and time_budget_ms (default 250, max 5000); node_cap_reached or timed_out sets truncated=true. timings_ms separates queue, preparation, AX fetch, walk and payload costs. No text filters and no element ids. Use it to answer \"what can I interact with here?\"; use find_elements / query_elements to target specific elements and get ids for follow-up calls, and get_ui_tree for the full structure including containers. " + axPayloadBudgetDoc,
+                + "Off-window subtrees are pruned by default; include_offscreen:true restores them (explicit viewport_only:true still filters). Zero-size/unknown containers are explored. Bounded by node_cap (default 2000, max 10000, independent of the element cache) and time_budget_ms (default 1000, max 5000); node_cap_reached or timed_out sets truncated=true. timings_ms separates queue, preparation, AX fetch, walk and payload costs. No text filters and no element ids. Use it to answer \"what can I interact with here?\"; use find_elements / query_elements to target specific elements and get ids for follow-up calls, and get_ui_tree for the full structure including containers. " + axPayloadBudgetDoc,
             inputSchema: schema(
                 properties: [
                     "pid": .object([
@@ -1109,11 +1110,11 @@ final class ToolRegistry: @unchecked Sendable {
                     ]),
                     "time_budget_ms": .object([
                         "type": .array([.string("integer"), .string("string")]),
-                        "description": .string("AX walk budget in milliseconds, checked between reads. Default 250, clamped 1-5000. One in-flight AX call can overrun it; timed_out/truncated report a cutoff.")
+                        "description": .string("AX walk budget in milliseconds, checked between reads. Default 1000, clamped 1-5000. One in-flight AX call can overrun it; timed_out/truncated report a cutoff.")
                     ]),
                     "node_cap": .object([
                         "type": .array([.string("integer"), .string("string")]),
-                        "description": .string("Maximum visited nodes. Default 500, clamped 1-2000. node_cap_reached and truncated report a cutoff.")
+                        "description": .string("Maximum visited nodes, independent of the element cache. Default 2000, clamped 1-10000. node_cap_reached and truncated report a cutoff.")
                     ]),
                     "max_depth": .object([
                         "type": .array([.string("integer"), .string("string")]),
@@ -1142,7 +1143,7 @@ final class ToolRegistry: @unchecked Sendable {
         ),
         MCPToolDefinition(
             name: "find_element",
-            description: "Return the first exact label in one breadth-first search (shallow before deep, original sibling order); if no exact label exists, return the first substring match within max_depth (default 24, 5 s budget) whose role contains `role` and whose title contains `title` — case-insensitive SUBSTRING by default; title matches AXTitle → AXDescription → AXIdentifier and falls back to AXValue. "
+            description: "Return the first exact label in one breadth-first search (shallow before deep, original sibling order); if no exact label exists, return the first substring match within max_depth (default 24, 5 s budget). Once a substring fallback is found, at most 100 ms remains to find an exact label; truncated=true reports that deadline cutoff whose role contains `role` and whose title contains `title` — case-insensitive SUBSTRING by default; title matches AXTitle → AXDescription → AXIdentifier and falls back to AXValue. "
                 + "WARNING: substring matching on role is wider than it looks — role \"Button\" also matches AXRadioButton, AXMenuButton and AXPopUpButton (a Safari tab was returned for role=Button title=Sign). Pass exact:true for equality matching when you know the exact role/title. "
                 + "This shallow-first order may select a shallow match after a sibling whose matching descendant is deeper than 8. AXMenuBar subtrees are excluded by default (menus_excluded=true); include_menus:true restores them. Returns role/title/value/position/size plus a content-addressed element_id usable with perform_element_action / get_element_attributes / set_element_attribute. "
                 + "Use find_elements when you need every match; query_elements for regex (e.g. ^Save$); list_elements to survey controls; get_ui_tree for full structure.",

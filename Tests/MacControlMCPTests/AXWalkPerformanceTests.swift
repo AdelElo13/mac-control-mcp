@@ -8,17 +8,25 @@ import CoreGraphics
 @Suite("AX walk performance regressions", .serialized)
 struct AXWalkPerformanceTests {
     final class Fixture: @unchecked Sendable {
-        let pid = getpid()
+        let pid: pid_t
+
+        init(pid: pid_t = getpid()) { self.pid = pid }
         let lock = NSLock()
         var values: [pid_t: AXAttributeBatch.Values] = [:]
         var reads: [pid_t] = []
         var readDelay: TimeInterval = 0
         let window = CGRect(x: 0, y: 0, width: 800, height: 600)
 
+        // v0.10 B7: logical root 0 cannot be overwritten when the real
+        // process PID happens to fall inside a synthetic child-ID range.
+        func element(_ id: pid_t) -> AXUIElement {
+            AXUIElementCreateApplication(id == 0 ? pid : pid + id + 1)
+        }
+
         func node(_ id: pid_t, _ role: String, _ title: String = "", frame: CGRect? = nil, children: [pid_t] = []) {
             values[id] = .init(role: role, title: title, identifier: nil, subrole: nil, value: nil,
                                position: frame?.origin, size: frame?.size,
-                               children: children.map { AXUIElementCreateApplication($0) })
+                               children: children.map(element))
         }
 
         func controller() -> AccessibilityController {
@@ -26,6 +34,7 @@ struct AXWalkPerformanceTests {
                 if self.readDelay > 0 { Thread.sleep(forTimeInterval: self.readDelay) }
                 var id: pid_t = 0
                 AXUIElementGetPid(element, &id)
+                id = id == self.pid ? 0 : id - self.pid - 1
                 self.lock.lock()
                 self.reads.append(id)
                 let v = self.values[id]!
@@ -45,7 +54,7 @@ struct AXWalkPerformanceTests {
     @Test("A4 filters hidden rows before counting the match limit")
     func filterBeforeLimit() async {
         let f = Fixture()
-        f.node(f.pid, "AXApplication", children: [101, 102])
+        f.node(0, "AXApplication", children: [101, 102])
         f.node(101, "AXRow", "hidden", frame: CGRect(x: 900, y: 900, width: 20, height: 20))
         f.node(102, "AXRow", "visible", frame: CGRect(x: 10, y: 10, width: 20, height: 20))
         let result = await f.call("find_elements", ["role": .string("AXRow"), "viewport_only": .bool(true), "limit": .number(1)])
@@ -56,7 +65,7 @@ struct AXWalkPerformanceTests {
     @Test("A4 filters noninteractive matches before counting the limit")
     func interactiveBeforeLimit() async {
         let f = Fixture()
-        f.node(f.pid, "AXApplication", children: [101, 102])
+        f.node(0, "AXApplication", children: [101, 102])
         f.node(101, "AXStaticText", "label")
         f.node(102, "AXButton", "button")
         let result = await f.call("find_elements", ["interactive_only": .bool(true), "limit": .number(1)])
@@ -67,7 +76,7 @@ struct AXWalkPerformanceTests {
     @Test("B1 skips off-window descendants but descends through zero-size groups")
     func viewportPruning() async {
         let f = Fixture()
-        f.node(f.pid, "AXApplication", children: [101, 103])
+        f.node(0, "AXApplication", children: [101, 103])
         f.node(101, "AXGroup", frame: CGRect(x: 900, y: 900, width: 20, height: 20), children: [102])
         f.node(102, "AXButton", "offscreen", frame: CGRect(x: 900, y: 900, width: 10, height: 10))
         f.node(103, "AXGroup", frame: .zero, children: [104])
@@ -81,7 +90,7 @@ struct AXWalkPerformanceTests {
     @Test("B3 excludes menu descendants by default and opt-in restores them", arguments: ["get_ui_tree", "find_elements", "find_element", "query_elements", "list_elements"])
     func menus(_ tool: String) async {
         let f = Fixture()
-        f.node(f.pid, "AXApplication", children: [101, 103])
+        f.node(0, "AXApplication", children: [101, 103])
         f.node(101, "AXMenuBar", children: [102])
         f.node(102, "AXButton", "menu")
         f.node(103, "AXButton", "window")
@@ -101,21 +110,21 @@ struct AXWalkPerformanceTests {
     @Test("B4 finds a shallow match before an earlier deep match and falls back when needed")
     func shallowFirst() async throws {
         let f = Fixture()
-        f.node(f.pid, "AXApplication", children: [101, 120])
+        f.node(0, "AXApplication", children: [101, 120])
         for id: pid_t in 101...109 { f.node(id, "AXGroup", children: [id + 1]) }
         f.node(110, "AXButton", "Search deep")
         f.node(120, "AXButton", "Search shallow")
         let controller = f.controller()
         let hit = try #require(await controller.findElementWithPath(pid: f.pid, role: "AXButton", title: "Search", includeMenus: false, shallowFirst: true))
-        #expect(CFEqual(hit.element, AXUIElementCreateApplication(120)))
+        #expect(CFEqual(hit.element, f.element(120)))
         let deep = try #require(await controller.findElementWithPath(pid: f.pid, role: "AXButton", title: "Search deep", includeMenus: false, shallowFirst: true))
-        #expect(CFEqual(deep.element, AXUIElementCreateApplication(110)))
+        #expect(CFEqual(deep.element, f.element(110)))
     }
 
     @Test("B3 query and list stop at the requested node cap", arguments: ["query_elements", "list_elements"])
     func nodeCap(_ tool: String) async {
         let f = Fixture()
-        f.node(f.pid, "AXApplication", children: [101, 102])
+        f.node(0, "AXApplication", children: [101, 102])
         f.node(101, "AXButton", "first")
         f.node(102, "AXButton", "second")
         let result = await f.call(tool, ["node_cap": .number(2), "role_regex": .string("AXButton")])
@@ -169,7 +178,7 @@ struct AXWalkPerformanceTests {
     @Test("B4 grounding prefers shallow candidates and continues after unusable shallow hits")
     func groundShallowFirst() async {
         let f = Fixture()
-        f.node(f.pid, "AXApplication", children: [101, 120])
+        f.node(0, "AXApplication", children: [101, 120])
         for id: pid_t in 101...109 { f.node(id, "AXGroup", children: [id + 1]) }
         f.node(110, "AXButton", "Search deep", frame: CGRect(x: 10, y: 10, width: 20, height: 20))
         f.node(120, "AXButton", "Search", frame: CGRect(x: 40, y: 10, width: 20, height: 20))
@@ -201,10 +210,22 @@ struct AXWalkPerformanceTests {
         #expect(overlap.peak == 2)
     }
 
+    @Test("B7 fixture application identity cannot collide with child identifiers")
+    func fixturePIDCollision() async {
+        let f = Fixture(pid: 1500)
+        f.node(0, "AXApplication", children: Array(101...2201))
+        for id: pid_t in 101...2200 { f.node(id, "AXGroup") }
+        f.node(2201, "AXButton", "late")
+        let result = await f.controller().search(pid: f.pid, predicate: { $0.title == "late" })
+        #expect(result.matches.count == 1)
+        #expect(result.nodesVisited == 2102)
+        print("[B7 fixture PID=1500] nodes_visited=\(result.nodesVisited) matches=\(result.matches.count)")
+    }
+
     @Test("B3 retains the uncapped search space for a target beyond 2000 nodes")
     func lateSearchMatch() async throws {
         let f = Fixture()
-        f.node(f.pid, "AXApplication", children: Array(101...2201))
+        f.node(0, "AXApplication", children: Array(101...2201))
         for id: pid_t in 101...2200 { f.node(id, "AXGroup") }
         f.node(2201, "AXButton", "late")
         let c = f.controller()
@@ -217,7 +238,7 @@ struct AXWalkPerformanceTests {
     @Test("B3 read-tool defaults must not make legacy wait/scroll helpers lose menus")
     func legacyHelperMenus() async {
         let f = Fixture()
-        f.node(f.pid, "AXApplication", children: [101])
+        f.node(0, "AXApplication", children: [101])
         f.node(101, "AXMenuBar", children: [102])
         f.node(102, "AXMenuItem", "Open")
         let hit = await f.controller().findElementWithPath(pid: f.pid, role: "AXMenuItem", title: "Open")
@@ -240,7 +261,7 @@ struct AXWalkPerformanceTests {
     @Test("B2 clipped annotation preserves the ordered visible elements and path ids")
     func annotationIdentity() async {
         let f = Fixture()
-        f.node(f.pid, "AXApplication", children: [101, 110])
+        f.node(0, "AXApplication", children: [101, 110])
         f.node(101, "AXGroup", frame: CGRect(x: 900, y: 900, width: 30, height: 30), children: [102])
         f.node(102, "AXButton", "hidden", frame: CGRect(x: 901, y: 901, width: 20, height: 20))
         f.node(110, "AXGroup", frame: .zero, children: [111, 112])
@@ -292,7 +313,7 @@ struct AXWalkPerformanceTests {
     @Test("B3 grounding excludes menus by default and restores them on opt-in")
     func groundingMenus() async {
         let f = Fixture()
-        f.node(f.pid, "AXApplication", children: [101, 103])
+        f.node(0, "AXApplication", children: [101, 103])
         f.node(101, "AXMenuBar", children: [102])
         f.node(102, "AXButton", "Search menu", frame: CGRect(x: 10, y: 10, width: 20, height: 20))
         f.node(103, "AXButton", "Search window", frame: CGRect(x: 40, y: 10, width: 20, height: 20))
@@ -307,7 +328,7 @@ struct AXWalkPerformanceTests {
     @Test("B4 ground stops on an exact usable hit without reading the remaining subtree")
     func groundExactEarlyExit() async {
         let f = Fixture()
-        f.node(f.pid, "AXApplication", children: [101, 102, 103])
+        f.node(0, "AXApplication", children: [101, 102, 103])
         f.node(101, "AXButton", "Search", frame: .zero)
         f.node(102, "AXButton", "Search", frame: CGRect(x: 10, y: 10, width: 20, height: 20))
         f.node(103, "AXGroup", children: Array(200...1200))
@@ -325,7 +346,7 @@ struct AXWalkPerformanceTests {
     @Test("B4 find_element prefers a later exact label over shallow substring fallbacks")
     func findExactEarlyExit() async {
         let f = Fixture()
-        f.node(f.pid, "AXApplication", children: Array(101...123))
+        f.node(0, "AXApplication", children: Array(101...123))
         for id: pid_t in 101...121 { f.node(id, "AXButton", "Search nearby") }
         f.node(122, "AXButton", "Search")
         f.node(123, "AXButton", "Search later")
@@ -339,7 +360,7 @@ struct AXWalkPerformanceTests {
     @Test("B4 BFS reaches a depth-12 match without visiting the wide earlier sibling's children")
     func breadthFirstDeepMatch() async throws {
         let f = Fixture()
-        f.node(f.pid, "AXApplication", children: [101])
+        f.node(0, "AXApplication", children: [101])
         for id: pid_t in 101...110 { f.node(id, "AXGroup", children: [id + 1]) }
         f.node(111, "AXGroup", children: [112, 113])
         f.node(112, "AXGroup", children: Array(200...1200))
@@ -355,29 +376,82 @@ struct AXWalkPerformanceTests {
         #expect(!f.reads.contains(200))
     }
 
-    @Test("B1/B3 read defaults bound expensive rows and expose phase measurements")
+    @Test("B1/B3 read defaults preserve the 2000-node search allowance")
     func boundedReadDefaults() async {
         let f = Fixture()
-        f.node(f.pid, "AXApplication", children: Array(101...2200))
+        f.node(0, "AXApplication", children: Array(101...2200))
         for id: pid_t in 101...2200 { f.node(id, "AXRow") }
         for tool in ["get_ui_tree", "query_elements", "list_elements"] {
             let result = await f.call(tool, tool == "query_elements" ? ["title_regex": .string("^missing$")] : [:])
             #expect(result["truncated"]?.boolValue == true)
-            #expect((result["nodes_visited"]?.intValue ?? .max) <= (tool == "get_ui_tree" ? 1000 : 500))
+            #expect(result["nodes_visited"]?.intValue == 2000)
+            #expect(result["time_budget_ms"]?.intValue == (tool == "get_ui_tree" ? 5000 : 1000))
             print("[B1/B3 bounded] \(tool) nodes_visited=\(result["nodes_visited"]?.intValue ?? -1) truncated=\(result["truncated"]?.boolValue ?? false)")
             let phases = result["timings_ms"]?.objectValue
             #expect(phases?["queue"] != nil)
             #expect(phases?["ax_fetch"] != nil)
             #expect(phases?["walk"] != nil)
         }
-        let expanded = await f.call("get_ui_tree", ["node_cap": .number(2000)])
-        #expect(expanded["nodes_visited"]?.intValue == 2000)
+        let smaller = await f.call("get_ui_tree", ["node_cap": .number(500)])
+        #expect(smaller["nodes_visited"]?.intValue == 500)
+    }
+
+    @Test("B1/B3 defaults retain a complete 1522-node visible tree and its sidebar controls")
+    func completeVisibleDefaults() async {
+        let f = Fixture()
+        f.node(0, "AXApplication", children: Array(101...1621))
+        for id: pid_t in 101...1621 {
+            f.node(id, id < 1322 ? "AXRow" : "AXButton", (1322...1325).contains(id) ? "Eject" : "item",
+                   frame: CGRect(x: 10, y: 10, width: 20, height: 20))
+        }
+        let tree = await f.call("get_ui_tree", ["viewport_only": .bool(true)])
+        #expect(tree["count"]?.intValue == 1522)
+        #expect(tree["truncated"]?.boolValue == false)
+        #expect((tree["time_budget_ms"]?.intValue ?? 0) >= 500)
+        let query = await f.call("query_elements", ["title_regex": .string("^Eject$")])
+        #expect(query["count"]?.intValue == 4)
+        #expect(query["truncated"]?.boolValue == false)
+        let list = await f.call("list_elements")
+        #expect(list["count"]?.intValue == 300)
+        #expect(list["truncated"]?.boolValue == false)
+        print("[B1/B3 capability] visible=\(tree["count"]?.intValue ?? -1) Eject=\(query["count"]?.intValue ?? -1) controls=\(list["count"]?.intValue ?? -1)")
+    }
+
+    @Test("B3 query/list can search beyond cache capacity while caching only matches")
+    func searchCeilingIndependentOfCache() async {
+        let f = Fixture()
+        f.node(0, "AXApplication", children: Array(101...2601))
+        for id: pid_t in 101...2600 { f.node(id, "AXGroup") }
+        f.node(2601, "AXButton", "Eject")
+        for tool in ["query_elements", "list_elements"] {
+            for cap in [3000, 99_999] {
+                let result = await f.call(tool, ["node_cap": .number(Double(cap)), "title_regex": .string("^Eject$")])
+                #expect(result["count"]?.intValue == 1)
+                #expect(result["nodes_visited"]?.intValue == 2502)
+                #expect(result["node_cap"]?.intValue == min(cap, 10_000))
+                #expect(result["truncated"]?.boolValue == false)
+            }
+        }
+    }
+
+    @Test("B4 substring fallback bounds the remaining search for an exact label")
+    func substringFallbackBudget() async {
+        let f = Fixture()
+        f.readDelay = 0.002
+        f.node(0, "AXApplication", children: Array(101...300))
+        f.node(101, "AXButton", "Search")
+        for id: pid_t in 102...300 { f.node(id, "AXGroup") }
+        let result = await f.call("find_element", ["title": .string("Sear")])
+        #expect(result["element"]?.objectValue?["title"]?.stringValue == "Search")
+        #expect((result["nodes_visited"]?.intValue ?? .max) < 75)
+        #expect(result["truncated"]?.boolValue == true)
+        print("[B4 substring] nodes_visited=\(result["nodes_visited"]?.intValue ?? -1) walk_ms=\(result["timings_ms"]?.objectValue?["walk"]?.doubleValue ?? -1)")
     }
 
     @Test("B3 list prunes offscreen descendants by default and permits explicit inclusion")
     func listDefaultViewport() async {
         let f = Fixture()
-        f.node(f.pid, "AXApplication", children: [101, 103])
+        f.node(0, "AXApplication", children: [101, 103])
         f.node(101, "AXGroup", frame: CGRect(x: 900, y: 900, width: 20, height: 20), children: [102])
         f.node(102, "AXButton", "hidden", frame: CGRect(x: 901, y: 901, width: 10, height: 10))
         f.node(103, "AXButton", "visible", frame: CGRect(x: 10, y: 10, width: 10, height: 10))
@@ -394,7 +468,7 @@ struct AXWalkPerformanceTests {
     @Test("B3 exact anchored query stops at limit before a wide early subtree")
     func anchoredQueryEarlyExit() async {
         let f = Fixture()
-        f.node(f.pid, "AXApplication", children: [101, 102])
+        f.node(0, "AXApplication", children: [101, 102])
         f.node(101, "AXGroup", children: Array(200...1200))
         f.node(102, "AXButton", "Eject")
         for id: pid_t in 200...1200 { f.node(id, "AXStaticText") }
@@ -409,7 +483,7 @@ struct AXWalkPerformanceTests {
     func elapsedReadBudget() async {
         let f = Fixture()
         f.readDelay = 0.002
-        f.node(f.pid, "AXApplication", children: Array(101...200))
+        f.node(0, "AXApplication", children: Array(101...200))
         for id: pid_t in 101...200 { f.node(id, "AXButton") }
         for tool in ["get_ui_tree", "query_elements", "list_elements"] {
             let result = await f.call(tool, ["time_budget_ms": .number(20)])
@@ -477,7 +551,7 @@ struct AXWalkPerformanceTests {
             return .init(role: id == pid ? "AXApplication" : "AXButton", title: nil,
                          identifier: nil, subrole: nil, value: nil,
                          position: CGPoint(x: 10, y: 10), size: CGSize(width: 10, height: 10),
-                         children: id == pid && children ? (101...150).map { AXUIElementCreateApplication($0) } : [])
+                         children: id == pid && children ? (1...50).map { AXUIElementCreateApplication(pid + $0) } : [])
         }, prepareAccessibility: { _ in })
         let start = ProcessInfo.processInfo.systemUptime
         let first = await c.treeWalkResult(pid: pid, maxDepth: 24)

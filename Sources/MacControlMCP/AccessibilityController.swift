@@ -718,9 +718,10 @@ actor AccessibilityController {
                                                parentPath: root.path, parentIndex: nil)]
         var head = 0
         var fetchMS = 0.0
+        var effectiveDeadline = deadline
         while breadthFirst ? head < pending.count : !pending.isEmpty {
             if result.matches.count >= limit && stopOnBest == nil { break }
-            guard ProcessInfo.processInfo.systemUptime < deadline else { result.timedOut = true; break }
+            guard ProcessInfo.processInfo.systemUptime < effectiveDeadline else { result.timedOut = true; break }
             guard visited.count < nodeCap else { result.nodeCapReached = true; break }
             let offset = breadthFirst ? head : pending.count - 1
             let siblings = pending[offset]!
@@ -757,7 +758,15 @@ actor AccessibilityController {
                     result.matches = [match]
                     break
                 }
-                if result.matches.count < limit { result.matches.append(match) }
+                if result.matches.count < limit {
+                    result.matches.append(match)
+                    // v0.10 B4: once enough usable fallbacks are held, an
+                    // absent exact label must not force another full-tree walk.
+                    // Tighten once; later substring hits cannot renew the budget.
+                    if stopOnBest != nil && result.matches.count == limit {
+                        effectiveDeadline = min(effectiveDeadline, ProcessInfo.processInfo.systemUptime + 0.1)
+                    }
+                }
             }
             let index = result.nodes.count
             if collectNodes {
@@ -845,9 +854,9 @@ actor AccessibilityController {
     /// `invalidPatterns` in the result says exactly when that happened.
     func queryElements(
         pid: pid_t, rolePattern: String?, titlePattern: String?, valuePattern: String?,
-        maxDepth: Int = AXDepth.default, limit: Int = 200, nodeCap: Int = 500,
+        maxDepth: Int = AXDepth.default, limit: Int = 200, nodeCap: Int = 2000,
         includeMenus: Bool = false, clipRects: [CGRect] = [],
-        viewportOnly: Bool = false, interactiveOnly: Bool = false, timeBudget: TimeInterval = 0.25
+        viewportOnly: Bool = false, interactiveOnly: Bool = false, timeBudget: TimeInterval = 1
     ) async -> (matches: [Match], invalidPatterns: [InvalidPattern], walk: WalkResult) {
         var invalidPatterns: [InvalidPattern] = []
         let roleRegex = Self.compileRegex(rolePattern, field: "role_regex", invalid: &invalidPatterns)
