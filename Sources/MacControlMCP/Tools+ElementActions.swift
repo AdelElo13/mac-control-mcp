@@ -9,6 +9,14 @@ extension ToolRegistry {
         let id: String
         let element: AXUIElement
         let pid: pid_t
+        let identity: ProcessIdentity
+
+        init(id: String, element: AXUIElement, pid: pid_t) {
+            self.id = id
+            self.element = element
+            self.pid = pid
+            self.identity = ProcessIdentity.current(pid: pid)
+        }
     }
 
     enum ActionResolution {
@@ -28,6 +36,12 @@ extension ToolRegistry {
         case .unknown: return .failed(unknownElementResult(id))
         case .stale(let reason): return .failed(staleElementResult(id, reason: reason))
         case .resolved(let element):
+            // v0.10 C1: until the shared cache's A1 repair lands, never act
+            // on an alive positional AX handle whose fingerprint changed.
+            if let last = await elementCache.path(for: id)?.last,
+               !AXPath.fingerprint(of: element).matches(last) {
+                return .failed(staleElementResult(id, reason: "the live element fingerprint no longer matches the recorded target"))
+            }
             guard let pid = await elementCache.pid(for: id) else {
                 return .failed(unknownElementResult(id))
             }
@@ -86,8 +100,8 @@ extension ToolRegistry {
     }
 
     func checkActionOwner(_ target: ActionTarget, arguments: [String: JSONValue]) async -> ToolCallResult? {
-        if let mismatch = await checkFocusGuard(arguments) { return mismatch }
         let actual = await FocusGuard.currentFocus()
+        if let mismatch = await checkFocusGuard(arguments, actual: actual) { return mismatch }
         guard actual.pid == target.pid else {
             return actionFailure("focus_mismatch", "The element's owning app is not frontmost; no input was sent.")
         }
@@ -122,6 +136,11 @@ extension ToolRegistry {
         }
         switch await elementCache.resolveLive(target.id) {
         case .resolved(let element):
+            if let last = await elementCache.path(for: target.id)?.last,
+               !AXPath.fingerprint(of: element).matches(last) {
+                payload["verification"] = .string("stale_element_fingerprint_mismatch")
+                return payload
+            }
             let after = actionSnapshot(ActionTarget(id: target.id, element: element, pid: target.pid))
             payload["after"] = .object(after)
             let changed = ["value", "focused"].first { before[$0] != .null && after[$0] != .null && before[$0] != after[$0] }
@@ -129,7 +148,7 @@ extension ToolRegistry {
             payload["verification"] = .string(changed.map { "\($0)_changed" } ?? "element_still_resolves_effect_unobserved")
         case .stale(let reason):
             // v0.10 C1: an identity mismatch is not evidence of disappearance.
-            let gone = Self.actionDefinitelyGone(target.element)
+            let gone = Self.actionDefinitelyGone(target)
             payload["verified"] = gone ? .bool(true) : .null
             payload["verification"] = .string(gone ? "element_disappeared" : "stale_element: \(reason)")
         case .unknown:
@@ -138,9 +157,12 @@ extension ToolRegistry {
         return payload
     }
 
-    static func actionDefinitelyGone(_ element: AXUIElement) -> Bool {
+    static func actionDefinitelyGone(_ target: ActionTarget) -> Bool {
+        // v0.10 C1/C3: process replacement is stale identity, not proof of
+        // disappearance. Do not turn a recycled pid into successful verification.
+        guard target.identity.matches(ProcessIdentity.current(pid: target.pid)) else { return false }
         var value: CFTypeRef?
-        return AXUIElementCopyAttributeValue(element, "AXRole" as CFString, &value) == .invalidUIElement
+        return AXUIElementCopyAttributeValue(target.element, "AXRole" as CFString, &value) == .invalidUIElement
     }
 
     func callElementMouse(_ name: String, _ arguments: [String: JSONValue]) async -> ToolCallResult {
@@ -164,6 +186,10 @@ extension ToolRegistry {
         }
         if name == "scroll", (arguments["delta_x"]?.intValue ?? 0) == 0, (arguments["delta_y"]?.intValue ?? 0) == 0 {
             return actionFailure("invalid_argument", "scroll requires non-zero delta_x or delta_y.")
+        }
+        if ["click", "press", "double_click", "right_click"].contains(name),
+           Self.actionBool(observed.element, "AXEnabled") == false {
+            return actionFailure("element_disabled", "The target element is disabled; no input was sent.")
         }
         let before = actionSnapshot(observed)
         for target in [source, destination].compactMap({ $0 }) {
@@ -219,18 +245,16 @@ extension ToolRegistry {
     }
 
     func focusActionTarget(_ target: ActionTarget, arguments: [String: JSONValue]) async -> ToolCallResult {
-        guard !Self.actionIsSecure(target.element) else {
-            return actionFailure("not_supported", "secure_field: refusing to focus or type into a password field.")
-        }
-        if let mismatch = await checkActionOwner(target, arguments: arguments) { return mismatch }
-        let result = await callSetElementAttribute([
-            "element_id": .string(target.id), "name": .string("AXFocused"), "value": .bool(true)
-        ])
-        guard !result.isError else { return result }
-        guard Self.actionBool(target.element, "AXFocused") == true else {
-            return actionFailure("focus_not_verified", "AXFocused did not read back as true; no typing was attempted.")
-        }
-        return successResult("Element focus verified.", ["ok": .bool(true), "verified": .bool(true), "element_id": .string(target.id)])
+        await ElementInput.focusAndRun(secure: Self.actionIsSecure(target.element), focus: {
+            if let mismatch = await self.checkActionOwner(target, arguments: arguments) { return mismatch }
+            return await self.callSetElementAttribute([
+                "element_id": .string(target.id), "name": .string("AXFocused"), "value": .bool(true)
+            ])
+        }, isFocused: {
+            Self.actionBool(target.element, "AXFocused")
+        }, input: {
+            self.successResult("Element focus verified.", ["ok": .bool(true), "verified": .bool(true), "element_id": .string(target.id)])
+        })
     }
 
     func callTargetedType(_ arguments: [String: JSONValue]) async -> ToolCallResult {

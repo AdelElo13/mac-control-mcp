@@ -45,9 +45,9 @@ struct Phase5ToolsTests {
         //                          text_set_selection, text_insert_at_caret,
         //                          text_replace_range, text_get_value —
         //                          gap audit C-7 / B-15)                  → 151
-        // Verified against the merged registry: COUNT 151.
+        // v0.10 C3/C8 adds wait_for and act: 153 tools.
         let registry = ToolRegistry(accessibility: AccessibilityController())
-        #expect(registry.toolDefinitions.count == 151)
+        #expect(registry.toolDefinitions.count == 153)
     }
 
     @Test("set_volume requires volume argument")

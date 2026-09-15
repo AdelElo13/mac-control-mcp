@@ -17,10 +17,10 @@ import Foundation
 ///     UPDATE_TOOL_DOCS=1 swift test --filter ToolDocsDriftTests
 ///
 /// then re-run `swift test --filter ToolDocsDriftTests` (no env var) to
-/// confirm it's green, and commit the resulting docs/TOOLS.md + README.md
-/// diff.
-// .serialized: one of these tests (under UPDATE_TOOL_DOCS=1) writes
-// docs/TOOLS.md and README.md, and the others read them back. Swift
+/// confirm docs/TOOLS.md is current. Release metadata changes are separate;
+/// UPDATE_RELEASE_TOOL_DOCS=1 additionally updates the README markers.
+// .serialized: regeneration writes docs/TOOLS.md (and README.md only with
+// UPDATE_RELEASE_TOOL_DOCS=1), while other tests read them back. Swift
 // Testing runs tests within a suite in parallel by default, which raced
 // the README-marker check against the in-flight rewrite the first time
 // this was run — serialize so reads always see a finished write.
@@ -160,8 +160,8 @@ struct ToolDocsDriftTests {
         )
     }
 
-    /// Regenerates docs/TOOLS.md + the README markers when
-    /// `UPDATE_TOOL_DOCS=1` is set. Idempotent and cheap, so every test
+    /// Regenerates docs/TOOLS.md when `UPDATE_TOOL_DOCS=1` is set.
+    /// v0.10 S4 keeps README mutation behind UPDATE_RELEASE_TOOL_DOCS=1. Idempotent and cheap, so every test
     /// below calls this itself rather than relying on some *other* test
     /// in the suite to have run first (or run before it) — Swift Testing
     /// gives no ordering guarantee between `@Test` funcs in a suite, only
@@ -173,9 +173,13 @@ struct ToolDocsDriftTests {
         let rendered = Self.renderToolsDoc(definitions)
         try rendered.write(to: Self.toolsDocPath, atomically: true, encoding: .utf8)
 
-        let readme = try String(contentsOf: Self.readmePath, encoding: .utf8)
-        let updatedReadme = try Self.rewriteReadmeMarkers(readme, to: definitions.count)
-        try updatedReadme.write(to: Self.readmePath, atomically: true, encoding: .utf8)
+        // v0.10 S4: release metadata is owned by the release workstream.
+        // Regenerating tool schemas must not modify README.md implicitly.
+        if ProcessInfo.processInfo.environment["UPDATE_RELEASE_TOOL_DOCS"] == "1" {
+            let readme = try String(contentsOf: Self.readmePath, encoding: .utf8)
+            let updatedReadme = try Self.rewriteReadmeMarkers(readme, to: definitions.count)
+            try updatedReadme.write(to: Self.readmePath, atomically: true, encoding: .utf8)
+        }
     }
 
     // MARK: - Tests

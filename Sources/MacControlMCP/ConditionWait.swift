@@ -60,6 +60,7 @@ enum ConditionWait {
         }
         while true {
             if Task.isCancelled { return result(false, cancelled: true) }
+            if attempts > 0, ContinuousClock.now >= deadline { return result(false) }
             attempts += 1
             switch await sample() {
             case .failed(let failure): return result(false, failure)

@@ -2,6 +2,44 @@ import Foundation
 import ApplicationServices
 
 extension ToolRegistry {
+    // v0.10 C3: retain the legacy selectors, clamping and response shape,
+    // while sharing the actual polling loop with wait_for.
+    func callLegacyWait(_ arguments: [String: JSONValue], window: Bool) async -> ToolCallResult {
+        let name = window ? "wait_for_window" : "wait_for_element"
+        guard let pid = parsePID(arguments["pid"]) else {
+            return invalidArgument("\(name) requires a positive integer pid.")
+        }
+        let timeout = min(max(arguments["timeout_seconds"]?.doubleValue ?? 5, 0.1), 60)
+        let interval = min(max(arguments["poll_interval_ms"]?.intValue ?? (window ? 250 : 200), 50), 60_000)
+        let disappears = !window && arguments["expect_disappear"]?.boolValue == true
+        let outcome = await ConditionWait.poll(timeout: timeout, intervalMS: interval,
+                                              condition: disappears ? .disappears : .appears) {
+            if window {
+                let title = arguments["title_contains"]?.stringValue?.lowercased()
+                let list = await self.windows.listAppWindows(pid: pid)
+                guard let match = list.first(where: { title == nil || title!.isEmpty || $0.title.lowercased().contains(title!) }) else { return .states([]) }
+                return .states([["window": encodeAsJSONValue(match)]])
+            }
+            guard let hit = await self.accessibility.findElementWithPath(pid: pid, role: arguments["role"]?.stringValue, title: arguments["title"]?.stringValue) else { return .states([]) }
+            if disappears { return .states([[:]]) }
+            let info = await self.accessibility.getElementInfo(element: hit.element)
+            let id = await self.elementCache.store(hit.element, pid: pid, path: hit.path)
+            return .states([["element_id": .string(id), "role": info.role.map(JSONValue.string) ?? .null, "title": info.title.map(JSONValue.string) ?? .null]])
+        }
+        var payload: [String: JSONValue] = ["ok": .bool(outcome.matched)]
+        if !window { payload["attempts"] = .number(Double(outcome.attempts)) }
+        if outcome.cancelled { payload["cancelled"] = .bool(true) }
+        else if !outcome.matched { payload["timed_out"] = .bool(true) }
+        else if window {
+            payload["pid"] = .number(Double(pid)); payload["window"] = outcome.state?["window"]
+        } else if disappears { payload["disappeared"] = .bool(true) }
+        else { payload.merge(outcome.state ?? [:]) { _, new in new } }
+        let message = outcome.matched ? (window ? "Window appeared." : "Element \(disappears ? "disappeared" : "appeared") after \(outcome.attempts) attempt(s).")
+            : outcome.cancelled ? (window ? "Cancelled during poll." : "Cancelled after \(outcome.attempts) attempt(s).")
+            : "Timed out after \(timeout)s\(window ? "" : " (\(outcome.attempts) attempts)")."
+        return outcome.matched ? successResult(message, payload) : errorResult(message, payload)
+    }
+
     struct WaitRequest: Sendable {
         let condition: ConditionWait.Condition
         let timeout: Double
@@ -37,13 +75,19 @@ extension ToolRegistry {
         if let id = arguments["element_id"]?.stringValue {
             switch await elementCache.resolveLive(id) {
             case .resolved(let element):
+                if let last = await elementCache.path(for: id)?.last,
+                   !AXPath.fingerprint(of: element).matches(last) {
+                    return .failed(staleElementResult(id, reason: "the live element fingerprint changed"))
+                }
                 guard let pid = await elementCache.pid(for: id) else { return .failed(unknownElementResult(id)) }
                 return .states([actionSnapshot(ActionTarget(id: id, element: element, pid: pid))])
-            case .unknown: return .failed(unknownElementResult(id))
+            case .unknown:
+                if let original, Self.actionDefinitelyGone(original) { return .states([]) }
+                return .failed(unknownElementResult(id))
             case .stale(let reason):
                 // v0.10 C3: only confirmed invalid AX handles prove disappearance;
                 // an expired cache entry or identity mismatch must not pass a wait.
-                if let original, Self.actionDefinitelyGone(original.element) { return .states([]) }
+                if let original, Self.actionDefinitelyGone(original) { return .states([]) }
                 return .failed(staleElementResult(id, reason: reason))
             }
         }
@@ -51,10 +95,12 @@ extension ToolRegistry {
             guard let window = await windows.resolve(windowID: UInt32(raw)) else { return .states([]) }
             var payload = window.payload
             if let element = window.element {
-                payload["focused"] = Self.actionBool(element, "AXFocused").map(JSONValue.bool) ?? .null
+                let focusedWindow = Self.actionAttribute(AXUIElementCreateApplication(window.pid), "AXFocusedWindow")
+                if let focusedWindow, CFGetTypeID(focusedWindow) == AXUIElementGetTypeID() {
+                    payload["focused"] = .bool(CFEqual(element, focusedWindow))
+                } else { payload["focused"] = .null }
                 payload["enabled"] = Self.actionBool(element, "AXEnabled").map(JSONValue.bool) ?? .null
             }
-            payload["window"] = .object(window.payload)
             return .states([payload])
         }
         guard let pid = parsePID(arguments["pid"]) else {
@@ -72,12 +118,12 @@ extension ToolRegistry {
         return .states(states)
     }
 
-    func callWaitFor(_ arguments: [String: JSONValue]) async -> ToolCallResult {
+    func callWaitFor(_ arguments: [String: JSONValue], original: ActionTarget? = nil) async -> ToolCallResult {
         guard let request = parseWait(arguments), waitTargetIsValid(arguments) else {
             return actionFailure("invalid_argument", "wait_for needs one target, a valid condition and its value/title, timeout_seconds 0...60 and poll_interval_ms 50...60000.")
         }
-        var original: ActionTarget?
-        if arguments["element_id"] != nil {
+        var original = original
+        if original == nil, arguments["element_id"] != nil {
             switch await resolveActionTarget(arguments["element_id"]) {
             case .failed(let result): return result
             case .target(let target): original = target
@@ -102,6 +148,16 @@ extension ToolRegistry {
     }
 
     func callAct(_ arguments: [String: JSONValue]) async -> ToolCallResult {
+        let result = await executeAct(arguments)
+        // v0.10 C8: even resolution/validation failures answer whether input ran.
+        var payload: [String: JSONValue] = ["acted": .bool(false), "verified": .null,
+            "before": .null, "after": .null, "element": .null,
+            "verification": .string("action_not_started")]
+        payload.merge(result.structuredContent.objectValue ?? [:]) { _, actual in actual }
+        return ToolCallResult(text: result.text, structuredContent: .object(payload), isError: result.isError)
+    }
+
+    private func executeAct(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         guard let verify = arguments["verify"]?.objectValue, parseWait(verify) != nil else {
             return actionFailure("invalid_argument", "act requires a valid verify condition, its value/title and bounded timeout.")
         }
@@ -114,6 +170,24 @@ extension ToolRegistry {
         if action == "type", input["text"]?.stringValue == nil { return actionFailure("invalid_argument", "type requires text.") }
         if action == "set_value", input["value"] == nil || input["value"] == .null { return actionFailure("invalid_argument", "set_value requires value.") }
         if action == "key", input["key"]?.stringValue == nil { return actionFailure("invalid_argument", "key requires key.") }
+        // v0.10 C8: validate action data before even focus can be changed.
+        if action == "key" {
+            guard let key = input["key"]?.stringValue, KeyCodeMap.keyCode(for: key) != nil else {
+                return actionFailure("invalid_argument", "Unsupported key.")
+            }
+            if case .failure(let error) = parseModifiers(input["modifiers"]) {
+                return actionFailure("invalid_argument", error.description)
+            }
+        }
+        if action == "type", AccessibilityController.TypeStrategy.resolve(argument: input["strategy"]?.stringValue) == nil {
+            return actionFailure("invalid_argument", "Unsupported typing strategy.")
+        }
+        if action == "set_value" {
+            switch input["value"] {
+            case .string?, .bool?, .number?: break
+            default: return actionFailure("invalid_argument", "set_value requires a string, boolean or number.")
+            }
+        }
         let overrideTarget = ["element_id", "pid", "window_id"].contains { verify[$0] != nil }
         if overrideTarget, !waitTargetIsValid(verify) { return actionFailure("invalid_argument", "verify target is invalid.") }
         let target: ActionTarget
@@ -135,10 +209,20 @@ extension ToolRegistry {
             case .target(let resolved): target = resolved
             }
         } else { return actionFailure("invalid_argument", "target must be an element_id or {pid, role/title, exact}.") }
+        // v0.10 C8: capture explicit verification handles BEFORE mutation;
+        // an action may remove either itself or a different observed element.
+        var verificationTarget: ActionTarget? = overrideTarget ? nil : target
+        if let raw = verify["element_id"] {
+            switch await resolveActionTarget(raw) {
+            case .failed(let failure): return failure
+            case .target(let resolved): verificationTarget = resolved
+            }
+        }
         input["element_id"] = .string(target.id)
         if ["set_value", "type", "key", "focus"].contains(action), Self.actionIsSecure(target.element) {
             return actionFailure("not_supported", "secure_field: refusing to edit a password field.")
         }
+        if let mismatch = await checkActionOwner(target, arguments: input) { return mismatch }
         let before = actionSnapshot(target)
         let actionResult: ToolCallResult
         switch action {
@@ -166,11 +250,12 @@ extension ToolRegistry {
         }
         var waitArguments = verify
         if !overrideTarget { waitArguments["element_id"] = .string(target.id) }
-        let checked = await callWaitFor(waitArguments)
+        let checked = await callWaitFor(waitArguments, original: verificationTarget)
         let check = checked.structuredContent.objectValue ?? [:]
         payload["verified"] = check["verified"] ?? .null
         payload["verification"] = check["verification"] ?? check["error_code"] ?? .string("verification_unavailable")
-        payload["after"] = check["element"] ?? .null
+        let post = await actionPostCheck(target, before: before, acted: true)
+        payload["after"] = post["after"] ?? .null
         payload["verification_result"] = checked.structuredContent
         payload["ok"] = .bool(check["verified"] == .bool(true))
         return check["verified"] == .bool(true) ? successResult("Action and verification completed.", payload) : errorResult("Action completed; verification did not pass.", payload)

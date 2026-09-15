@@ -37,11 +37,12 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "drag_and_drop",
-            description: "Click-and-drag from (x1,y1) to (x2,y2). Supports left/right/center button and step count for smoothness. "
-                + "Always lands on the frontmost app — pass expected_app/expected_window to abort "
-                + "instead of dragging in the wrong window if focus changed.",
+            description: "drag_and_drop by element_id or coordinates (element_id/source_element_id and/or target_element_id for drag). Element IDs resolve live; stale identities fail with stale_element. Plain click uses AXPress when supported; other mouse input uses the center clipped to the owning window and a display, or fails with not_visible. Element targets automatically guard their owning app/window as well as expected_app/expected_window. Returns verified true/false/null with a reason; an unchanged surviving element does not prove the action had an effect.",
             inputSchema: schema(
                 properties: [
+                    "element_id": .object(["type": .string("string"), "description": .string("Live element ID; automatically guards its owning app/window. Returns tri-state verified with reason.")]),
+                    "source_element_id": .object(["type": .string("string"), "description": .string("Alias for element_id (drag source); use x1/y1 when omitted.")]),
+                    "target_element_id": .object(["type": .string("string"), "description": .string("Drag destination element; use x2/y2 when omitted.")]),
                     "x1": .object(["type": .string("number")]),
                     "y1": .object(["type": .string("number")]),
                     "x2": .object(["type": .string("number")]),
@@ -56,17 +57,15 @@ extension ToolRegistry {
                         "type": .string("string"),
                         "description": .string("Case-insensitive substring expected in the focused window title. On mismatch, nothing is posted.")
                     ])
-                ],
-                required: ["x1", "y1", "x2", "y2"]
+                ]
             )
         ),
         MCPToolDefinition(
             name: "scroll",
-            description: "Scroll wheel event. Positive delta_y scrolls up, negative scrolls down. Optional x/y targets the cursor position. "
-                + "Always lands on the frontmost app — pass expected_app/expected_window to abort "
-                + "instead of scrolling the wrong window if focus changed.",
+            description: "scroll by element_id or coordinates. Element IDs resolve live; stale identities fail with stale_element. Plain click uses AXPress when supported; other mouse input uses the center clipped to the owning window and a display, or fails with not_visible. Element targets automatically guard their owning app/window as well as expected_app/expected_window. Returns verified true/false/null with a reason; an unchanged surviving element does not prove the action had an effect. delta_y positive scrolls up, negative down; delta_x scrolls horizontally within the targeted frame.",
             inputSchema: schema(
                 properties: [
+                    "element_id": .object(["type": .string("string"), "description": .string("Live element ID; automatically guards its owning app/window. Returns tri-state verified with reason.")]),
                     "delta_x": .object(["type": .array([.string("integer"), .string("string")])]),
                     "delta_y": .object(["type": .array([.string("integer"), .string("string")])]),
                     "x": .object(["type": .string("number")]),
@@ -333,68 +332,7 @@ extension ToolRegistry {
     }
 
     func callWaitForElement(_ arguments: [String: JSONValue]) async -> ToolCallResult {
-        guard let pid = parsePID(arguments["pid"]) else {
-            return invalidArgument("wait_for_element requires a positive integer pid.")
-        }
-        let role = arguments["role"]?.stringValue
-        let title = arguments["title"]?.stringValue
-        let timeout = min(max(arguments["timeout_seconds"]?.doubleValue ?? 5.0, 0.1), 60.0)
-        // Clamp to [50, 60000] ms: the lower bound avoids a busy-loop, the
-        // upper bound both prevents a UInt64 overflow trap in the nanosecond
-        // multiply below and stops one interval from exceeding the timeout.
-        let intervalMs = min(max(arguments["poll_interval_ms"]?.intValue ?? 200, 50), 60_000)
-        let expectDisappear: Bool = {
-            if case .bool(let b) = arguments["expect_disappear"] ?? .null { return b }
-            return false
-        }()
-
-        let deadline = Date().addingTimeInterval(timeout)
-        var attempts = 0
-
-        while Date() < deadline {
-            attempts += 1
-            let hit = await accessibility.findElementWithPath(pid: pid, role: role, title: title)
-
-            if expectDisappear {
-                if hit == nil {
-                    return successResult(
-                        "Element disappeared after \(attempts) attempt(s).",
-                        ["ok": .bool(true), "attempts": .number(Double(attempts)), "disappeared": .bool(true)]
-                    )
-                }
-            } else if let hit {
-                let info = await accessibility.getElementInfo(element: hit.element)
-                let id = await elementCache.store(hit.element, pid: pid, path: hit.path)
-                return successResult(
-                    "Element appeared after \(attempts) attempt(s).",
-                    [
-                        "ok": .bool(true),
-                        "attempts": .number(Double(attempts)),
-                        "element_id": .string(id),
-                        "role": info.role.map(JSONValue.string) ?? .null,
-                        "title": info.title.map(JSONValue.string) ?? .null
-                    ]
-                )
-            }
-
-            do {
-                try await Task.sleep(nanoseconds: UInt64(intervalMs) * 1_000_000)
-            } catch {
-                return errorResult(
-                    "Cancelled after \(attempts) attempt(s).",
-                    ["ok": .bool(false), "attempts": .number(Double(attempts)), "cancelled": .bool(true)]
-                )
-            }
-        }
-
-        return errorResult(
-            "Timed out after \(timeout)s (\(attempts) attempts).",
-            [
-                "ok": .bool(false),
-                "attempts": .number(Double(attempts)),
-                "timed_out": .bool(true)
-            ]
-        )
+        await callLegacyWait(arguments, window: false)
     }
 
     func callListDisplays() async -> ToolCallResult {
