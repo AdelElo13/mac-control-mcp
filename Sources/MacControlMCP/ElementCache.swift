@@ -383,7 +383,12 @@ actor ElementCache {
         guard overflow > 0 else { return }
         let sorted = entries.filter { !protecting.contains($0.key) }.sorted {
             if ($0.value.pid == pid) != ($1.value.pid == pid) { return $0.value.pid == pid }
-            return $0.value.capturedAt < $1.value.capturedAt
+            // v0.10 A2: a new walk of the SAME app supersedes its older
+            // snapshots by tree age — resolving one old node must not keep
+            // its whole stale tree alive. Entries of OTHER apps are kept by
+            // recency of use: a handle an agent keeps resolving survives.
+            if $0.value.pid == pid { return $0.value.capturedAt < $1.value.capturedAt }
+            return $0.value.lastAccess < $1.value.lastAccess
         }
         let now = Date()
         for (key, _) in sorted.prefix(overflow) {

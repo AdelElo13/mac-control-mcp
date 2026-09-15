@@ -53,6 +53,9 @@ actor GroundingController {
         /// ran (or was not asked for). Lets a caller tell "AX found
         /// nothing" from "AX was never consulted".
         let axSkippedReason: String?
+        var nodesVisited: Int = 0
+        var timingsMS: [String: Double] = [:]
+        var truncated: Bool = false
     }
 
     struct Candidate: Codable, Sendable {
@@ -195,11 +198,16 @@ actor GroundingController {
     private let accessibility: AccessibilityController
     private let screen: ScreenController
     private let elementCache: ElementCache?
+    // v0.10 B4: keep display IPC at the boundary so shallow/full-pass
+    // selection can be verified without a live desktop.
+    private let readDisplayBounds: @Sendable () -> [WindowIdentity.DisplayBounds]
 
-    init(accessibility: AccessibilityController, screen: ScreenController, elementCache: ElementCache? = nil) {
+    init(accessibility: AccessibilityController, screen: ScreenController, elementCache: ElementCache? = nil,
+         readDisplayBounds: @escaping @Sendable () -> [WindowIdentity.DisplayBounds] = WindowIdentity.displayBounds) {
         self.accessibility = accessibility
         self.screen = screen
         self.elementCache = elementCache
+        self.readDisplayBounds = readDisplayBounds
     }
 
     /// Find coordinates to click for `target` text. `strategy`:
@@ -212,10 +220,12 @@ actor GroundingController {
         pid rawPID: pid_t,
         strategy: Strategy = .auto,
         maxDepth: Int? = nil,
-        window: WindowScope? = nil
+        window: WindowScope? = nil,
+        includeMenus: Bool = false
     ) async -> GroundResult {
         let pid = window?.pid ?? rawPID
         let depth = Self.resolveMaxDepth(maxDepth)
+        var walk = AccessibilityController.WalkResult()
 
         // Codex r2 #2: a window scope with no attributable AXWindow means
         // the AX strategy cannot keep its promise, so it does not run at
@@ -242,7 +252,9 @@ actor GroundingController {
                     windowID: window.windowID, ownerName: window.ownerName
                 ),
                 errorCode: axSkippedReason,
-                axSkippedReason: axSkippedReason
+                axSkippedReason: axSkippedReason,
+                nodesVisited: walk.nodesVisited, timingsMS: walk.timingsMS,
+                truncated: walk.nodeCapReached || walk.timedOut
             )
         }
 
@@ -265,19 +277,32 @@ actor GroundingController {
             } else {
                 walkRoot = nil
             }
-            let results = await accessibility.findElements(
-                pid: pid,
-                root: walkRoot,
-                role: nil,
-                title: nil,
-                value: nil,
-                maxDepth: depth,
-                limit: 5000,
-                groundingTarget: target
+            let displayList = readDisplayBounds()
+            let displays = displayList.map { $0.rect }
+            // v0.10 merge (S2 + S3): one breadth-first walk on the shared
+            // engine; the grounding POLICY (title / value / description,
+            // size and display sanity, honest confidence) is the predicate,
+            // and an exact, usable label stops the search early (B4).
+            let policyMatch: @Sendable (AXAttributeBatch.Values) -> GroundingPolicy.Match? = { attrs in
+                guard let position = attrs.position, let size = attrs.size else { return nil }
+                return GroundingPolicy.match(.init(role: attrs.role, title: attrs.rawTitle ?? attrs.title,
+                    value: attrs.value, description: attrs.description,
+                    bounds: CGRect(origin: position, size: size)), target: target, displays: displays)
+            }
+            let result = await accessibility.search(
+                pid: pid, root: walkRoot, maxDepth: depth, limit: 20,
+                includeMenus: includeMenus, shallowFirst: true,
+                stopOnBest: { policyMatch($0)?.confidence == 1 },
+                predicate: { policyMatch($0) != nil }
             )
-            // v0.10 A5: policy already rejects containers, hidden and off-display
-            // labels; the resolved window still bounds every surviving target.
+            walk = result
+            let results = result.matches.map { match -> AccessibilityController.Match in
+                var scored = match
+                scored.groundingMatch = match.attrs.flatMap(policyMatch)
+                return scored
+            }
             let survivors = results.filter { match in
+                guard match.groundingMatch != nil else { return false }
                 guard let window else { return true }
                 guard let pos = match.info.position, let size = match.info.size else { return false }
                 return WindowIdentity.rect(CGRect(x: pos.x, y: pos.y, width: size.width, height: size.height),
@@ -329,7 +354,9 @@ actor GroundingController {
                     candidates: axCandidates,
                     error: nil,
                     errorCode: nil,
-                    axSkippedReason: axSkippedReason
+                    axSkippedReason: axSkippedReason,
+                nodesVisited: walk.nodesVisited, timingsMS: walk.timingsMS,
+                truncated: walk.nodeCapReached || walk.timedOut
                 )
             }
             if strategy == .ax {
@@ -340,7 +367,9 @@ actor GroundingController {
                     candidates: [],
                     error: "no AX match at depth \(depth)",
                     errorCode: "not_found",
-                    axSkippedReason: axSkippedReason
+                    axSkippedReason: axSkippedReason,
+                nodesVisited: walk.nodesVisited, timingsMS: walk.timingsMS,
+                truncated: walk.nodeCapReached || walk.timedOut
                 )
             }
         }
@@ -374,7 +403,9 @@ actor GroundingController {
                 candidates: all,
                 error: nil,
                 errorCode: nil,
-                axSkippedReason: axSkippedReason
+                axSkippedReason: axSkippedReason,
+                nodesVisited: walk.nodesVisited, timingsMS: walk.timingsMS,
+                truncated: walk.nodeCapReached || walk.timedOut
             )
         }
 
@@ -389,7 +420,9 @@ actor GroundingController {
                 candidates: [],
                 error: ocrFailure.message,
                 errorCode: ocrFailure.code,
-                axSkippedReason: axSkippedReason
+                axSkippedReason: axSkippedReason,
+                nodesVisited: walk.nodesVisited, timingsMS: walk.timingsMS,
+                truncated: walk.nodeCapReached || walk.timedOut
             )
         }
 
@@ -400,7 +433,9 @@ actor GroundingController {
             candidates: [],
             error: "no grounding candidate from \(strategy.rawValue)",
             errorCode: "not_found",
-            axSkippedReason: axSkippedReason
+            axSkippedReason: axSkippedReason,
+                nodesVisited: walk.nodesVisited, timingsMS: walk.timingsMS,
+                truncated: walk.nodeCapReached || walk.timedOut
         )
     }
 

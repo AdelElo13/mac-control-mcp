@@ -31,6 +31,13 @@ extension ToolRegistry {
                 Strategy: 'ax' (fastest, structured), 'ocr' (OCRs the target \
                 app's own window — works on Electron/Canvas and on windows that \
                 are covered by other windows), 'auto' (AX first, OCR fallback). \
+                AX uses one breadth-first pass (shallow before deep) within a \
+                5 s budget, stopping on the first exact usable label. Up to 20 \
+                shallow substring candidates remain fallbacks when no exact \
+                label is found. After 20 fallbacks, at most 100 ms remains for \
+                an exact match. Reports nodes_visited, timings_ms and truncated. \
+                AXMenuBar subtrees are excluded by default (menus_excluded=true); \
+                pass include_menus:true to include them. \
                 Returns (x,y) plus the match's bounds, element_id and \
                 max_depth_used, matched_field (title/value/description/ocr), alternatives (up to 3 runners-up), with confidence 0..1 + candidate list.
                 OCR tries fast recognition without language correction first, then accurate only if no visible target match is found. Low recognition confidence lowers the reported score without triggering another pass. Auto returns an exact AX winner (including ranked ties) or a strictly leading AX candidate without OCR.
@@ -58,9 +65,13 @@ extension ToolRegistry {
                         "type": .string("string"),
                         "description": .string("ax | ocr | auto (default auto)")
                     ]),
+                    "include_menus": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Include the AXMenuBar subtree. Default false; responses report menus_excluded. Dedicated menu tools are unaffected.")
+                    ]),
                     "max_depth": .object([
                         "type": .array([.string("integer"), .string("string")]),
-                        "description": .string("AX search depth. Default 32 (same as find_elements), clamped 1-64.")
+                        "description": .string("AX search depth. Default 24 (same as find_elements), clamped 1-64.")
                     ])
                 ]),
                 required: ["target"]
@@ -279,14 +290,19 @@ extension ToolRegistry {
         }
         let r = await grounding.ground(target: target, pid: pid, strategy: strategy,
                                        maxDepth: arguments["max_depth"]?.intValue,
-                                       window: scope)
+                                       window: scope,
+                                       includeMenus: AXPayload.flag(arguments["include_menus"]))
         var payload: [String: JSONValue] = [
             "ok": .bool(r.ok),
             "result": encodeAsJSONValue(r),
             "pid": .number(Double(pid)),
+            "menus_excluded": .bool(!AXPayload.flag(arguments["include_menus"])),
             // Snake-case echoes alongside the nested camelCase result, so a
             // caller does not have to know both spellings (A-2 / A-14 / D-4).
-            "max_depth_used": .number(Double(r.maxDepthUsed))
+            "max_depth_used": .number(Double(r.maxDepthUsed)),
+            "nodes_visited": .number(Double(r.nodesVisited)),
+            "timings_ms": .object(r.timingsMS.mapValues(JSONValue.number)),
+            "truncated": .bool(r.truncated)
         ]
         if let scope {
             payload.merge(scope.payload) { existing, _ in existing }

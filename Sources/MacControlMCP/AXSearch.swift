@@ -40,7 +40,7 @@ enum AXSearch {
     static func walk<Element: Hashable>(
         root: Element, rootPath: [AXPathComponent] = [], maxDepth: Int,
         nodeCap: Int = 5000, deadline: Date, query: Query, limit: Int,
-        regex: Bool = false,
+        regex: Bool = false, includeMenus: Bool = true,
         eligible: (AXAttributeBatch.Values) -> Bool = { _ in true },
         read: (Element, Bool, Bool) -> (attrs: AXAttributeBatch.Values, children: [Element])
     ) -> WalkResult<Element> {
@@ -58,6 +58,9 @@ enum AXSearch {
             guard entries.count < nodeCap, Date() < deadline else { truncated = true; return }
             guard visited.insert(element).inserted else { return }
             let (attrs, children) = read(element, depth < maxDepth, parentPath.contains { $0.role == "AXWebArea" })
+            // v0.10 B3: the menu bar is skipped whole unless opted in —
+            // its items are never read, never ranked, never counted.
+            if !includeMenus && attrs.role == "AXMenuBar" { return }
             let path = depth == 0 ? parentPath : AXPath.appending(parentPath, role: attrs.role, index: ordinal, identifier: attrs.identifier, title: attrs.title, subrole: attrs.subrole)
             let index = nodes.count
             nodes.append(Node(attrs: attrs, parent: parent))
@@ -107,7 +110,11 @@ enum AXSearch {
     }
 
     private static func labels(_ attrs: AXAttributeBatch.Values) -> [(String, String)] {
-        [("title", attrs.rawTitle), ("description", attrs.description),
+        // `title` falls back to description/identifier; report those under
+        // their own field. A reader that only fills `title` (fixtures) is
+        // still searchable.
+        let title = attrs.rawTitle ?? (attrs.description == nil && attrs.identifier == nil ? attrs.title : nil)
+        return [("title", title), ("description", attrs.description),
          ("value", attrs.value), ("identifier", attrs.identifier)].compactMap { field, value in
             value.map { (field, $0) }
         }
@@ -256,7 +263,7 @@ enum AXSearch {
                 if ["AXTextField", "AXComboBox", "AXSearchField"].contains(role) {
                     if let label = alias(own + [("subrole", attrs.subrole ?? "")], rules) { return (label, 0) }
                     // v0.10 C5: Settings publishes an untitled field beside its Search button.
-                    if attrs.rawTitle == nil, attrs.description == nil, attrs.identifier == nil,
+                    if attrs.title == nil,
                        let parent = nodes[index].parent {
                         let siblingLabels = children[parent].filter { nodes[$0].attrs.role == "AXButton" }
                             .flatMap { labels(nodes[$0].attrs).map { ("sibling." + $0.0, $0.1) } }

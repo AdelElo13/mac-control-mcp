@@ -198,4 +198,46 @@ struct AXPayloadBudgetTests {
         #expect(capped["truncated"]?.boolValue == true)
         #expect((capped["bytes"]?.intValue ?? .max) < fullBytes)
     }
+    @Test("B6 byte accounting does not serialize the container payload a second time")
+    func countWithoutSerializingPayload() throws {
+        let payload = JSONValue.object([
+            "nodes": .array((0..<2000).map { .object([
+                "id": .string("node_\($0)"), "role": .string("AXGroup"),
+                "position": .object(["x": .number(10), "y": .number(20)])
+            ]) }),
+            "ok": .bool(true)
+        ])
+        var encodedContainers = 0
+        let count = AXPayload.encodedSize(payload) { value in
+            if value.arrayValue != nil || value.objectValue != nil { encodedContainers += 1 }
+            return (try? JSONEncoder().encode(value))?.count ?? 0
+        }
+        #expect(count == (try JSONEncoder().encode(payload)).count)
+        #expect(encodedContainers == 0)
+    }
+
+    @Test("B6 byte count matches transport escaping and numeric representations")
+    func transportByteCount() throws {
+        let values: [JSONValue] = [
+            .string("é漢字😀/\"\\\n\t\r\u{0}\u{8}\u{12}\u{1F}\u{2028}\u{2029}"),
+            .object(["/\"": .array([.null, .bool(false), .object([:]), .array([])])]),
+            .array([0.0, -0.0, 1.25, 1e-10, 1e20, .infinity, -.infinity, .nan].map(JSONValue.number))
+        ]
+        for value in values {
+            #expect(AXPayload.encodedSize(value) == (try JSONEncoder().encode(value)).count)
+        }
+    }
+    @Test("B6 phase reporting includes byte accounting without changing encoded size")
+    func byteAccountingPhase() throws {
+        var payload: [String: JSONValue] = [
+            "nodes": .array((0..<100).map { .object(["title": .string("row/\($0)")]) }),
+            "timings_ms": .object(["walk": .number(1.25)])
+        ]
+        PayloadOptions([:], known: AXPayload.treeFields).annotate(
+            &payload, maxDepthUsed: 24, nodesVisited: 100, truncated: false)
+        #expect(payload["timings_ms"]?.objectValue?["byte_accounting"] != nil)
+        let bytes = payload.removeValue(forKey: "bytes")?.intValue
+        #expect(bytes == (try JSONEncoder().encode(JSONValue.object(payload))).count)
+    }
+
 }

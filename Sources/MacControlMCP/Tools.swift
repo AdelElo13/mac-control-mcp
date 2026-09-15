@@ -509,37 +509,45 @@ final class ToolRegistry: @unchecked Sendable {
         if let dead = noSuchProcessResult(pid: pid, tool: "list_elements") { return dead }
 
         let maxDepth = AXDepth.resolve(arguments["max_depth"]?.intValue)
-        let result = await accessibility.listElements(pid: pid, maxDepth: maxDepth)
-        let elements = result.elements
         let budget = PayloadOptions(arguments, known: AXPayload.elementFields)
-
-        // list_elements is already role-filtered to actionable controls,
-        // so `interactive_only` is a no-op here; `viewport_only`,
-        // `fields` and `max_bytes` still apply (v0.9 C-9).
-        let windows = budget.viewportOnly ? await accessibility.windowFrames(pid: pid) : []
-        let visible = budget.viewportOnly
-            ? elements.filter {
-                AXPayload.isInViewport(
-                    frame: ToolRegistry.frame(position: $0.position, size: $0.size),
-                    windows: windows
-                )
-            }
-            : elements
-        let encoded = visible.map { encodeElement(info: $0, id: nil, fields: budget.fields) }
+        let includeMenus = AXPayload.flag(arguments["include_menus"])
+        // v0.10 B3: listing visits do not consume element-cache entries.
+        let nodeCap = max(1, min(arguments["node_cap"]?.intValue ?? 2000, 10_000))
+        let pruneOffscreen = !AXPayload.flag(arguments["include_offscreen"]) || budget.viewportOnly
+        let timeBudget = AXPayload.walkBudget(arguments, defaultMS: 1000)
+        let windowsStarted = ProcessInfo.processInfo.systemUptime
+        let windows = pruneOffscreen ? await accessibility.windowFrames(pid: pid) : []
+        let windowsMS = (ProcessInfo.processInfo.systemUptime - windowsStarted) * 1000
+        let walk = await accessibility.search(pid: pid, maxDepth: maxDepth, nodeCap: nodeCap,
+                                              includeMenus: includeMenus, clipRects: windows,
+                                              viewportOnly: pruneOffscreen, interactiveOnly: true, timeBudget: timeBudget)
+        var phases = walk.timingsMS
+        phases["windows"] = windowsMS
+        let payloadStarted = ProcessInfo.processInfo.systemUptime
+        let elements = walk.matches.map(\.info)
+        let encoded = elements.map { encodeElement(info: $0, id: nil, fields: budget.fields) }
         let budgeted = AXPayload.applyByteBudget(encoded, maxBytes: budget.maxBytes)
 
+        phases["payload"] = (ProcessInfo.processInfo.systemUptime - payloadStarted) * 1000
         var payload: [String: JSONValue] = [
             "ok": .bool(true),
             "pid": .number(Double(pid)),
             "max_depth": .number(Double(maxDepth)),
             "count": .number(Double(budgeted.items.count)),
-            "elements": .array(budgeted.items)
+            "elements": .array(budgeted.items),
+            "menus_excluded": .bool(!includeMenus),
+            "offscreen_excluded": .bool(pruneOffscreen),
+            "timings_ms": .object(phases.mapValues(JSONValue.number)),
+            "time_budget_ms": .number(timeBudget * 1000),
+            "timed_out": .bool(walk.timedOut),
+            "node_cap": .number(Double(nodeCap)),
+            "node_cap_reached": .bool(walk.nodeCapReached)
         ]
         budget.annotate(
             &payload,
             maxDepthUsed: maxDepth,
-            nodesVisited: result.nodesVisited,
-            truncated: budgeted.truncated
+            nodesVisited: walk.nodesVisited,
+            truncated: budgeted.truncated || walk.nodeCapReached || walk.timedOut
         )
         if let hint = await axEmptyHint(pid: pid, whenEmpty: elements.isEmpty) {
             payload["ax_tree_hint"] = .string(hint)
@@ -560,20 +568,42 @@ final class ToolRegistry: @unchecked Sendable {
         let exact = AXPayload.flag(arguments["exact"])
         let maxDepth = AXDepth.resolve(arguments["max_depth"]?.intValue)
 
-        let search = await accessibility.findElementsWithStats(
-            pid: pid, role: role, title: title, value: arguments["value"]?.stringValue, exact: exact, maxDepth: maxDepth,
-            limit: 1, semantic: arguments["semantic"]?.stringValue
-        )
-        guard let hit = search.matches.first else {
+        let includeMenus = AXPayload.flag(arguments["include_menus"])
+        let semantic = arguments["semantic"]?.stringValue
+        // v0.10 merge (S2 + S5): a semantic target needs the ranked search;
+        // a plain role/title lookup takes the breadth-first walk (shallow
+        // before deep, exact label stops the search, menus excluded).
+        let hitAndStats: (hit: AccessibilityController.Match?, nodesVisited: Int, stoppedEarly: Bool, truncated: Bool, timings: [String: Double])
+        if semantic != nil {
+            let search = await accessibility.findElementsWithStats(
+                pid: pid, role: role, title: title, value: arguments["value"]?.stringValue, exact: exact, maxDepth: maxDepth,
+                limit: 1, semantic: semantic, includeMenus: includeMenus
+            )
+            hitAndStats = (search.matches.first, search.nodesVisited, search.stoppedEarly, search.truncated, [:])
+        } else {
+            let walk = await accessibility.search(
+                pid: pid, maxDepth: maxDepth, limit: 1, includeMenus: includeMenus, shallowFirst: true,
+                stopOnBest: AccessibilityController.exactTitlePreference(title),
+                predicate: { attrs in
+                    AccessibilityController.textMatches(filter: role, candidate: attrs.role ?? "AXUnknown", exact: exact)
+                        && (AccessibilityController.textMatches(filter: title, candidate: attrs.title ?? "", exact: exact)
+                            || AccessibilityController.textMatches(filter: title, candidate: attrs.value ?? "", exact: exact))
+                }
+            )
+            hitAndStats = (walk.matches.first, walk.nodesVisited, walk.matches.count >= 1, walk.timedOut || walk.nodeCapReached, walk.timingsMS)
+        }
+        guard let hit = hitAndStats.hit else {
             var payload: [String: JSONValue] = [
                 "ok": .bool(false),
                 "pid": .number(Double(pid)),
                 "role": role.map(JSONValue.string) ?? .null,
                 "title": title.map(JSONValue.string) ?? .null,
                 "exact": .bool(exact),
-                "nodes_visited": .number(Double(search.nodesVisited)),
-                "search_stopped_early": .bool(search.stoppedEarly),
-                "truncated": .bool(search.truncated),
+                "menus_excluded": .bool(semantic == nil && !includeMenus),
+                "nodes_visited": .number(Double(hitAndStats.nodesVisited)),
+                "search_stopped_early": .bool(hitAndStats.stoppedEarly),
+                "timings_ms": .object(hitAndStats.timings.mapValues(JSONValue.number)),
+                "truncated": .bool(hitAndStats.truncated),
                 "max_depth_used": .number(Double(maxDepth))
             ]
             if let hint = await axEmptyHint(pid: pid, whenEmpty: true) {
@@ -582,6 +612,7 @@ final class ToolRegistry: @unchecked Sendable {
             return errorResult("No matching element found.", payload)
         }
 
+        // v0.10 B4: the search already fetched this info in its batch.
         let info = hit.info
         // v0.9 (C-5 / A-9): find_element now returns an element_id too,
         // so the cheapest entry-point tool no longer forces a second
@@ -594,9 +625,11 @@ final class ToolRegistry: @unchecked Sendable {
                 "pid": .number(Double(pid)),
                 "element_id": .string(id),
                 "exact": .bool(exact),
-                "nodes_visited": .number(Double(search.nodesVisited)),
-                "search_stopped_early": .bool(search.stoppedEarly),
-                "truncated": .bool(search.truncated),
+                "menus_excluded": .bool(semantic == nil && !includeMenus),
+                "nodes_visited": .number(Double(hitAndStats.nodesVisited)),
+                "search_stopped_early": .bool(hitAndStats.stoppedEarly),
+                "timings_ms": .object(hitAndStats.timings.mapValues(JSONValue.number)),
+                "truncated": .bool(hitAndStats.truncated),
                 "max_depth_used": .number(Double(maxDepth)),
                 "matched_field": .string(hit.matchedField),
                 "match": .string(hit.match),
@@ -1079,12 +1112,28 @@ final class ToolRegistry: @unchecked Sendable {
         MCPToolDefinition(
             name: "list_elements",
             description: "Survey the ACTIONABLE controls of an app (fixed role whitelist: buttons, links, text fields/areas, checkboxes, radio buttons, pop-up/menu buttons, sliders, switches, steppers… — no containers, rows or static text) down to max_depth (default 24). "
-                + "No filters and no element ids. Use it to answer \"what can I interact with here?\"; use find_elements / query_elements to target specific elements and get ids for follow-up calls, and get_ui_tree for the full structure including containers. " + axPayloadBudgetDoc,
+                + "Off-window subtrees are pruned by default; include_offscreen:true restores them (explicit viewport_only:true still filters). Zero-size/unknown containers are explored. Bounded by node_cap (default 2000, max 10000, independent of the element cache) and time_budget_ms (default 1000, max 5000); node_cap_reached or timed_out sets truncated=true. timings_ms separates queue, preparation, AX fetch, walk and payload costs. No text filters and no element ids. Use it to answer \"what can I interact with here?\"; use find_elements / query_elements to target specific elements and get ids for follow-up calls, and get_ui_tree for the full structure including containers. " + axPayloadBudgetDoc,
             inputSchema: schema(
                 properties: [
                     "pid": .object([
                         "type": .array([.string("integer"), .string("string")]),
                         "description": .string("Target process ID.")
+                    ]),
+                    "include_menus": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Include the AXMenuBar subtree. Default false; responses report menus_excluded. Dedicated menu tools are unaffected.")
+                    ]),
+                    "include_offscreen": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Include off-window elements and their subtrees. Default false; explicit viewport_only:true takes precedence. Responses report offscreen_excluded.")
+                    ]),
+                    "time_budget_ms": .object([
+                        "type": .array([.string("integer"), .string("string")]),
+                        "description": .string("AX walk budget in milliseconds, checked between reads. Default 1000, clamped 1-5000. One in-flight AX call can overrun it; timed_out/truncated report a cutoff.")
+                    ]),
+                    "node_cap": .object([
+                        "type": .array([.string("integer"), .string("string")]),
+                        "description": .string("Maximum visited nodes, independent of the element cache. Default 2000, clamped 1-10000. node_cap_reached and truncated report a cutoff.")
                     ]),
                     "max_depth": .object([
                         "type": .array([.string("integer"), .string("string")]),
@@ -1113,7 +1162,10 @@ final class ToolRegistry: @unchecked Sendable {
         ),
         MCPToolDefinition(
             name: "find_element",
-            description: "Find one element with a stable element_id (max_depth default 24). Without semantic, return the first exact hit outside menus; otherwise rank the bounded traversal. " + axSearchDoc + axSemanticDoc,
+            description: "Return the first exact label in one breadth-first search (shallow before deep, original sibling order); if no exact label exists, return the first substring match within max_depth (default 24, 5 s budget). Once a substring fallback is found, at most 100 ms remains to find an exact label; truncated=true reports that deadline cutoff whose role contains `role` and whose title contains `title` — case-insensitive SUBSTRING by default; title matches AXTitle → AXDescription → AXIdentifier and falls back to AXValue. "
+                + "WARNING: substring matching on role is wider than it looks — role \"Button\" also matches AXRadioButton, AXMenuButton and AXPopUpButton (a Safari tab was returned for role=Button title=Sign). Pass exact:true for equality matching when you know the exact role/title. "
+                + "This shallow-first order may select a shallow match after a sibling whose matching descendant is deeper than 8. AXMenuBar subtrees are excluded by default (menus_excluded=true); include_menus:true restores them. Returns role/title/value/position/size plus a content-addressed element_id usable with perform_element_action / get_element_attributes / set_element_attribute. "
+                + "Use find_elements when you need every match; query_elements for regex (e.g. ^Save$); list_elements to survey controls; get_ui_tree for full structure.",
             inputSchema: schema(
                 properties: [
                     "pid": .object([
@@ -1133,6 +1185,10 @@ final class ToolRegistry: @unchecked Sendable {
                     "exact": .object([
                         "type": .string("boolean"),
                         "description": .string("Match title/value by case-insensitive equality; roles always use exact normalized names.")
+                    ]),
+                    "include_menus": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Include the AXMenuBar subtree. Default false; responses report menus_excluded. Dedicated menu tools are unaffected.")
                     ]),
                     "max_depth": .object([
                         "type": .array([.string("integer"), .string("string")]),

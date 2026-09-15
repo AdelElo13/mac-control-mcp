@@ -30,7 +30,7 @@ enum ScreenAnnotator {
     /// Roles worth numbering on an annotated screenshot.
     ///
     /// Deliberately the same whitelist `list_elements` uses (see
-    /// `AccessibilityController.actionableRoles`): controls an agent can
+    /// `AXPayload.interactiveRoles`): controls an agent can
     /// actually act on, no containers, no `AXRow` (floods table-heavy apps
     /// like Finder list view / Mail), no `AXStaticText` (every label in the
     /// window would get a box and the image becomes unreadable).
@@ -137,6 +137,9 @@ enum ScreenAnnotator {
     ///
     /// `displayBounds`, when given, clips further: an element hanging off
     /// the edge of every attached display is not clickable either.
+    /// v0.10 B2: capture_annotated now prunes disjoint subtrees while
+    /// walking. Keep this final geometry filter: a surviving container
+    /// can still hold individually off-capture or zero-size controls.
     static func filterInteractive(
         _ items: [ElementGeometry],
         captureRect: CGRect,

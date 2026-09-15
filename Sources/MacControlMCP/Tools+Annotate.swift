@@ -68,7 +68,9 @@ extension ToolRegistry {
                 image pixels back to points. NOTE: the AX walk happens just \
                 before the capture — if the window moves or scrolls in \
                 between, the boxes are stale by that much; re-capture before \
-                clicking in an animating UI.
+                clicking in an animating UI. Subtrees with nonempty frames \
+                disjoint from the capture rect are pruned during the AX walk; \
+                zero-size containers are still explored.
                 """,
             inputSchema: schema(
                 properties: ToolRegistry.withWindowIDProperty(withImageOutputProperties([
@@ -274,8 +276,11 @@ extension ToolRegistry {
                 pid: pid,
                 root: walkRoot,
                 maxDepth: maxDepth,
-                nodeCap: min(ElementCache.treeNodeCap, elementCache.maxEntries),
-                pruneRoles: ["AXMenuBar"]
+                nodeCap: elementCache.maxEntries,
+                pruneRoles: ["AXMenuBar"],
+                // v0.10 B2: skip off-capture descendants before reading them;
+                // keep original sibling ordinals for annotation element ids.
+                clipRects: [selected?.bounds ?? CGDisplayBounds(CGMainDisplayID())]
             )
         } else {
             nodes = []
