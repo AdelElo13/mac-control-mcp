@@ -709,41 +709,43 @@ actor AccessibilityController {
         limit: Int = 100,
         semantic: String? = nil
     ) -> [Match] {
-        let snapshot = searchSnapshot(pid: pid, root: axRoot, maxDepth: maxDepth)
-        return rankedMatches(snapshot, hits: AXSearch.search(snapshot.nodes, role: role, title: title, value: value, exact: exact, semantic: semantic), limit: limit)
+        findElementsWithStats(pid: pid, root: axRoot, role: role, title: title, value: value,
+                              exact: exact, maxDepth: maxDepth, limit: limit, semantic: semantic).matches
     }
 
-    // v0.10 C5: collect before limiting so menu DFS order cannot hide better hits.
-    private func searchSnapshot(pid: pid_t, root axRoot: WalkRoot? = nil, maxDepth: Int) -> (nodes: [AXSearch.Node], matches: [Match]) {
+    struct SearchResult {
+        let matches: [Match]
+        let nodesVisited: Int
+        let stoppedEarly: Bool
+        let truncated: Bool
+    }
+
+    func findElementsWithStats(
+        pid: pid_t, root: WalkRoot? = nil, role: String?, title: String?, value: String?,
+        exact: Bool = false, maxDepth: Int = AXDepth.default, limit: Int = 100, semantic: String? = nil
+    ) -> SearchResult {
+        searchSnapshot(pid: pid, root: root, maxDepth: maxDepth,
+                       query: AXSearch.Query(role: role, title: title, value: value, exact: exact, semantic: semantic), limit: limit)
+    }
+
+    // v0.10 C5: keep traversal and its read-count evidence on one code path.
+    private func searchSnapshot(pid: pid_t, root axRoot: WalkRoot? = nil, maxDepth: Int,
+                                query: AXSearch.Query, limit: Int, regex: Bool = false) -> SearchResult {
         let deadline = Date().addingTimeInterval(5)
         enableManualAccessibility(pid: pid)
-        var visited = Set<AXKey>()
-        var nodes: [AXSearch.Node] = []
-        var matches: [Match] = []
-        func recurse(_ element: AXUIElement, depth: Int, parent: Int?, parentPath: [AXPathComponent], ordinal: Int) {
-            guard depth <= maxDepth, nodes.count < 5000, Date() < deadline,
-                  visited.insert(AXKey(element: element)).inserted else { return }
-            let attrs = AXAttributeBatch.fetch(element, includeChildren: depth < maxDepth, insideWebArea: parentPath.contains { $0.role == "AXWebArea" })
-            let path = depth == 0 ? parentPath : AXPath.appending(parentPath, role: attrs.role, index: ordinal, identifier: attrs.identifier, title: attrs.title, subrole: attrs.subrole)
-            let index = nodes.count
-            nodes.append(AXSearch.Node(attrs: attrs, parent: parent))
-            matches.append(Match(element: element, info: Self.elementInfo(from: attrs, depth: depth), path: path))
-            for (ordinal, child) in attrs.children.enumerated() {
-                recurse(child, depth: depth + 1, parent: index, parentPath: path, ordinal: ordinal)
-            }
+        let result = AXSearch.walk(root: AXKey(element: axRoot?.element ?? AXUIElementCreateApplication(pid)),
+                                   rootPath: axRoot?.path ?? [], maxDepth: maxDepth,
+                                   deadline: deadline, query: query, limit: limit, regex: regex) { key, children, web in
+            let attrs = AXAttributeBatch.fetch(key.element, includeChildren: children, insideWebArea: web)
+            return (attrs, attrs.children.map { AXKey(element: $0) })
         }
-        recurse(axRoot?.element ?? AXUIElementCreateApplication(pid), depth: 0, parent: nil, parentPath: axRoot?.path ?? [], ordinal: 0)
-        return (nodes, matches)
-    }
-
-    private func rankedMatches(_ snapshot: (nodes: [AXSearch.Node], matches: [Match]), hits: [AXSearch.Hit], limit: Int) -> [Match] {
-        hits.prefix(max(0, limit)).map { hit in
-            var result = snapshot.matches[hit.index]
-            result.matchedField = hit.field
-            result.match = hit.kind
-            result.rankReason = hit.reason
-            return result
+        let matches = result.hits.map { hit in
+            let entry = result.entries[hit.index]
+            return Match(element: entry.element.element, info: Self.elementInfo(from: entry.attrs, depth: entry.depth),
+                         path: entry.path, matchedField: hit.field, match: hit.kind, rankReason: hit.reason)
         }
+        return SearchResult(matches: matches, nodesVisited: result.entries.count,
+                            stoppedEarly: result.stoppedEarly, truncated: result.truncated)
     }
 
     /// v0.9 (A-13): which of `role_regex`/`title_regex`/`value_regex` was
@@ -778,15 +780,15 @@ actor AccessibilityController {
         valuePattern: String?,
         maxDepth: Int = AXDepth.default,
         limit: Int = 200
-    ) -> (matches: [Match], invalidPatterns: [InvalidPattern]) {
+    ) -> (matches: [Match], invalidPatterns: [InvalidPattern], nodesVisited: Int, truncated: Bool) {
         var invalidPatterns: [InvalidPattern] = []
         _ = Self.compileRegex(rolePattern, field: "role_regex", invalid: &invalidPatterns)
         _ = Self.compileRegex(titlePattern, field: "title_regex", invalid: &invalidPatterns)
         _ = Self.compileRegex(valuePattern, field: "value_regex", invalid: &invalidPatterns)
 
-        let snapshot = searchSnapshot(pid: pid, maxDepth: maxDepth)
-        let hits = AXSearch.search(snapshot.nodes, role: rolePattern, title: titlePattern, value: valuePattern, regex: true)
-        return (rankedMatches(snapshot, hits: hits, limit: limit), invalidPatterns)
+        let result = searchSnapshot(pid: pid, maxDepth: maxDepth,
+                                    query: AXSearch.Query(role: rolePattern, title: titlePattern, value: valuePattern), limit: limit, regex: true)
+        return (result.matches, invalidPatterns, result.nodesVisited, result.truncated)
     }
 
     /// List every AX attribute name exposed by this element.

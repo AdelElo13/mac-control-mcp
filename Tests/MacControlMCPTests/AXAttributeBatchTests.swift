@@ -28,6 +28,17 @@ struct AXAttributeBatchTests {
         return AXValueCreate(.cgSize, &s)!
     }
 
+    @Test("empty DOM identifiers and class lists are omitted")
+    func emptyWebMetadata() {
+        for rawClasses: AnyObject in ["" as NSString, "  " as NSString, [] as NSArray, ["", "  "] as NSArray] {
+            var slots: [AnyObject] = Array(repeating: kCFNull, count: 10)
+            slots += [kCFNull, "  " as NSString, rawClasses]
+            let attrs = AXAttributeBatch.decode(slots, includeChildren: true)
+            #expect(attrs.web["dom_id"] == nil)
+            #expect(attrs.web["dom_class"] == nil)
+        }
+    }
+
     // v0.10 C6: AXURL is a URL object and DOM classes may be an array.
     @Test("decodes web attributes appended to the same node batch")
     func webMetadata() {

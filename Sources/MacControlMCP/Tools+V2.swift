@@ -9,7 +9,7 @@ let axPayloadBudgetDoc = "Every response also reports bytes (encoded size), max_
 
 // v0.10 C5: keep both search tools' heuristic contract identical.
 let axSemanticDoc = "Semantic targets use role/attribute heuristics (English and Dutch labels): search_field prefers a named text/combo field or an untitled field beside a Search button; falls back to Finder's Search activation button. back/forward match navigation buttons; close matches AXCloseButton subrole or a Close button; ok/cancel match button labels. sidebar_item(title) matches rows/cells inside an outline/source list using descendant static-text values. tab(title) matches AXTab or buttons/radio buttons inside AXTabGroup. link(text) matches AXLink labels or descendant text. No control is clicked."
-let axSearchDoc = "Search title across AXTitle, AXDescription, AXValue and AXIdentifier independently. Roles use exact normalized names (Button means AXButton, never AXRadioButton). Results rank exact before prefix before substring, then window content before menus, interactive controls before containers, and smaller areas first; limit is applied after ranking the bounded traversal. Each result includes matched_field, match (exact|prefix|substring) and rank_reason. "
+let axSearchDoc = "Search title across AXTitle, AXDescription, AXValue and AXIdentifier independently. Migration: roles now use exact case-insensitive normalized names instead of substrings (Button means AXButton, never AXRadioButton); use query_elements role_regex for broader role matching. Without semantic, keep a running ranked top-limit and stop once limit non-menu hits match every supplied title/value filter exactly; role-only hits qualify immediately. Results rank exact before prefix before substring, then window content before menus, interactive controls before containers, and smaller areas first. Early exit ranks only visited hits: later equally exact, smaller or more interactive controls may be missed. Semantic queries, menu-only matches and queries without enough exact hits continue within the 5000-node / 5 s budget; query_elements provides full bounded ranking. Each result includes matched_field, match (exact|prefix|substring) and rank_reason. nodes_visited counts actual reads; search_stopped_early reports the exact-hit shortcut. "
 
 extension ToolRegistry {
     static let definitionsV2: [MCPToolDefinition] = [
@@ -367,11 +367,12 @@ extension ToolRegistry {
         let exact = AXPayload.flag(arguments["exact"])
         let budget = PayloadOptions(arguments, known: AXPayload.elementFields)
 
-        let matches = await accessibility.findElements(
+        let search = await accessibility.findElementsWithStats(
             pid: pid, role: role, title: title, value: value,
             exact: exact, maxDepth: maxDepth, limit: limit, semantic: arguments["semantic"]?.stringValue
         )
 
+        let matches = search.matches
         let encoded = await encodeMatches(matches, pid: pid, budget: budget)
         let budgeted = AXPayload.applyByteBudget(encoded, maxBytes: budget.maxBytes)
 
@@ -380,9 +381,10 @@ extension ToolRegistry {
             "pid": .number(Double(pid)),
             "count": .number(Double(budgeted.items.count)),
             "limit_reached": .bool(matches.count >= limit),
+            "search_stopped_early": .bool(search.stoppedEarly),
             "elements": .array(budgeted.items)
         ]
-        budget.annotate(&payload, maxDepthUsed: maxDepth, nodesVisited: matches.count, truncated: budgeted.truncated)
+        budget.annotate(&payload, maxDepthUsed: maxDepth, nodesVisited: search.nodesVisited, truncated: budgeted.truncated || search.truncated)
         if let hint = await axEmptyHint(pid: pid, whenEmpty: matches.isEmpty) {
             payload["ax_tree_hint"] = .string(hint)
         }
@@ -419,7 +421,7 @@ extension ToolRegistry {
             "count": .number(Double(budgeted.items.count)),
             "elements": .array(budgeted.items)
         ]
-        budget.annotate(&payload, maxDepthUsed: maxDepth, nodesVisited: matches.count, truncated: budgeted.truncated)
+        budget.annotate(&payload, maxDepthUsed: maxDepth, nodesVisited: result.nodesVisited, truncated: budgeted.truncated || result.truncated)
         // v0.9 (A-13): surface exactly which pattern(s) failed to
         // compile as regex and fell back to substring matching, so a
         // typo'd pattern isn't indistinguishable from a genuine no-match.

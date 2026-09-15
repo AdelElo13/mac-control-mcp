@@ -557,16 +557,20 @@ final class ToolRegistry: @unchecked Sendable {
         let exact = AXPayload.flag(arguments["exact"])
         let maxDepth = AXDepth.resolve(arguments["max_depth"]?.intValue)
 
-        guard let hit = await accessibility.findElements(
+        let search = await accessibility.findElementsWithStats(
             pid: pid, role: role, title: title, value: arguments["value"]?.stringValue, exact: exact, maxDepth: maxDepth,
             limit: 1, semantic: arguments["semantic"]?.stringValue
-        ).first else {
+        )
+        guard let hit = search.matches.first else {
             var payload: [String: JSONValue] = [
                 "ok": .bool(false),
                 "pid": .number(Double(pid)),
                 "role": role.map(JSONValue.string) ?? .null,
                 "title": title.map(JSONValue.string) ?? .null,
                 "exact": .bool(exact),
+                "nodes_visited": .number(Double(search.nodesVisited)),
+                "search_stopped_early": .bool(search.stoppedEarly),
+                "truncated": .bool(search.truncated),
                 "max_depth_used": .number(Double(maxDepth))
             ]
             if let hint = await axEmptyHint(pid: pid, whenEmpty: true) {
@@ -587,6 +591,9 @@ final class ToolRegistry: @unchecked Sendable {
                 "pid": .number(Double(pid)),
                 "element_id": .string(id),
                 "exact": .bool(exact),
+                "nodes_visited": .number(Double(search.nodesVisited)),
+                "search_stopped_early": .bool(search.stoppedEarly),
+                "truncated": .bool(search.truncated),
                 "max_depth_used": .number(Double(maxDepth)),
                 "matched_field": .string(hit.matchedField),
                 "match": .string(hit.match),
@@ -1099,7 +1106,7 @@ final class ToolRegistry: @unchecked Sendable {
         ),
         MCPToolDefinition(
             name: "find_element",
-            description: "Return the highest-ranked matching element with a stable element_id (max_depth default 24, 5 s / 5000-node traversal budget). " + axSearchDoc + axSemanticDoc,
+            description: "Find one element with a stable element_id (max_depth default 24). Without semantic, return the first exact hit outside menus; otherwise rank the bounded traversal. " + axSearchDoc + axSemanticDoc,
             inputSchema: schema(
                 properties: [
                     "pid": .object([

@@ -107,9 +107,12 @@ enum AXAttributeBatch {
         var web: [String: String] = [:]
         if let url = slot(webOffset) as? URL { web["url"] = url.absoluteString }
         else if let url = string(slot(webOffset)) { web["url"] = url }
-        if let id = string(slot(webOffset + 1)) { web["dom_id"] = id }
-        if let classes = slot(webOffset + 2) as? [String] { web["dom_class"] = classes.joined(separator: " ") }
-        else if let classes = string(slot(webOffset + 2)) { web["dom_class"] = classes }
+        if let id = nonEmpty(webOffset + 1) { web["dom_id"] = id }
+        // v0.10 C6: an absent DOM identity is not an empty identity.
+        if let classes = slot(webOffset + 2) as? [String] {
+            let joined = classes.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.joined(separator: " ")
+            if !joined.isEmpty { web["dom_class"] = joined }
+        } else if let classes = nonEmpty(webOffset + 2) { web["dom_class"] = classes }
         return Values(
             role: string(slot(0)),
             title: nonEmpty(1) ?? nonEmpty(2) ?? nonEmpty(3),
