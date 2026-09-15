@@ -722,20 +722,31 @@ actor AccessibilityController {
 
     func findElementsWithStats(
         pid: pid_t, root: WalkRoot? = nil, role: String?, title: String?, value: String?,
-        exact: Bool = false, maxDepth: Int = AXDepth.default, limit: Int = 100, semantic: String? = nil
+        exact: Bool = false, maxDepth: Int = AXDepth.default, limit: Int = 100, semantic: String? = nil,
+        interactiveOnly: Bool = false, viewportOnly: Bool = false
     ) -> SearchResult {
-        searchSnapshot(pid: pid, root: root, maxDepth: maxDepth,
-                       query: AXSearch.Query(role: role, title: title, value: value, exact: exact, semantic: semantic), limit: limit)
+        let windows = viewportOnly ? windowFrames(pid: pid) : nil
+        return searchSnapshot(pid: pid, root: root, maxDepth: maxDepth,
+                       query: AXSearch.Query(role: role, title: title, value: value, exact: exact, semantic: semantic), limit: limit,
+                       interactiveOnly: interactiveOnly, windows: windows)
     }
 
     // v0.10 C5: keep traversal and its read-count evidence on one code path.
     private func searchSnapshot(pid: pid_t, root axRoot: WalkRoot? = nil, maxDepth: Int,
-                                query: AXSearch.Query, limit: Int, regex: Bool = false) -> SearchResult {
+                                query: AXSearch.Query, limit: Int, regex: Bool = false,
+                                interactiveOnly: Bool = false, windows: [CGRect]? = nil) -> SearchResult {
         let deadline = Date().addingTimeInterval(5)
         enableManualAccessibility(pid: pid)
         let result = AXSearch.walk(root: AXKey(element: axRoot?.element ?? AXUIElementCreateApplication(pid)),
                                    rootPath: axRoot?.path ?? [], maxDepth: maxDepth,
-                                   deadline: deadline, query: query, limit: limit, regex: regex) { key, children, web in
+                                   deadline: deadline, query: query, limit: limit, regex: regex, eligible: { attrs in
+            // v0.10 C5: payload-ineligible hits must not consume the limit
+            // or stop the walk before their eligible descendants are read.
+            guard !interactiveOnly || AXPayload.isInteractive(role: attrs.role) else { return false }
+            guard let windows else { return true }
+            let frame = attrs.position.flatMap { point in attrs.size.map { CGRect(origin: point, size: $0) } }
+            return AXPayload.isInViewport(frame: frame, windows: windows)
+        }) { key, children, web in
             let attrs = AXAttributeBatch.fetch(key.element, includeChildren: children, insideWebArea: web)
             return (attrs, attrs.children.map { AXKey(element: $0) })
         }
@@ -779,15 +790,19 @@ actor AccessibilityController {
         titlePattern: String?,
         valuePattern: String?,
         maxDepth: Int = AXDepth.default,
-        limit: Int = 200
+        limit: Int = 200,
+        interactiveOnly: Bool = false,
+        viewportOnly: Bool = false
     ) -> (matches: [Match], invalidPatterns: [InvalidPattern], nodesVisited: Int, truncated: Bool) {
         var invalidPatterns: [InvalidPattern] = []
         _ = Self.compileRegex(rolePattern, field: "role_regex", invalid: &invalidPatterns)
         _ = Self.compileRegex(titlePattern, field: "title_regex", invalid: &invalidPatterns)
         _ = Self.compileRegex(valuePattern, field: "value_regex", invalid: &invalidPatterns)
 
+        let windows = viewportOnly ? windowFrames(pid: pid) : nil
         let result = searchSnapshot(pid: pid, maxDepth: maxDepth,
-                                    query: AXSearch.Query(role: rolePattern, title: titlePattern, value: valuePattern), limit: limit, regex: true)
+                                    query: AXSearch.Query(role: rolePattern, title: titlePattern, value: valuePattern), limit: limit, regex: true,
+                                    interactiveOnly: interactiveOnly, windows: windows)
         return (result.matches, invalidPatterns, result.nodesVisited, result.truncated)
     }
 

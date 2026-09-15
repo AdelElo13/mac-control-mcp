@@ -9,7 +9,7 @@ let axPayloadBudgetDoc = "Every response also reports bytes (encoded size), max_
 
 // v0.10 C5: keep both search tools' heuristic contract identical.
 let axSemanticDoc = "Semantic targets use role/attribute heuristics (English and Dutch labels): search_field prefers a named text/combo field or an untitled field beside a Search button; falls back to Finder's Search activation button. back/forward match navigation buttons; close matches AXCloseButton subrole or a Close button; ok/cancel match button labels. sidebar_item(title) matches rows/cells inside an outline/source list using descendant static-text values. tab(title) matches AXTab or buttons/radio buttons inside AXTabGroup. link(text) matches AXLink labels or descendant text. No control is clicked."
-let axSearchDoc = "Search title across AXTitle, AXDescription, AXValue and AXIdentifier independently. Migration: roles now use exact case-insensitive normalized names instead of substrings (Button means AXButton, never AXRadioButton); use query_elements role_regex for broader role matching. Without semantic, keep a running ranked top-limit and stop once limit non-menu hits match every supplied title/value filter exactly; role-only hits qualify immediately. Results rank exact before prefix before substring, then window content before menus, interactive controls before containers, and smaller areas first. Early exit ranks only visited hits: later equally exact, smaller or more interactive controls may be missed. Semantic queries, menu-only matches and queries without enough exact hits continue within the 5000-node / 5 s budget; query_elements provides full bounded ranking. Each result includes matched_field, match (exact|prefix|substring) and rank_reason. nodes_visited counts actual reads; search_stopped_early reports the exact-hit shortcut. "
+let axSearchDoc = "Search title across AXTitle, AXDescription, AXValue and AXIdentifier independently. Migration: roles now use exact case-insensitive normalized names instead of substrings (Button means AXButton, never AXRadioButton); use query_elements role_regex for broader role matching. Without semantic, keep a running ranked top-limit and stop once limit non-menu hits match every supplied title/value filter exactly; role-only hits qualify immediately. interactive_only/viewport_only are applied before hits count toward the limit. Results rank exact before prefix before substring, then window content before menus, interactive controls before containers, and smaller areas first. Early exit ranks only visited hits: later equally exact, smaller or more interactive controls may be missed. Semantic queries, menu-only matches and queries without enough exact hits continue within the 5000-node / 5 s budget; query_elements provides full bounded ranking. Each result includes matched_field, match (exact|prefix|substring) and rank_reason. nodes_visited counts actual reads; search_stopped_early reports the exact-hit shortcut. "
 
 extension ToolRegistry {
     static let definitionsV2: [MCPToolDefinition] = [
@@ -369,11 +369,12 @@ extension ToolRegistry {
 
         let search = await accessibility.findElementsWithStats(
             pid: pid, role: role, title: title, value: value,
-            exact: exact, maxDepth: maxDepth, limit: limit, semantic: arguments["semantic"]?.stringValue
+            exact: exact, maxDepth: maxDepth, limit: limit, semantic: arguments["semantic"]?.stringValue,
+            interactiveOnly: budget.interactiveOnly, viewportOnly: budget.viewportOnly
         )
 
         let matches = search.matches
-        let encoded = await encodeMatches(matches, pid: pid, budget: budget)
+        let encoded = await encodeMatches(matches, pid: pid, budget: budget, filtersApplied: true)
         let budgeted = AXPayload.applyByteBudget(encoded, maxBytes: budget.maxBytes)
 
         var payload: [String: JSONValue] = [
@@ -408,11 +409,13 @@ extension ToolRegistry {
             titlePattern: titlePattern,
             valuePattern: valuePattern,
             maxDepth: maxDepth,
-            limit: limit
+            limit: limit,
+            interactiveOnly: budget.interactiveOnly,
+            viewportOnly: budget.viewportOnly
         )
         let matches = result.matches
 
-        let encoded = await encodeMatches(matches, pid: pid, budget: budget)
+        let encoded = await encodeMatches(matches, pid: pid, budget: budget, filtersApplied: true)
         let budgeted = AXPayload.applyByteBudget(encoded, maxBytes: budget.maxBytes)
 
         var payload: [String: JSONValue] = [
@@ -875,14 +878,15 @@ extension ToolRegistry {
     func encodeMatches(
         _ matches: [AccessibilityController.Match],
         pid: pid_t,
-        budget: PayloadOptions
+        budget: PayloadOptions,
+        filtersApplied: Bool = false
     ) async -> [JSONValue] {
-        let filtered = matches.filter { match in
+        let filtered = filtersApplied ? matches : matches.filter { match in
             let passesRole = !budget.interactiveOnly || AXPayload.isInteractive(role: match.info.role)
             return passesRole
         }
-        let windows = budget.viewportOnly ? await accessibility.windowFrames(pid: pid) : []
-        let visible = budget.viewportOnly
+        let windows = !filtersApplied && budget.viewportOnly ? await accessibility.windowFrames(pid: pid) : []
+        let visible = !filtersApplied && budget.viewportOnly
             ? filtered.filter {
                 AXPayload.isInViewport(
                     frame: Self.frame(position: $0.info.position, size: $0.info.size),

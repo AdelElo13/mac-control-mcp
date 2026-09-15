@@ -19,9 +19,9 @@ struct AXSearchTraversalTests {
         }
     }
 
-    func walk(_ fixture: [Fixture], query: AXSearch.Query, limit: Int = 1, nodeCap: Int = 5000, deadline: Date = .distantFuture) -> AXSearch.WalkResult<Int> {
+    func walk(_ fixture: [Fixture], query: AXSearch.Query, limit: Int = 1, nodeCap: Int = 5000, deadline: Date = .distantFuture, eligible: (AXAttributeBatch.Values) -> Bool = { _ in true }) -> AXSearch.WalkResult<Int> {
         var reads = 0
-        let result = AXSearch.walk(root: 0, maxDepth: 24, nodeCap: nodeCap, deadline: deadline, query: query, limit: limit) { index, _, _ in
+        let result = AXSearch.walk(root: 0, maxDepth: 24, nodeCap: nodeCap, deadline: deadline, query: query, limit: limit, eligible: eligible) { index, _, _ in
             reads += 1
             return (fixture[index].attrs, fixture[index].children)
         }
@@ -79,6 +79,40 @@ struct AXSearchTraversalTests {
                        Fixture(role: "AXButton", title: "Save", value: "Draft"),
                        Fixture(role: "AXButton", title: "Later")]
         let result = walk(fixture, query: .init(role: "AXButton", title: "Save", value: "Draft"))
+        #expect(result.entries.count == 3)
+        #expect(result.hits.first?.index == 2)
+    }
+
+    @Test("ineligible exact containers do not hide interactive descendants")
+    func interactiveFilterBeforeLimit() {
+        let fixture = [Fixture(role: "AXWindow", children: [1]),
+                       Fixture(role: "AXGroup", title: "Save", children: [2]),
+                       Fixture(role: "AXButton", title: "Save")]
+        let result = walk(fixture, query: .init(title: "Save"), eligible: { AXPayload.isInteractive(role: $0.role) })
+        #expect(result.entries.count == 3)
+        #expect(result.hits.first?.index == 2)
+    }
+
+    @Test("offscreen exact hits do not count toward the result limit")
+    func viewportFilterBeforeLimit() {
+        let fixture = [Fixture(role: "AXWindow", children: [1, 2, 3]),
+                       Fixture(role: "AXButton", title: "Save"),
+                       Fixture(role: "AXButton", title: "Save"),
+                       Fixture(role: "AXButton", title: "Later")]
+        let result = AXSearch.walk(root: 0, maxDepth: 24, deadline: .distantFuture,
+                                   query: .init(role: "AXButton", title: "Save"), limit: 1,
+                                   eligible: { attrs in
+            let frame = attrs.position.flatMap { point in attrs.size.map { CGRect(origin: point, size: $0) } }
+            return AXPayload.isInViewport(frame: frame, windows: [CGRect(x: 0, y: 0, width: 500, height: 500)])
+        }) { index, _, _ in
+            var slots: [AnyObject] = [fixture[index].role as NSString, fixture[index].title as NSString,
+                                      kCFNull, kCFNull, kCFNull, kCFNull, kCFNull, kCFNull]
+            var point = CGPoint(x: index == 1 ? 1000 : 20, y: 20)
+            var size = CGSize(width: 50, height: 20)
+            slots[5] = AXValueCreate(.cgPoint, &point)!
+            slots[6] = AXValueCreate(.cgSize, &size)!
+            return (AXAttributeBatch.decode(slots, includeChildren: false), fixture[index].children)
+        }
         #expect(result.entries.count == 3)
         #expect(result.hits.first?.index == 2)
     }

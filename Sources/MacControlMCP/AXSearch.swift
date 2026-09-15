@@ -41,6 +41,7 @@ enum AXSearch {
         root: Element, rootPath: [AXPathComponent] = [], maxDepth: Int,
         nodeCap: Int = 5000, deadline: Date, query: Query, limit: Int,
         regex: Bool = false,
+        eligible: (AXAttributeBatch.Values) -> Bool = { _ in true },
         read: (Element, Bool, Bool) -> (attrs: AXAttributeBatch.Values, children: [Element])
     ) -> WalkResult<Element> {
         var visited = Set<Element>()
@@ -65,7 +66,7 @@ enum AXSearch {
             // v0.10 C5 regression: retain only the ranked top-limit while
             // looking for exact hits. Prefix/substring and semantic queries
             // still need later nodes; menus cannot trigger a premature stop.
-            if canStopEarly, let hit = plainHit(attrs, index: index, menu: menu, query: query) {
+            if canStopEarly, eligible(attrs), let hit = plainHit(attrs, index: index, menu: menu, query: query) {
                 let insertion = top.firstIndex { precedes(hit, $0) } ?? top.count
                 if insertion < limit {
                     top.insert(hit, at: insertion)
@@ -83,7 +84,7 @@ enum AXSearch {
         }
         recurse(root, depth: 0, parent: nil, parentPath: rootPath, ordinal: 0,
                 insideMenu: rootPath.contains { menuRoles.contains($0.role) })
-        let hits = canStopEarly ? top : search(nodes, role: query.role, title: query.title, value: query.value, exact: query.exact, semantic: query.semantic, regex: regex)
+        let hits = canStopEarly ? top : search(nodes, role: query.role, title: query.title, value: query.value, exact: query.exact, semantic: query.semantic, regex: regex, eligible: eligible)
         return WalkResult(entries: entries, hits: Array(hits.prefix(limit)), stoppedEarly: stoppedEarly, truncated: truncated)
     }
 
@@ -158,7 +159,7 @@ enum AXSearch {
         return rankedHit(attrs, index: index, field: chosen.field, quality: chosen.quality, menu: menu)
     }
 
-    static func search(_ nodes: [Node], role: String? = nil, title: String? = nil, value: String? = nil, exact: Bool = false, semantic: String? = nil, regex: Bool = false) -> [Hit] {
+    static func search(_ nodes: [Node], role: String? = nil, title: String? = nil, value: String? = nil, exact: Bool = false, semantic: String? = nil, regex: Bool = false, eligible: (AXAttributeBatch.Values) -> Bool = { _ in true }) -> [Hit] {
         func expression(_ pattern: String?) -> NSRegularExpression? {
             guard regex, let pattern, !pattern.isEmpty else { return nil }
             return try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
@@ -258,6 +259,7 @@ enum AXSearch {
         var results: [Hit] = []
         for (index, node) in nodes.enumerated() {
             let attrs = node.attrs
+            guard eligible(attrs) else { continue }
             let parents = ancestors(index)
             let menu = ([index] + parents).contains { menuRoles.contains(nodes[$0].attrs.role ?? "") }
             if semantic == nil, !regex {

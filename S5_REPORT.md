@@ -1,4 +1,5 @@
 # S5 — v0.10 C5, C6, C7: verificatierapport
+> Historisch rapport van vóór de desktopreview. De reviewer heeft C5/C6/C7 inmiddels live bevestigd en het werk gecommit als `101c341`. Het huidige regressieherstel, actuele verificatie en de nog uit te voeren timings staan in [LIVE-CHECKS.md](LIVE-CHECKS.md).
 
 ## Status
 

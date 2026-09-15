@@ -8,7 +8,7 @@ For the previous broad role search, use `query_elements` with `role_regex:"Butto
 
 ## Exact matches can end a search early
 
-Without `semantic`, search maintains the ranked top `limit` among visited nodes. It stops when `limit` non-menu matches satisfy all supplied title and value filters exactly. Role-only matches already have this quality. `find_element` uses `limit=1`, so its first exact non-menu hit ends the walk.
+Without `semantic`, search maintains the ranked top `limit` among visited nodes. It stops when `limit` non-menu matches satisfy all supplied title and value filters exactly. Role-only matches already have this quality. With `interactive_only` or `viewport_only`, only candidates passing those filters count toward the limit and early exit; ineligible containers are still traversed. `find_element` uses `limit=1`, so its first exact non-menu hit ends the walk.
 
 This shortcut does not compare later, equally exact matches: a smaller or more interactive control later in the tree can be missed. Use `query_elements` with anchored role/label expressions when these global tie-breaks matter. Its ranking still covers only the nodes reached within the depth, 5000-node and five-second limits.
 
