@@ -177,4 +177,114 @@ struct ElementCacheTests {
         _ = await cache.storeMany([AXUIElementCreateSystemWide()], pid: 2)
         #expect(await cache.count == 1)
     }
+    // v0.10 A1: a live positional handle must not bypass its recorded identity.
+    @Test("live handle with a different fingerprint is stale")
+    func liveFingerprintMismatch() async {
+        let cache = ElementCache()
+        let id = await cache.store(
+            AXUIElementCreateSystemWide(), pid: getpid(),
+            path: [AXPathComponent(role: "AXMenuItem", index: 0, identifier: nil,
+                                   title: "Close All Windows", subrole: nil)]
+        )
+        guard case .stale = await cache.resolveLive(id) else {
+            Issue.record("v0.10 A1: live handle silently resolved a different control")
+            return
+        }
+    }
+
+    // v0.10 A2: repeated full trees must not consume another app's working set.
+    @Test("capacity eviction prefers older entries from the incoming pid")
+    func evictionIsPIDLocal() async {
+        let cache = ElementCache(maxEntries: 3)
+        let other = await cache.store(AXUIElementCreateSystemWide(), pid: 2)
+        let old = await cache.store(AXUIElementCreateSystemWide(), pid: 1)
+        _ = await cache.store(AXUIElementCreateSystemWide(), pid: 1)
+        _ = await cache.store(AXUIElementCreateSystemWide(), pid: 1)
+        #expect(await cache.resolve(other) != nil)
+        #expect(await cache.resolve(old) == nil)
+        #expect(String(describing: await cache.resolveLive(old)).contains("evicted"))
+    }
+
+    @Test("refreshing stable paths at capacity does not evict other ids")
+    func refreshDoesNotEvict() async {
+        let cache = ElementCache(maxEntries: 2)
+        let other = await cache.store(AXUIElementCreateSystemWide(), pid: 2)
+        let path = [component("AXButton", 0)]
+        let element = AXUIElementCreateSystemWide()
+        _ = await cache.store(element, pid: 1, path: path)
+        _ = await cache.storeMany(withPaths: [(element, path)], pid: 1)
+        #expect(await cache.resolve(other) != nil)
+        _ = await cache.store(element, pid: 1, path: path)
+        #expect(await cache.resolve(other) != nil)
+    }
+
+    @Test("six 2000-node trees fit in the default cache")
+    func repeatedTreesFit() async {
+        let cache = ElementCache()
+        let element = AXUIElementCreateSystemWide()
+        let first = await cache.store(element, pid: 2)
+        for _ in 0..<6 {
+            _ = await cache.storeMany(Array(repeating: element, count: 2000), pid: 1)
+        }
+        #expect(await cache.resolve(first) != nil)
+        #expect(await cache.count == 12001)
+    }
+
+    // v0.10 A2: resolving one old node must not protect its whole old tree.
+    @Test("capacity removes the oldest tree even when its ids were recently read")
+    func evictionUsesTreeAge() async throws {
+        let cache = ElementCache(maxEntries: 2)
+        let old = try #require(await cache.storeMany([AXUIElementCreateSystemWide()], pid: 1).first!)
+        try await Task.sleep(for: .milliseconds(2))
+        let newer = await cache.store(AXUIElementCreateSystemWide(), pid: 1)
+        #expect(await cache.resolve(old) != nil)
+        _ = await cache.store(AXUIElementCreateSystemWide(), pid: 1)
+        #expect(await cache.resolve(old) == nil)
+        #expect(await cache.resolve(newer) != nil)
+    }
+
+    @Test("colliding paths in one batch cannot exceed capacity")
+    func collidingBatchCapacity() async {
+        let cache = ElementCache(maxEntries: 3, identify: Self.collidingIdentify)
+        _ = await cache.store(AXUIElementCreateSystemWide(), pid: 2)
+        _ = await cache.store(AXUIElementCreateSystemWide(), pid: 2)
+        let element = AXUIElementCreateSystemWide()
+        _ = await cache.storeMany(withPaths: [
+            (element, [component("AXButton", 0)]),
+            (element, [component("AXButton", 1)]),
+            (element, [component("AXButton", 2)])
+        ], pid: 1)
+        #expect(await cache.count <= 3)
+    }
+
+    @Test("element and text tools distinguish eviction with configured retention hints", arguments: [
+        "get_element_attributes", "perform_element_action", "set_element_attribute", "text_get_value", "wait_for_ax_notification"
+    ])
+    func evictionToolContract(tool: String) async {
+        let cache = ElementCache(ttl: 17, maxEntries: 1)
+        let registry = ToolRegistry(accessibility: AccessibilityController(), elementCache: cache)
+        let id = await cache.store(AXUIElementCreateSystemWide(), pid: getpid())
+        _ = await cache.store(AXUIElementCreateSystemWide(), pid: getpid())
+        let result = await registry.callTool(name: tool, arguments: [
+            "element_id": .string(id), "action": .string("AXPress"), "value": .string("unused"),
+            "name": .string("AXValue"), "notification": .string("AXValueChanged")
+        ])
+        let payload = result.structuredContent.objectValue
+        #expect(payload?["error_code"]?.stringValue == "evicted_element_id")
+        #expect(payload?["hint"]?.stringValue?.contains("17.0 seconds") == true)
+        #expect(payload?["hint"]?.stringValue?.contains("1 entries") == true)
+    }
+
+    // v0.10 A1: an unreadable fingerprint is not evidence of identity.
+    @Test("failed fingerprint batch cannot validate an AXUnknown leaf")
+    func unreadableFingerprintIsStale() async {
+        let cache = ElementCache()
+        let id = await cache.store(AXUIElementCreateApplication(-1), pid: getpid(),
+                                   path: [component("AXUnknown", 0)])
+        guard case .stale = await cache.resolveLive(id) else {
+            Issue.record("failed AX read was accepted as an AXUnknown fingerprint")
+            return
+        }
+    }
+
 }

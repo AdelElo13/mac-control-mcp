@@ -274,7 +274,7 @@ extension ToolRegistry {
                 pid: pid,
                 root: walkRoot,
                 maxDepth: maxDepth,
-                nodeCap: elementCache.maxEntries,
+                nodeCap: min(ElementCache.treeNodeCap, elementCache.maxEntries),
                 pruneRoles: ["AXMenuBar"]
             )
         } else {

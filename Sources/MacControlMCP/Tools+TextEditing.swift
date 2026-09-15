@@ -201,6 +201,8 @@ extension ToolRegistry {
                     .notFound,
                     extra: ["element_id": .string(id)]
                 ))
+            case .evicted(let hint):
+                return .failed(evictedElementResult(id, hint: hint))
             case .stale(let reason):
                 return .failed(staleElementResult(id, reason: reason))
             }

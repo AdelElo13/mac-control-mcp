@@ -10,7 +10,7 @@ extension ToolRegistry {
             name: "element_at_point",
             description: "AX hit-test: what accessibility element is under a global screen coordinate? "
                 + "The inverse of `ground` — use it to verify a coordinate BEFORE clicking it, to turn an OCR/vision box into a real AX element (with an element_id for perform_element_action / get_element_attributes), and to diagnose a click that did nothing. "
-                + "Returns role, title, value, bounds, enabled, owning pid + app name, a stable element_id, and the ancestor chain (nearest first, up to 8) so you can see which container you actually hit. "
+                + "Returns role, title, value, bounds, enabled, owning pid + app name, an element_id with stable_id (and stable_id_reason when no rooted AX path is available), and the ancestor chain (nearest first, up to 8) so you can see which container you actually hit. "
                 + "Omit pid to hit-test the whole screen (the topmost window wins); pass pid to ask that application specifically, which is the only way to hit-test a window another app is covering. "
                 + "Coordinates are global screen points, top-left origin — the same space find_elements' position/size and ground's x/y use.",
             inputSchema: schema(
@@ -89,6 +89,16 @@ extension ToolRegistry {
         // Same (pid, path) → same id as find_elements would mint for it.
         let id = await elementCache.store(element, pid: hit.pid, path: hit.path)
 
+        let payload = Self.encodeHit(hit, id: id, x: x, y: y)
+
+        let label = hit.info.title.map { " \"\($0)\"" } ?? ""
+        return successResult(
+            "Hit \(hit.info.role ?? "AXUnknown")\(label) in \(hit.appName ?? "pid \(hit.pid)").",
+            payload
+        )
+    }
+    // v0.10 A8: encode identity diagnostics together with the hit result.
+    static func encodeHit(_ hit: AccessibilityController.HitTest, id: String, x: Double, y: Double) -> [String: JSONValue] {
         var payload: [String: JSONValue] = [
             "ok": .bool(true),
             "x": .number(x),
@@ -119,10 +129,7 @@ extension ToolRegistry {
             payload["bounds"] = .null
         }
 
-        let label = hit.info.title.map { " \"\($0)\"" } ?? ""
-        return successResult(
-            "Hit \(hit.info.role ?? "AXUnknown")\(label) in \(hit.appName ?? "pid \(hit.pid)").",
-            payload
-        )
+        return payload
     }
+
 }

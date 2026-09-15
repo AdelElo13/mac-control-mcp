@@ -1,0 +1,56 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ids': failed storing manifest for 'wt10-ids' in cache: attempt to write a readonly database
+Building for debugging...
+[0/5] Write sources
+[1/5] Write swift-version--58304C5D6DBC2206.txt
+[3/5] Compiling MacControlMCPTests AXPathTests.swift
+[4/5] Emitting module MacControlMCPTests
+[4/6] Write Objects.LinkFileList
+[5/6] Linking mac-control-mcpPackageTests
+Build complete! (3.34s)
+Test Suite 'Selected tests' started at 2026-09-15 17:18:53.765.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 17:18:53.771.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 17:18:53.771.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 17:18:53.771.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.006) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "AX path identity (C-5)" started.
+◇ Test "identity string is canonical, length-prefixed, and includes pid, role, ordinal, identifier" started.
+✔ Test "identity string is canonical, length-prefixed, and includes pid, role, ordinal, identifier" passed after 0.001 seconds.
+◇ Test "same (pid, path) always yields the same id" started.
+✔ Test "same (pid, path) always yields the same id" passed after 0.001 seconds.
+◇ Test "a crafted AXIdentifier cannot forge another path's identity" started.
+✔ Test "a crafted AXIdentifier cannot forge another path's identity" passed after 0.001 seconds.
+◇ Test "adjacent numeric fields cannot be run together" started.
+✔ Test "adjacent numeric fields cannot be run together" passed after 0.001 seconds.
+◇ Test "absent identifier is distinguishable from a literal dash" started.
+✔ Test "absent identifier is distinguishable from a literal dash" passed after 0.001 seconds.
+◇ Test "different elements yield different ids" started.
+✔ Test "different elements yield different ids" passed after 0.001 seconds.
+◇ Test "hash is process-independent (not Swift's seeded Hasher)" started.
+✔ Test "hash is process-independent (not Swift's seeded Hasher)" passed after 0.001 seconds.
+◇ Test "empty identifiers are normalised away" started.
+✔ Test "empty identifiers are normalised away" passed after 0.001 seconds.
+◇ Test "appending builds the path a walk would record" started.
+✔ Test "appending builds the path a walk would record" passed after 0.001 seconds.
+◇ Test "the same query twice returns identical element ids, and the cache survives a clear" started.
+✔ Test "the same query twice returns identical element ids, and the cache survives a clear" passed after 0.001 seconds.
+◇ Test "upward path accepts the application root itself" started.
+✔ Test "upward path accepts the application root itself" passed after 0.002 seconds.
+◇ Test "search metadata counts visited nodes instead of matches" started.
+◇ Test case passing 1 argument tool → "find_elements" to "search metadata counts visited nodes instead of matches" started.
+◇ Test case passing 1 argument tool → "query_elements" to "search metadata counts visited nodes instead of matches" started.
+◇ Test case passing 1 argument tool → "list_elements" to "search metadata counts visited nodes instead of matches" started.
+✘ Test "search metadata counts visited nodes instead of matches" recorded an issue with 1 argument tool → "list_elements" at AXPathTests.swift:180:9: Expectation failed: (payload?["nodes_visited"]?.intValue → 0) == 1
+✘ Test "search metadata counts visited nodes instead of matches" with 3 test cases failed after 0.005 seconds with 1 issue.
+↳ // v0.10 A6: a rejected root was visited even when there are no matches.
+✘ Suite "AX path identity (C-5)" failed after 0.011 seconds with 1 issue.
+↳ /// C-5 / B-10 — element handles must be content-addressed: the same
+↳ /// element has to yield the same id on every call and in every session,
+↳ /// and two different elements must never share one.
+✘ Test run with 12 tests in 1 suite failed after 0.011 seconds with 1 issue.

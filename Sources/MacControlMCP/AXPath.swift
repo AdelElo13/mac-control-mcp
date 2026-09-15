@@ -34,7 +34,9 @@ struct AXFingerprint: Sendable, Hashable {
     /// review's HIGH finding: inserting a sibling silently shifted a
     /// stale id onto a different control.
     func matches(_ component: AXPathComponent) -> Bool {
-        guard role == component.role else { return false }
+        // v0.10 A1: two failed reads are not matching identities. This also
+        // makes path repair refuse unreadable intermediate components.
+        guard role != "AXUnknown", role == component.role else { return false }
         if let wanted = component.identifier {
             return identifier == wanted
         }
@@ -264,7 +266,7 @@ enum AXPath {
     /// One batched round trip per element (role, title, identifier and
     /// subrole all come back together).
     static func fingerprint(of element: AXUIElement) -> AXFingerprint {
-        let attrs = AXAttributeBatch.fetch(element, includeChildren: false)
+        let attrs = AXAttributeBatch.fetch(element, includeChildren: false, fallbackOnFailure: false)
         return AXFingerprint(
             role: attrs.role,
             identifier: attrs.identifier,
@@ -308,8 +310,16 @@ enum AXPath {
     /// `element_at_point` case) by walking up to the application root and
     /// recording each ordinal — and fingerprint — on the way back down.
     static func upwardPath(of element: AXUIElement, limit: Int = 32) -> [AXPathComponent]? {
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(element, &pid) == .success, pid > 0 else { return nil }
+        let application = AXUIElementCreateApplication(pid)
+        // v0.10 A8: Chrome's application handle need not publish AXApplication.
+        // Stop at the actual application anchor, even if it exposes a parent.
         let chain = ancestors(of: element, limit: limit)
-        guard let root = chain.last, copyString(root, "AXRole") == (kAXApplicationRole as String) else {
+        let ascending = [element] + chain
+        guard let rootIndex = ascending.firstIndex(where: {
+            CFEqual($0, application) || copyString($0, "AXRole") == (kAXApplicationRole as String)
+        }) else {
             // Without a reachable application root the ordinals would be
             // relative to an unknown anchor — refuse rather than mint an
             // id that cannot be resolved later.
@@ -317,7 +327,7 @@ enum AXPath {
         }
         // chain is [parent, grandparent, ..., application]. Pair each
         // element with its parent, from the root downwards.
-        let descending = ([element] + chain).reversed()  // [application, ..., element]
+        let descending = ascending.prefix(rootIndex + 1).reversed()  // [application, ..., element]
         var path: [AXPathComponent] = []
         var iterator = Array(descending).makeIterator()
         guard var parent = iterator.next() else { return nil }

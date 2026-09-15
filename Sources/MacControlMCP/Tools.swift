@@ -507,7 +507,8 @@ final class ToolRegistry: @unchecked Sendable {
         if let dead = noSuchProcessResult(pid: pid, tool: "list_elements") { return dead }
 
         let maxDepth = AXDepth.resolve(arguments["max_depth"]?.intValue)
-        let elements = await accessibility.listElements(pid: pid, maxDepth: maxDepth)
+        let result = await accessibility.listElements(pid: pid, maxDepth: maxDepth)
+        let elements = result.elements
         let budget = PayloadOptions(arguments, known: AXPayload.elementFields)
 
         // list_elements is already role-filtered to actionable controls,
@@ -535,7 +536,7 @@ final class ToolRegistry: @unchecked Sendable {
         budget.annotate(
             &payload,
             maxDepthUsed: maxDepth,
-            nodesVisited: elements.count,
+            nodesVisited: result.nodesVisited,
             truncated: budgeted.truncated
         )
         if let hint = await axEmptyHint(pid: pid, whenEmpty: elements.isEmpty) {

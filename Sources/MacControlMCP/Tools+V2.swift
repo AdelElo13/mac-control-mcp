@@ -270,7 +270,7 @@ extension ToolRegistry {
         // a live id. (Before v0.8.3 the walk allowed 5000 nodes but the
         // 2000-entry cache evicted the first nodes' ids while storing the
         // rest, so ids beyond 2000 nodes were already dangling.)
-        let nodeCap = elementCache.maxEntries
+        let nodeCap = min(ElementCache.treeNodeCap, elementCache.maxEntries)
         let nodes = await accessibility.treeWalk(pid: pid, maxDepth: maxDepth, nodeCap: nodeCap)
         let budget = PayloadOptions(arguments, known: AXPayload.treeFields)
 
@@ -355,11 +355,12 @@ extension ToolRegistry {
         let exact = AXPayload.flag(arguments["exact"])
         let budget = PayloadOptions(arguments, known: AXPayload.elementFields)
 
-        let matches = await accessibility.findElements(
+        let result = await accessibility.findElementsWithStats(
             pid: pid, role: role, title: title, value: value,
             exact: exact, maxDepth: maxDepth, limit: limit
         )
 
+        let matches = result.matches
         let encoded = await encodeMatches(matches, pid: pid, budget: budget)
         let budgeted = AXPayload.applyByteBudget(encoded, maxBytes: budget.maxBytes)
 
@@ -370,7 +371,7 @@ extension ToolRegistry {
             "limit_reached": .bool(matches.count >= limit),
             "elements": .array(budgeted.items)
         ]
-        budget.annotate(&payload, maxDepthUsed: maxDepth, nodesVisited: matches.count, truncated: budgeted.truncated)
+        budget.annotate(&payload, maxDepthUsed: maxDepth, nodesVisited: result.nodesVisited, truncated: budgeted.truncated)
         if let hint = await axEmptyHint(pid: pid, whenEmpty: matches.isEmpty) {
             payload["ax_tree_hint"] = .string(hint)
         }
@@ -407,7 +408,7 @@ extension ToolRegistry {
             "count": .number(Double(budgeted.items.count)),
             "elements": .array(budgeted.items)
         ]
-        budget.annotate(&payload, maxDepthUsed: maxDepth, nodesVisited: matches.count, truncated: budgeted.truncated)
+        budget.annotate(&payload, maxDepthUsed: maxDepth, nodesVisited: result.nodesVisited, truncated: budgeted.truncated)
         // v0.9 (A-13): surface exactly which pattern(s) failed to
         // compile as regex and fell back to substring matching, so a
         // typo'd pattern isn't indistinguishable from a genuine no-match.
@@ -436,6 +437,7 @@ extension ToolRegistry {
         switch await elementCache.resolveLive(id) {
         case .resolved(let resolved): element = resolved
         case .unknown: return unknownElementResult(id)
+        case .evicted(let hint): return evictedElementResult(id, hint: hint)
         case .stale(let reason): return staleElementResult(id, reason: reason)
         }
 
@@ -491,6 +493,7 @@ extension ToolRegistry {
         switch await elementCache.resolveLive(id) {
         case .resolved(let resolved): element = resolved
         case .unknown: return unknownElementResult(id)
+        case .evicted(let hint): return evictedElementResult(id, hint: hint)
         case .stale(let reason): return staleElementResult(id, reason: reason)
         }
 
@@ -515,6 +518,7 @@ extension ToolRegistry {
         switch await elementCache.resolveLive(id) {
         case .resolved(let resolved): element = resolved
         case .unknown: return unknownElementResult(id)
+        case .evicted(let hint): return evictedElementResult(id, hint: hint)
         case .stale(let reason): return staleElementResult(id, reason: reason)
         }
 
@@ -825,7 +829,7 @@ extension ToolRegistry {
 
     // MARK: - JSON encoders
 
-    /// The id was never ours (or has been evicted after 5 minutes idle).
+    /// v0.10 A2: expiry and capacity eviction have different diagnostics.
     func unknownElementResult(_ id: String) -> ToolCallResult {
         errorResult(
             "Unknown or expired element_id.",
@@ -833,9 +837,16 @@ extension ToolRegistry {
                 "ok": .bool(false),
                 "element_id": .string(id),
                 "error_code": .string("unknown_element_id"),
-                "hint": .string("Element ids expire after 5 minutes idle. Re-run find_elements / find_element / get_ui_tree to get a current id.")
+                "hint": .string("\(elementCache.retentionHint)")
             ]
         )
+    }
+
+    func evictedElementResult(_ id: String, hint: String) -> ToolCallResult {
+        errorResult("Element id was evicted from the cache.", [
+            "ok": .bool(false), "element_id": .string(id),
+            "error_code": .string("evicted_element_id"), "hint": .string(hint)
+        ])
     }
 
     /// v0.9 (C-5, review fix 1+2): the id WAS ours, but the element it

@@ -248,7 +248,7 @@ actor AccessibilityController {
         manualAccessibilityEnabled.insert(pid)
     }
 
-    func listElements(pid: pid_t, maxDepth: Int = AXDepth.default) -> [ElementInfo] {
+    func listElements(pid: pid_t, maxDepth: Int = AXDepth.default) -> (elements: [ElementInfo], nodesVisited: Int) {
         enableManualAccessibility(pid: pid)
         let root = AXUIElementCreateApplication(pid)
         var visited = Set<AXKey>()
@@ -261,7 +261,7 @@ actor AccessibilityController {
             return false
         }
 
-        return output
+        return (output, visited.count)
     }
 
     /// First depth-first match.
@@ -739,6 +739,21 @@ actor AccessibilityController {
         maxDepth: Int = AXDepth.default,
         limit: Int = 100
     ) -> [Match] {
+        findElementsWithStats(pid: pid, root: axRoot, role: role, title: title,
+                              value: value, exact: exact, maxDepth: maxDepth, limit: limit).matches
+    }
+
+    // v0.10 A6: keep traversal accounting with the walk, before filters.
+    func findElementsWithStats(
+        pid: pid_t,
+        root axRoot: WalkRoot? = nil,
+        role: String?,
+        title: String?,
+        value: String?,
+        exact: Bool = false,
+        maxDepth: Int = AXDepth.default,
+        limit: Int = 100
+    ) -> (matches: [Match], nodesVisited: Int) {
         // Inline recurse (same structure as treeWalk) instead of going
         // through the private `walk(...)` helper. An earlier implementation
         // used `walk` with an `inout` visited set and a closure visitor; it
@@ -783,7 +798,7 @@ actor AccessibilityController {
         }
 
         recurse(element: root, depth: 0, parentPath: rootPath, ordinal: 0)
-        return matches
+        return (matches, visited.count)
     }
 
     /// v0.9 (A-13): which of `role_regex`/`title_regex`/`value_regex` was
@@ -818,7 +833,7 @@ actor AccessibilityController {
         valuePattern: String?,
         maxDepth: Int = AXDepth.default,
         limit: Int = 200
-    ) -> (matches: [Match], invalidPatterns: [InvalidPattern]) {
+    ) -> (matches: [Match], invalidPatterns: [InvalidPattern], nodesVisited: Int) {
         var invalidPatterns: [InvalidPattern] = []
         let roleRegex = Self.compileRegex(rolePattern, field: "role_regex", invalid: &invalidPatterns)
         let titleRegex = Self.compileRegex(titlePattern, field: "title_regex", invalid: &invalidPatterns)
@@ -871,7 +886,7 @@ actor AccessibilityController {
         }
 
         recurse(element: root, depth: 0, parentPath: [], ordinal: 0)
-        return (matches, invalidPatterns)
+        return (matches, invalidPatterns, visited.count)
     }
 
     /// List every AX attribute name exposed by this element.

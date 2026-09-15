@@ -1,0 +1,152 @@
+^Dwarning: /Users/a/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/a/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'wt10-ids': failed storing manifest for 'wt10-ids' in cache: attempt to write a readonly database
+Building for debugging...
+[0/6] Write sources
+[2/6] Write swift-version--58304C5D6DBC2206.txt
+[4/10] Compiling MacControlMCP Tools.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/Sources/MacControlMCP/Tools.swift:849:27: warning: no 'async' operations occur within 'await' expression
+ 847 |             }
+ 848 | 
+ 849 |             let pressed = await accessibility.pressKey(keyCode: keyCode, modifiers: modifiers)
+     |                           `- warning: no 'async' operations occur within 'await' expression
+ 850 |             if pressed {
+ 851 |                 return successResult(
+[5/10] Emitting module MacControlMCP
+[6/10] Compiling MacControlMCP AccessibilityController.swift
+[7/10] Compiling MacControlMCP Tools+V0_9AXCore.swift
+[8/29] Compiling MacControlMCP Tools+V2Phase2.swift
+[9/29] Compiling MacControlMCP main.swift
+[10/29] Compiling MacControlMCP Tools+V2Phase4.swift
+[11/29] Compiling MacControlMCP Tools+V2Phase10.swift
+[12/29] Compiling MacControlMCP Tools+V2Phase9.swift
+[13/29] Compiling MacControlMCP Tools+Annotate.swift
+[14/29] Compiling MacControlMCP Tools+Batch.swift
+[15/29] Compiling MacControlMCP Tools+V2Phase3.swift
+[16/29] Compiling MacControlMCP Tools+V2Phase7.swift
+[17/29] Compiling MacControlMCP HardwareController.swift
+[18/29] Compiling MacControlMCP SystemInfoController.swift
+[19/29] Compiling MacControlMCP Tools+Permissions.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/Sources/MacControlMCP/Tools+Permissions.swift:227:19: warning: consider using asynchronous alternative function
+225 |             let store = CNContactStore()
+226 |             let keeper = ObjectKeeper(store)
+227 |             store.requestAccess(for: .contacts) { _, _ in keeper.release() }
+    |                   `- warning: consider using asynchronous alternative function
+228 |             return .triggered
+229 |             #else
+
+Contacts.CNContactStore.requestAccess:2:11: note: 'requestAccess(for:)' declared here
+1 | class CNContactStore {
+2 | open func requestAccess(for entityType: CNEntityType) async throws -> Bool}
+  |           `- note: 'requestAccess(for:)' declared here
+3 | 
+[20/29] Compiling MacControlMCP Tools+TextEditing.swift
+/private/tmp/claude-501/-Users-a-projects-mac-control-mcp/2765fa91-b43a-4938-a5e3-e71de9627f36/scratchpad/wt10-ids/Sources/MacControlMCP/Tools+Permissions.swift:227:19: warning: consider using asynchronous alternative function
+225 |             let store = CNContactStore()
+226 |             let keeper = ObjectKeeper(store)
+227 |             store.requestAccess(for: .contacts) { _, _ in keeper.release() }
+    |                   `- warning: consider using asynchronous alternative function
+228 |             return .triggered
+229 |             #else
+
+Contacts.CNContactStore.requestAccess:2:11: note: 'requestAccess(for:)' declared here
+1 | class CNContactStore {
+2 | open func requestAccess(for entityType: CNEntityType) async throws -> Bool}
+  |           `- note: 'requestAccess(for:)' declared here
+3 | 
+[21/29] Compiling MacControlMCP Tools+V2Phase11.swift
+[22/29] Compiling MacControlMCP Tools+V2Phase5.swift
+[23/29] Compiling MacControlMCP Tools+V2Phase6.swift
+[24/29] Compiling MacControlMCP Tools+V2.swift
+[25/29] Compiling MacControlMCP AppleAppsController.swift
+[26/29] Compiling MacControlMCP GroundingController.swift
+[26/31] Write Objects.LinkFileList
+[27/31] Linking mac-control-mcp
+[28/31] Applying mac-control-mcp
+[30/66] Compiling MacControlMCPTests Phase2ToolsTests.swift
+[31/66] Compiling MacControlMCPTests Phase3ToolsTests.swift
+[32/66] Compiling MacControlMCPTests Phase9ToolsTests.swift
+[33/66] Compiling MacControlMCPTests ServerLifecycleTests.swift
+[34/66] Compiling MacControlMCPTests TextEditingTests.swift
+[35/66] Compiling MacControlMCPTests ToolDocsDriftTests.swift
+[36/66] Compiling MacControlMCPTests HardeningTests.swift
+[37/66] Compiling MacControlMCPTests HonestFailuresTests.swift
+[38/66] Compiling MacControlMCPTests LocationWifiScanTests.swift
+[39/66] Compiling MacControlMCPTests Phase6ToolsTests.swift
+[40/66] Compiling MacControlMCPTests Phase7HardeningTests.swift
+[41/68] Compiling MacControlMCPTests Phase7ToolsTests.swift
+[42/68] Compiling MacControlMCPTests Phase8ToolsTests.swift
+[43/68] Compiling MacControlMCPTests AuditLogFixesTests.swift
+[44/68] Compiling MacControlMCPTests BatchToolTests.swift
+[45/68] Compiling MacControlMCPTests BugFixesV0_2_6Tests.swift
+[46/68] Compiling MacControlMCPTests ElementAtPointTests.swift
+[47/68] Compiling MacControlMCPTests ElementCacheTests.swift
+[48/68] Compiling MacControlMCPTests FocusGuardTests.swift
+[49/68] Compiling MacControlMCPTests CaptureAnnotatedToolTests.swift
+[50/68] Compiling MacControlMCPTests ClipboardRichTests.swift
+[51/68] Compiling MacControlMCPTests CrashRegressionTests.swift
+[52/68] Compiling MacControlMCPTests AXHandleSafetyTests.swift
+[53/68] Compiling MacControlMCPTests AXPathTests.swift
+[54/68] Compiling MacControlMCPTests AXPayloadBudgetTests.swift
+[55/68] Compiling MacControlMCPTests ToolRegistryV2Tests.swift
+[56/68] Compiling MacControlMCPTests WindowIdentityTests.swift
+[57/68] Compiling MacControlMCPTests PermissionUXTests.swift
+[58/68] Compiling MacControlMCPTests Phase10ToolsTests.swift
+[59/68] Compiling MacControlMCPTests Phase4ToolsTests.swift
+[60/68] Compiling MacControlMCPTests Phase5ToolsTests.swift
+[61/68] Compiling MacControlMCPTests AXScopePolicyTests.swift
+[62/68] Compiling MacControlMCPTests AXTreeAugmentedScopeTests.swift
+[63/68] Compiling MacControlMCPTests AnnotatedElementIdentityTests.swift
+[64/68] Emitting module MacControlMCPTests
+[65/68] Compiling MacControlMCPTests WindowScopedTreeTests.swift
+[66/68] Compiling MacControlMCPTests WindowTargetToolsTests.swift
+[66/68] Write Objects.LinkFileList
+[67/68] Linking mac-control-mcpPackageTests
+Build complete! (7.44s)
+Test Suite 'Selected tests' started at 2026-09-15 17:19:28.765.
+Test Suite 'mac-control-mcpPackageTests.xctest' started at 2026-09-15 17:19:28.770.
+Test Suite 'mac-control-mcpPackageTests.xctest' passed at 2026-09-15 17:19:28.770.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-15 17:19:28.770.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.005) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "AX path identity (C-5)" started.
+◇ Test "identity string is canonical, length-prefixed, and includes pid, role, ordinal, identifier" started.
+✔ Test "identity string is canonical, length-prefixed, and includes pid, role, ordinal, identifier" passed after 0.001 seconds.
+◇ Test "same (pid, path) always yields the same id" started.
+✔ Test "same (pid, path) always yields the same id" passed after 0.001 seconds.
+◇ Test "a crafted AXIdentifier cannot forge another path's identity" started.
+✔ Test "a crafted AXIdentifier cannot forge another path's identity" passed after 0.001 seconds.
+◇ Test "adjacent numeric fields cannot be run together" started.
+✔ Test "adjacent numeric fields cannot be run together" passed after 0.001 seconds.
+◇ Test "absent identifier is distinguishable from a literal dash" started.
+✔ Test "absent identifier is distinguishable from a literal dash" passed after 0.001 seconds.
+◇ Test "different elements yield different ids" started.
+✔ Test "different elements yield different ids" passed after 0.001 seconds.
+◇ Test "hash is process-independent (not Swift's seeded Hasher)" started.
+✔ Test "hash is process-independent (not Swift's seeded Hasher)" passed after 0.001 seconds.
+◇ Test "empty identifiers are normalised away" started.
+✔ Test "empty identifiers are normalised away" passed after 0.001 seconds.
+◇ Test "appending builds the path a walk would record" started.
+✔ Test "appending builds the path a walk would record" passed after 0.001 seconds.
+◇ Test "the same query twice returns identical element ids, and the cache survives a clear" started.
+✔ Test "the same query twice returns identical element ids, and the cache survives a clear" passed after 0.001 seconds.
+◇ Test "upward path accepts the application root itself" started.
+✔ Test "upward path accepts the application root itself" passed after 0.002 seconds.
+◇ Test "search metadata counts visited nodes instead of matches" started.
+◇ Test case passing 1 argument tool → "find_elements" to "search metadata counts visited nodes instead of matches" started.
+◇ Test case passing 1 argument tool → "query_elements" to "search metadata counts visited nodes instead of matches" started.
+◇ Test case passing 1 argument tool → "list_elements" to "search metadata counts visited nodes instead of matches" started.
+✔ Test "search metadata counts visited nodes instead of matches" with 3 test cases passed after 0.003 seconds.
+◇ Test "unrooted hit exposes an explicit random-id reason" started.
+✘ Test "unrooted hit exposes an explicit random-id reason" recorded an issue at AXPathTests.swift:192:9: Expectation failed: (payload["stable_id_reason"]?.stringValue?.isEmpty → nil) == false
+✘ Test "unrooted hit exposes an explicit random-id reason" failed after 0.001 seconds with 1 issue.
+↳ // v0.10 A8: callers must know why a hit cannot share a search id.
+✘ Suite "AX path identity (C-5)" failed after 0.007 seconds with 1 issue.
+↳ /// C-5 / B-10 — element handles must be content-addressed: the same
+↳ /// element has to yield the same id on every call and in every session,
+↳ /// and two different elements must never share one.
+✘ Test run with 13 tests in 1 suite failed after 0.007 seconds with 1 issue.
