@@ -93,7 +93,17 @@ if [ "${PUBLISH:-0}" = "1" ]; then
         if security find-generic-password -s mcp-publisher-pat -a "$USER" -w >/dev/null 2>&1; then
             echo "[release] refreshing mcp-publisher token from Keychain PAT..."
             "${PROJECT_ROOT}/scripts/mcp-login-pat.sh" login >/dev/null || {
-                echo "[release] WARN: PAT refresh failed; will fall back to device-code if publish fails"
+                echo "[release] WARN: Keychain PAT refresh failed (expired?)."
+                # Fallback: the GitHub CLI session is a valid GitHub token for
+                # `mcp-publisher login github` (verified for v0.10.1).
+                if command -v gh >/dev/null 2>&1 && GH_TOKEN_VALUE="$(gh auth token 2>/dev/null)" && [ -n "$GH_TOKEN_VALUE" ]; then
+                    if mcp-publisher login github -token "$GH_TOKEN_VALUE" >/dev/null 2>&1; then
+                        echo "[release] mcp-publisher logged in with the gh CLI token instead."
+                    else
+                        echo "[release] WARN: gh-token login failed too; run 'mcp-publisher login github' before publishing."
+                    fi
+                    unset GH_TOKEN_VALUE
+                fi
             }
         else
             echo "[release] hint: no mcp-publisher PAT in Keychain — run scripts/mcp-login-pat.sh setup"
