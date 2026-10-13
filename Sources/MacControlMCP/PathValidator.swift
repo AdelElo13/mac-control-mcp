@@ -8,7 +8,9 @@ import Foundation
 /// Policy: an output path must resolve (after symlink + `..` normalization)
 /// to a location under one of the allowed root directories. Allowed roots
 /// default to TMPDIR and the user's Desktop / Documents / Downloads /
-/// Pictures. We refuse anything that escapes via symlinks or traversal.
+/// Pictures, plus private per-user directories directly under /tmp (see
+/// `privateSharedTempRoot`). We refuse anything that escapes via symlinks
+/// or traversal.
 enum PathValidator {
     enum ValidationError: Error, CustomStringConvertible {
         case outsideAllowedRoots(String)
@@ -21,8 +23,9 @@ enum PathValidator {
             case .outsideAllowedRoots(let p):
                 let tmp = NSTemporaryDirectory()
                 return "output_path '\(p)' is outside allowed roots. " +
-                    "Use one of: \(tmp) (user-scoped temp — prefer this for throwaway files), ~/Desktop, ~/Documents, ~/Downloads, ~/Pictures. " +
-                    "/tmp and /private/tmp are rejected on purpose (TOCTOU symlink risk)."
+                    "Use one of: \(tmp) (user-scoped temp — prefer this for throwaway files), ~/Desktop, ~/Documents, ~/Downloads, ~/Pictures, " +
+                    "or a private directory directly under /tmp that you own with mode 0700 (e.g. an agent scratchpad like /tmp/claude-\(getuid())/...). " +
+                    "Other /tmp and /private/tmp paths are rejected on purpose (TOCTOU symlink risk)."
             case .unresolvable(let p):
                 return "output_path '\(p)' cannot be resolved."
             case .missingParent(let p):
@@ -53,6 +56,35 @@ enum PathValidator {
         return roots
     }
 
+    /// Agent scratchpads such as Claude Code's `/tmp/claude-<uid>/...` live
+    /// in the shared /tmp, which is rejected in general because another
+    /// user could swap a path component between validation and the write.
+    /// That risk is gone when the FIRST directory below /tmp is a real
+    /// directory (not a symlink) owned by us with no group/other access:
+    /// nobody else can create, rename or replace anything underneath it.
+    /// Returns that directory when `resolvedParent` lies inside one.
+    static func privateSharedTempRoot(containing resolvedParent: URL) -> URL? {
+        // Foundation's resolvingSymlinksInPath strips a leading /private, so
+        // accept both ["/", "tmp", "<dir>", ...] and ["/", "private", "tmp", "<dir>", ...].
+        var components = resolvedParent.standardizedFileURL.pathComponents
+        if components.count >= 2, components[1] == "private" { components.remove(at: 1) }
+        guard components.count >= 3, components[0] == "/", components[1] == "tmp" else { return nil }
+        let dir = components[2]
+        guard !dir.isEmpty, dir != ".", dir != ".." else { return nil }
+        let top = "/private/tmp/" + dir
+        return isPrivateOwnedDirectory(top) ? URL(fileURLWithPath: top) : nil
+    }
+
+    /// lstat-based (does not follow symlinks): a directory owned by the
+    /// current uid with no group/other permission bits.
+    static func isPrivateOwnedDirectory(_ path: String) -> Bool {
+        var st = stat()
+        guard lstat(path, &st) == 0 else { return false }
+        guard (st.st_mode & S_IFMT) == S_IFDIR else { return false }
+        guard st.st_uid == getuid() else { return false }
+        return (st.st_mode & 0o077) == 0
+    }
+
     /// Resolve a candidate path to an absolute canonical URL and verify it
     /// lands under at least one allowed root. The parent directory must
     /// exist; we do not create intermediate folders on the caller's behalf.
@@ -73,7 +105,7 @@ enum PathValidator {
             let rootPath = root.path
             return parentPath == rootPath || parentPath.hasPrefix(rootPath + "/")
         }
-        guard ok else {
+        guard ok || privateSharedTempRoot(containing: resolvedParent) != nil else {
             throw ValidationError.outsideAllowedRoots(path)
         }
 

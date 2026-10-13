@@ -99,11 +99,19 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "activate_app",
-            description: "Bring a running app to the front by PID or bundle ID.",
+            description: "Bring a running app to the front by pid, bundle_id or name, and verify it actually became frontmost (macOS can ignore activation requests from background processes; the tool then retries via AXFrontmost and LaunchServices). ok=true only when verified; status is activated, not_running (start it with launch_app) or activation_refused. Returns method and the frontmost app.",
             inputSchema: schema(
                 properties: [
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
-                    "bundle_id": .object(["type": .string("string")])
+                    "bundle_id": .object(["type": .string("string")]),
+                    "name": .object([
+                        "type": .string("string"),
+                        "description": .string("App name as shown in the Dock / menu bar (case-insensitive), e.g. \"Bambu Studio\". Used when pid and bundle_id are absent.")
+                    ]),
+                    "app": .object([
+                        "type": .string("string"),
+                        "description": .string("Alias of name.")
+                    ])
                 ]
             )
         ),
@@ -294,19 +302,54 @@ extension ToolRegistry {
 
     func callActivateApp(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         let pid = parsePID(arguments["pid"])
-        let bundleID = arguments["bundle_id"]?.stringValue
-        if pid == nil && (bundleID == nil || bundleID?.isEmpty == true) {
-            return invalidArgument("activate_app requires pid or bundle_id.")
+        if arguments["pid"] != nil && pid == nil {
+            return invalidArgument("activate_app pid must be a positive integer.")
         }
-        let ok = await appLifecycle.activate(pid: pid, bundleIdentifier: bundleID)
-        let payload: [String: JSONValue] = [
-            "ok": .bool(ok),
-            "pid": pid.map { .number(Double($0)) } ?? .null,
-            "bundle_id": bundleID.map(JSONValue.string) ?? .null
+        let bundleID = arguments["bundle_id"]?.stringValue?.trimmingCharacters(in: .whitespaces)
+        // `app` is accepted as an alias: agents reach for it by analogy with
+        // the expected_app guard.
+        let name = [arguments["name"], arguments["app"]]
+            .compactMap { $0?.stringValue?.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty }
+        if pid == nil && (bundleID?.isEmpty ?? true) && name == nil {
+            return invalidArgument("activate_app requires pid, bundle_id or name (app name, e.g. \"Safari\").")
+        }
+        let result = await appLifecycle.activate(
+            pid: pid,
+            bundleIdentifier: (bundleID?.isEmpty ?? true) ? nil : bundleID,
+            name: name
+        )
+        func describe(_ app: AppLifecycleController.AppSnapshot?) -> JSONValue {
+            guard let app else { return .null }
+            return .object([
+                "pid": .number(Double(app.pid)),
+                "name": app.name.map(JSONValue.string) ?? .null,
+                "bundle_id": app.bundleIdentifier.map(JSONValue.string) ?? .null
+            ])
+        }
+        var payload: [String: JSONValue] = [
+            "ok": .bool(result.status == .activated),
+            "status": .string(result.status.rawValue),
+            "pid": result.app.map { .number(Double($0.pid)) } ?? pid.map { .number(Double($0)) } ?? .null,
+            "bundle_id": result.app?.bundleIdentifier.map(JSONValue.string) ?? bundleID.map(JSONValue.string) ?? .null,
+            "name": result.app?.name.map(JSONValue.string) ?? name.map(JSONValue.string) ?? .null,
+            "frontmost": describe(result.frontmost)
         ]
-        return ok
-            ? successResult("App activated.", payload)
-            : errorResult("Could not activate app.", payload)
+        switch result.status {
+        case .activated:
+            payload["method"] = result.method.map(JSONValue.string) ?? .null
+            return successResult("App activated and verified frontmost.", payload)
+        case .notRunning:
+            payload["error_code"] = .string("not_running")
+            payload["hint"] = .string("No running app matches. Start it with launch_app (identifier = bundle id, path or name), or find the pid with list_apps.")
+            return errorResult("App is not running.", payload)
+        case .refused:
+            payload["error_code"] = .string("activation_refused")
+            payload["hint"] = .string("macOS kept another app in front after activate, AXFrontmost and a LaunchServices open. "
+                + "Act on the target directly instead (perform_element_action / set_element_attribute with element ids), "
+                + "or ask the user to click the app once.")
+            return errorResult("App did not become frontmost.", payload)
+        }
     }
 
     func callQuitApp(_ arguments: [String: JSONValue]) async -> ToolCallResult {

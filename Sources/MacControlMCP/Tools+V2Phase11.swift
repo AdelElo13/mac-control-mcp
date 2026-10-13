@@ -118,13 +118,13 @@ extension ToolRegistry {
 
     func callMcpServerInfo() async -> ToolCallResult {
         let pid = ProcessInfo.processInfo.processIdentifier
-        let version = "0.10.0"
+        let version = ServerVersion.current
         let executablePath = Bundle.main.executablePath ?? ProcessInfo.processInfo.arguments.first ?? "unknown"
         let uptime = ProcessInfo.processInfo.systemUptime  // not process uptime, but close enough for diagnosis
 
-        // Find other MacControlMCP processes via `pgrep -lf MacControlMCP`.
-        // This is a one-shot diagnostic; nothing mutates.
-        let others = Self.otherMcpProcesses(excluding: pid)
+        // Find other MacControlMCP processes via `ps`. One-shot diagnostic;
+        // nothing mutates.
+        let others = Self.otherMcpProcesses(excluding: pid, selfVersion: version)
 
         var payload: [String: JSONValue] = [
             "ok": .bool(true),
@@ -136,15 +136,18 @@ extension ToolRegistry {
                 .object([
                     "pid": .number(Double(info.pid)),
                     "path": .string(info.path),
-                    "start": .string(info.start)
+                    "start": .string(info.start),
+                    "parent_pid": .number(Double(info.parentPid)),
+                    "client": info.client.map(JSONValue.string) ?? .null,
+                    "client_pid": info.clientPid.map { .number(Double($0)) } ?? .null,
+                    "version": info.version.map(JSONValue.string) ?? .null,
+                    "status": .string(info.status.rawValue)
                 ])
             }),
             "other_instances_count": .number(Double(others.count))
         ]
-        if !others.isEmpty {
-            payload["hint"] = .string(
-                "\(others.count) other mac-control-mcp process(es) are running. Each MCP client gets its own instance; since v0.8.3 an instance exits when its client closes stdin or its parent process dies, so long-lived leftovers are older versions or instances of still-connected clients. They don't affect this process (pid=\(pid)); stale ones can be stopped with: `kill \(others.map { String($0.pid) }.joined(separator: " "))`"
-            )
+        if let hint = Self.otherInstancesHint(others, selfPid: pid, selfVersion: version) {
+            payload["hint"] = .string(hint)
         }
         return successResult("mac-control-mcp v\(version) running as pid \(pid)", payload)
     }
@@ -304,19 +307,185 @@ extension ToolRegistry {
         #endif
     }
 
-    // MARK: - Zombie process detection
+    // MARK: - Other-instance detection
+
+    /// Every MCP client spawns its own server, so several instances are
+    /// normal. v0.10.1: classify each one instead of suggesting `kill` for
+    /// all of them — the old hint listed instances of still-connected
+    /// clients (and Claude Desktop's `disclaimer` wrappers), so following
+    /// it broke mac-control in every other open session.
+    enum OtherInstanceStatus: String, Sendable {
+        /// Parent (the MCP client) is alive; killing it breaks that client.
+        case connected
+        /// Same as connected, but running a different build than this one.
+        case outdated
+        /// Parent gone (re-parented to launchd) — safe to stop.
+        case orphaned
+    }
 
     struct OtherMcpProcessInfo: Sendable {
         let pid: Int
         let path: String
         let start: String
+        let parentPid: Int
+        let client: String?
+        let clientPid: Int?
+        let version: String?
+        let status: OtherInstanceStatus
+        /// Wrapper processes (Claude Desktop's `disclaimer`) that only exist
+        /// for this instance; stopped together with an orphan.
+        let wrapperPids: [Int]
     }
 
-    static func otherMcpProcesses(excluding self_pid: Int32) -> [OtherMcpProcessInfo] {
+    struct PsRow: Sendable, Equatable {
+        let pid: Int
+        let ppid: Int
+        let start: String
+        let command: String
+    }
+
+    static let serverExecutableMarker = "MacControlMCP.app/Contents/MacOS/MacControlMCP"
+
+    /// Parse `ps -axo pid=,ppid=,lstart=,command=` output. lstart is five
+    /// tokens (`Wed Oct 14 00:28:52 2026`); the command keeps its spacing.
+    static func parsePsRows(_ text: String) -> [PsRow] {
+        var rows: [PsRow] = []
+        for line in text.split(separator: "\n") {
+            let parts = line.split(separator: " ", maxSplits: 7, omittingEmptySubsequences: true)
+            guard parts.count == 8, let pid = Int(parts[0]), let ppid = Int(parts[1]) else { continue }
+            rows.append(PsRow(
+                pid: pid,
+                ppid: ppid,
+                start: parts[2...6].joined(separator: " "),
+                // maxSplits keeps the separator run before the last field.
+                command: String(parts[7]).trimmingCharacters(in: .whitespaces)
+            ))
+        }
+        return rows
+    }
+
+    /// The server binary path when `command` IS a mac-control-mcp server
+    /// (argv[0] is the binary) — nil for wrappers such as
+    /// `disclaimer --pgroup -- /…/MacControlMCP`, which merely mention it.
+    static func serverExecutable(of command: String) -> String? {
+        guard let range = command.range(of: serverExecutableMarker) else { return nil }
+        let prefix = command[..<range.lowerBound]
+        // An argument separator before the marker means the binary is an
+        // argument of some other program, not argv[0].
+        guard !prefix.contains(" -") else { return nil }
+        let after = command[range.upperBound...]
+        guard after.isEmpty || after.hasPrefix(" ") else { return nil }
+        return String(command[..<range.upperBound])
+    }
+
+    /// argv[0] basename of a command line (`/A/Claude.app/Contents/MacOS/Claude --x` → `Claude`).
+    static func programName(of command: String) -> String {
+        // argv[0] may contain spaces ("Application Support"), so take
+        // everything before the first option separator. A path appearing
+        // later as an ARGUMENT (disclaimer -- /…/X.app/…) must not win.
+        let head = command.range(of: " -").map { String(command[..<$0.lowerBound]) } ?? command
+        if let r = head.range(of: ".app/Contents/MacOS/", options: .backwards) {
+            let tail = head[r.upperBound...]
+            return String(tail.split(separator: " ", maxSplits: 1).first ?? Substring(tail))
+        }
+        let argv0 = head.split(separator: " ", maxSplits: 1).first.map(String.init) ?? head
+        return (argv0 as NSString).lastPathComponent
+    }
+
+    /// Readable names for the MCP clients seen in practice; anything else
+    /// keeps its program name.
+    static func clientDisplayName(_ program: String) -> String {
+        switch program {
+        case "Claude": return "Claude Desktop"
+        case "claude": return "Claude Code"
+        case "codex": return "Codex"
+        default: return program
+        }
+    }
+
+    static func bundleVersion(forExecutable path: String) -> String? {
+        // …/X.app/Contents/MacOS/X → …/X.app/Contents/Info.plist
+        let plist = URL(fileURLWithPath: path)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Info.plist")
+        guard let data = FileManager.default.contents(atPath: plist.path),
+              let dict = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+        else { return nil }
+        return dict["CFBundleShortVersionString"] as? String
+    }
+
+    static func classifyInstances(
+        rows: [PsRow],
+        excluding selfPid: Int,
+        selfVersion: String,
+        versionLookup: (String) -> String?
+    ) -> [OtherMcpProcessInfo] {
+        let byPid = Dictionary(rows.map { ($0.pid, $0) }, uniquingKeysWith: { first, _ in first })
+        var out: [OtherMcpProcessInfo] = []
+        for row in rows where row.pid != selfPid {
+            guard let exe = serverExecutable(of: row.command) else { continue }
+            var wrappers: [Int] = []
+            var client: PsRow? = row.ppid > 1 ? byPid[row.ppid] : nil
+            // Claude Desktop launches extensions through a `disclaimer`
+            // wrapper; the real client is the wrapper's parent.
+            if let wrapper = client, programName(of: wrapper.command) == "disclaimer" {
+                wrappers.append(wrapper.pid)
+                client = wrapper.ppid > 1 ? byPid[wrapper.ppid] : nil
+            }
+            let version = versionLookup(exe)
+            let status: OtherInstanceStatus
+            if client == nil {
+                status = .orphaned
+            } else if let version, version != selfVersion {
+                status = .outdated
+            } else {
+                status = .connected
+            }
+            out.append(OtherMcpProcessInfo(
+                pid: row.pid,
+                path: exe,
+                start: row.start,
+                parentPid: row.ppid,
+                client: client.map { clientDisplayName(programName(of: $0.command)) },
+                clientPid: client?.pid,
+                version: version,
+                status: status,
+                wrapperPids: status == .orphaned ? wrappers : []
+            ))
+        }
+        return out
+    }
+
+    static func otherInstancesHint(_ others: [OtherMcpProcessInfo], selfPid: Int32, selfVersion: String) -> String? {
+        guard !others.isEmpty else { return nil }
+        let connected = others.filter { $0.status == .connected }
+        let outdated = others.filter { $0.status == .outdated }
+        let orphaned = others.filter { $0.status == .orphaned }
+        var parts: [String] = [
+            "\(others.count) other mac-control-mcp process(es): \(connected.count) connected, "
+                + "\(outdated.count) outdated, \(orphaned.count) orphaned. Each MCP client runs its own "
+                + "instance and they don't affect this one (pid=\(selfPid))."
+        ]
+        if !connected.isEmpty || !outdated.isEmpty {
+            parts.append("Do NOT kill connected or outdated instances — that breaks mac-control in the client that owns them.")
+        }
+        if !outdated.isEmpty {
+            let clients = Set(outdated.compactMap(\.client)).sorted().joined(separator: ", ")
+            parts.append("Outdated instances run a different build than v\(selfVersion); restart their client"
+                + (clients.isEmpty ? "" : " (\(clients))") + " to load the current one.")
+        }
+        if !orphaned.isEmpty {
+            let pids = orphaned.flatMap { [$0.pid] + $0.wrapperPids }.map(String.init).joined(separator: " ")
+            parts.append("Orphaned instances have no client left and can be stopped with: `kill \(pids)`")
+        }
+        return parts.joined(separator: " ")
+    }
+
+    static func otherMcpProcesses(excluding self_pid: Int32, selfVersion: String = ServerVersion.current) -> [OtherMcpProcessInfo] {
         let process = Process()
         process.launchPath = "/bin/ps"
-        // Use args that we can parse deterministically: pid + lstart + command
-        process.arguments = ["-eo", "pid,lstart,command"]
+        // `=` suppresses headers; lstart is five tokens, command comes last.
+        process.arguments = ["-axo", "pid=,ppid=,lstart=,command="]
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
         process.standardOutput = stdoutPipe
@@ -327,31 +496,18 @@ extension ToolRegistry {
             return []
         }
         // v0.8.1 fix: read BEFORE waitUntilExit. The previous order
-        // deadlocked when `ps -eo pid,lstart,command` output exceeded
-        // the default 16KB pipe buffer — ps blocked on write, we
-        // blocked on waitUntilExit, and nothing moved. readDataToEndOfFile
-        // reads until EOF which only happens when the child closes
-        // its write side (i.e., exits), so we no longer need the
-        // separate waitUntilExit to prevent zombies. Drain stderr
-        // concurrently via a discard pipe so it can't back-pressure
-        // either. On a busy machine `ps` can easily produce 30-50KB.
+        // deadlocked when `ps` output exceeded the default 16KB pipe
+        // buffer — ps blocked on write, we blocked on waitUntilExit, and
+        // nothing moved. On a busy machine `ps` can easily produce 30-50KB.
         let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
         _ = stderrPipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         guard let text = String(data: data, encoding: .utf8) else { return [] }
-
-        var out: [OtherMcpProcessInfo] = []
-        for line in text.split(separator: "\n") {
-            guard line.contains("MacControlMCP.app/Contents/MacOS/MacControlMCP") else { continue }
-            // Columns (from `ps -eo pid,lstart,command`):
-            //   PID  LSTART(5-tokens:WDay Mon DD HH:MM:SS YYYY)  COMMAND...
-            let parts = line.split(separator: " ", omittingEmptySubsequences: true)
-            guard parts.count >= 7, let pid = Int(parts[0]) else { continue }
-            if pid == Int(self_pid) { continue }
-            let start = parts[1...5].joined(separator: " ")
-            let path = parts[6...].joined(separator: " ")
-            out.append(OtherMcpProcessInfo(pid: pid, path: path, start: start))
-        }
-        return out
+        return classifyInstances(
+            rows: parsePsRows(text),
+            excluding: Int(self_pid),
+            selfVersion: selfVersion,
+            versionLookup: bundleVersion(forExecutable:)
+        )
     }
 }
