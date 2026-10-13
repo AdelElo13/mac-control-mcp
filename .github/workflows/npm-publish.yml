@@ -1,0 +1,121 @@
+name: Publish to npm (Trusted Publishing / OIDC)
+
+# Publishes npm/ (the `mac-control-mcp` launcher) when a GitHub release is
+# published, using npm Trusted Publishing (OIDC): no stored npm token and no
+# local `npm login`. GitHub mints a short-lived OIDC token that npm exchanges
+# for publish rights; npm records build provenance automatically.
+#
+# ONE-TIME SETUP (npmjs.com, done by the maintainer):
+#   npmjs.com -> package `mac-control-mcp` -> Settings -> Trusted Publisher ->
+#   GitHub Actions:
+#     Organization or user: AdelElo13
+#     Repository:           mac-control-mcp
+#     Workflow filename:    npm-publish.yml
+#     Environment:          (leave blank)
+#
+# scripts/release.sh (PUBLISH=1) creates the GitHub release with the
+# notarized assets, then waits for this workflow's version to appear on npm
+# before publishing to the MCP registry.
+#
+# Untrusted-input note: the tag reaches shell steps only through the TAG env
+# var and is validated against ^v[0-9]+\.[0-9]+\.[0-9]+$ before any use.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish (e.g. v0.10.1)'
+        required: true
+
+permissions:
+  contents: read
+  id-token: write   # required for OIDC Trusted Publishing
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # The package declares "os": ["darwin"]; `npm ci` refuses other platforms.
+    runs-on: macos-15
+    timeout-minutes: 15
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - name: Validate tag format
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "refusing to publish: tag '$TAG' is not vX.Y.Z" >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
+
+      # NOTE: deliberately NOT configuring `registry-url` on setup-node. That
+      # writes an .npmrc auth entry backed by a placeholder token; npm then
+      # authenticates with it and never attempts Trusted Publishing (E404 on
+      # PUT). OIDC needs NO npm auth config. npm/test/publish-workflow.test.js
+      # pins this.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Use an npm that supports Trusted Publishing (OIDC)
+        # OIDC publish support landed in npm 11.5.1; node 22 ships npm 10.
+        run: npm install -g npm@^11
+
+      - name: Tag, package and server.json agree on the version
+        run: |
+          set -euo pipefail
+          PKG=$(node -p "require('./npm/package.json').version")
+          SRV=$(node -p "require('./server.json').version")
+          echo "tag=$TAG npm/package.json=$PKG server.json=$SRV"
+          test "v$PKG" = "$TAG"
+          test "$SRV" = "$PKG"
+
+      - name: The release carries the bundle postinstall downloads
+        # npm/scripts/install.js fetches this tarball + .sha256 from the
+        # release; publishing without them would ship a broken install.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          ASSETS=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name')
+          echo "$ASSETS"
+          echo "$ASSETS" | grep -qx "MacControlMCP-v${VERSION}-macos-universal.tar.gz"
+          echo "$ASSETS" | grep -qx "MacControlMCP-v${VERSION}-macos-universal.sha256"
+
+      - name: Install (no postinstall download)
+        working-directory: npm
+        run: npm ci --ignore-scripts
+
+      - name: Publish (OIDC, no token)
+        # prepack (npm/scripts/prepack.js) gates on the server.json version
+        # sync and the docs/TOOLS.md tool count. Verbose so a failed OIDC
+        # exchange is visible instead of a bare ENEEDAUTH.
+        working-directory: npm
+        env:
+          NPM_CONFIG_LOGLEVEL: verbose
+        run: |
+          npm --version
+          npm publish --access public
+
+      - name: Verify the version is live on npm
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          for i in $(seq 1 20); do
+            if [ "$(npm view "mac-control-mcp@${VERSION}" version 2>/dev/null || true)" = "$VERSION" ]; then
+              echo "npm OK: mac-control-mcp@${VERSION}"; exit 0
+            fi
+            sleep 15
+          done
+          echo "mac-control-mcp@${VERSION} not visible on npm after 5 minutes" >&2
+          exit 1

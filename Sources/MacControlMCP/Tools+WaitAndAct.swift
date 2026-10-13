@@ -5,7 +5,8 @@ extension ToolRegistry {
     // v0.10 C3: retain the legacy selectors, clamping and response shape,
     // while sharing the actual polling loop with wait_for.
     func callLegacyWait(_ arguments: [String: JSONValue], window: Bool) async -> ToolCallResult {
-        let name = window ? "wait_for_window" : "wait_for_element"
+        if window { return await callWaitForWindowResolved(arguments) }
+        let name = "wait_for_element"
         guard let pid = parsePID(arguments["pid"]) else {
             return invalidArgument("\(name) requires a positive integer pid.")
         }
@@ -38,6 +39,113 @@ extension ToolRegistry {
             : outcome.cancelled ? (window ? "Cancelled during poll." : "Cancelled after \(outcome.attempts) attempt(s).")
             : "Timed out after \(timeout)s\(window ? "" : " (\(outcome.attempts) attempts)")."
         return outcome.matched ? successResult(message, payload) : errorResult(message, payload)
+    }
+
+    /// wait_for_window target and timing, with the aliases agents actually
+    /// send (seen in real failures: `app`, `title`, `timeout_ms`).
+    struct WindowWaitRequest: Sendable, Equatable {
+        let pid: pid_t?
+        let bundleIdentifier: String?
+        let appName: String?
+        let titleContains: String?
+        let timeout: Double
+        let intervalMS: Int
+    }
+
+    /// Last pid resolved by name/bundle id inside the poll closure.
+    actor ResolvedPid {
+        private(set) var value: pid_t?
+        init(_ value: pid_t?) { self.value = value }
+        func set(_ newValue: pid_t?) { value = newValue }
+    }
+
+    struct WindowWaitArgumentError: Error, Equatable {
+        let message: String
+        init(_ message: String) { self.message = message }
+    }
+
+    static func parseWindowWait(_ arguments: [String: JSONValue]) -> Result<WindowWaitRequest, WindowWaitArgumentError> {
+        func text(_ key: String) -> String? {
+            guard let value = arguments[key]?.stringValue?.trimmingCharacters(in: .whitespaces), !value.isEmpty else { return nil }
+            return value
+        }
+        var pid: pid_t?
+        if let raw = arguments["pid"] {
+            guard let integer = raw.intValue, integer > 0, integer <= Int(Int32.max) else {
+                return .failure(WindowWaitArgumentError("wait_for_window pid must be a positive integer."))
+            }
+            pid = pid_t(integer)
+        }
+        let bundle = text("bundle_id")
+        let appName = text("app") ?? text("name")
+        guard pid != nil || bundle != nil || appName != nil else {
+            return .failure(WindowWaitArgumentError("wait_for_window requires pid, bundle_id or app (app name, e.g. \"Bambu Studio\")."))
+        }
+        let seconds: Double
+        if let s = arguments["timeout_seconds"]?.doubleValue {
+            seconds = s
+        } else if let ms = arguments["timeout_ms"]?.doubleValue {
+            seconds = ms / 1000
+        } else if let s = arguments["timeout"]?.doubleValue {
+            seconds = s
+        } else {
+            seconds = 5
+        }
+        guard seconds.isFinite else { return .failure(WindowWaitArgumentError("wait_for_window timeout must be a finite number.")) }
+        return .success(WindowWaitRequest(
+            pid: pid,
+            bundleIdentifier: bundle,
+            appName: appName,
+            titleContains: (text("title_contains") ?? text("title"))?.lowercased(),
+            timeout: min(max(seconds, 0.1), ToolTimeouts.maxWait),
+            intervalMS: min(max(arguments["poll_interval_ms"]?.intValue ?? 250, 50), 60_000)
+        ))
+    }
+
+    func callWaitForWindowResolved(_ arguments: [String: JSONValue]) async -> ToolCallResult {
+        let request: WindowWaitRequest
+        switch Self.parseWindowWait(arguments) {
+        case .success(let r): request = r
+        case .failure(let e): return invalidArgument(e.message)
+        }
+        let byName = request.pid == nil
+        let resolved = ResolvedPid(request.pid)
+        let outcome = await ConditionWait.poll(timeout: request.timeout, intervalMS: request.intervalMS, condition: .appears) {
+            // By bundle id / name the app may still be launching: resolve
+            // it on every poll until it shows up.
+            if byName {
+                let apps = await self.appLifecycle.runningApps()
+                await resolved.set(AppLifecycleController.pickRunningApp(
+                    apps, pid: nil, bundleIdentifier: request.bundleIdentifier, name: request.appName
+                )?.pid)
+            }
+            guard let pid = await resolved.value else { return .states([]) }
+            let list = await self.windows.listAppWindows(pid: pid)
+            let title = request.titleContains
+            guard let match = list.first(where: { title == nil || $0.title.lowercased().contains(title!) }) else { return .states([]) }
+            return .states([["window": encodeAsJSONValue(match)]])
+        }
+        var payload: [String: JSONValue] = [
+            "ok": .bool(outcome.matched),
+            "timeout_seconds": .number(request.timeout)
+        ]
+        let resolvedPid = await resolved.value
+        if let pid = resolvedPid { payload["pid"] = .number(Double(pid)) }
+        if outcome.cancelled {
+            payload["cancelled"] = .bool(true)
+            return errorResult("Cancelled during poll.", payload)
+        }
+        guard outcome.matched else {
+            payload["timed_out"] = .bool(true)
+            // With an explicit pid, check the process really exists — a dead
+            // or mistyped pid must not read as "running, no window yet".
+            let running = resolvedPid.map { kill($0, 0) == 0 || errno != ESRCH } ?? false
+            payload["app_running"] = .bool(running)
+            let what = running ? "a matching window" : (request.pid == nil ? "the app to start" : "pid \(request.pid!) (no such process)")
+            return errorResult("Timed out after \(request.timeout)s waiting for \(what).", payload)
+        }
+        payload["window"] = outcome.state?["window"]
+        return successResult("Window appeared.", payload)
     }
 
     struct WaitRequest: Sendable {

@@ -8,27 +8,33 @@ import Foundation
 /// Policy: an output path must resolve (after symlink + `..` normalization)
 /// to a location under one of the allowed root directories. Allowed roots
 /// default to TMPDIR and the user's Desktop / Documents / Downloads /
-/// Pictures. We refuse anything that escapes via symlinks or traversal.
+/// Pictures, plus private per-user directories directly under /tmp (see
+/// `privateSharedTempRoot`). We refuse anything that escapes via symlinks
+/// or traversal.
 enum PathValidator {
     enum ValidationError: Error, CustomStringConvertible {
         case outsideAllowedRoots(String)
         case unresolvable(String)
         case missingParent(String)
         case targetIsSymlink(String)
+        case targetNotPlainFile(String)
 
         var description: String {
             switch self {
             case .outsideAllowedRoots(let p):
                 let tmp = NSTemporaryDirectory()
                 return "output_path '\(p)' is outside allowed roots. " +
-                    "Use one of: \(tmp) (user-scoped temp — prefer this for throwaway files), ~/Desktop, ~/Documents, ~/Downloads, ~/Pictures. " +
-                    "/tmp and /private/tmp are rejected on purpose (TOCTOU symlink risk)."
+                    "Use one of: \(tmp) (user-scoped temp — prefer this for throwaway files), ~/Desktop, ~/Documents, ~/Downloads, ~/Pictures, " +
+                    "or a private directory directly under /tmp that you own with mode 0700 (e.g. an agent scratchpad like /tmp/claude-\(getuid())/...). " +
+                    "Other /tmp and /private/tmp paths are rejected on purpose (TOCTOU symlink risk)."
             case .unresolvable(let p):
                 return "output_path '\(p)' cannot be resolved."
             case .missingParent(let p):
                 return "parent directory for '\(p)' does not exist."
             case .targetIsSymlink(let p):
                 return "output_path '\(p)' already exists as a symlink; refusing to overwrite (could redirect the write outside allowed roots)."
+            case .targetNotPlainFile(let p):
+                return "output_path '\(p)' already exists as a hard-linked or non-regular file; refusing to overwrite (the write would reach the linked file). Choose a new file name."
             }
         }
     }
@@ -53,6 +59,42 @@ enum PathValidator {
         return roots
     }
 
+    /// Agent scratchpads such as Claude Code's `/tmp/claude-<uid>/...` live
+    /// in the shared /tmp, which is rejected in general because another
+    /// user could swap a path component between validation and the write.
+    /// That risk is gone when the FIRST directory below /tmp is a real
+    /// directory (not a symlink) owned by us with no group/other access:
+    /// nobody else can create, rename or replace anything underneath it.
+    /// Returns that directory when `resolvedParent` lies inside one.
+    static func privateSharedTempRoot(containing resolvedParent: URL) -> URL? {
+        // Foundation's resolvingSymlinksInPath strips a leading /private, so
+        // accept both ["/", "tmp", "<dir>", ...] and ["/", "private", "tmp", "<dir>", ...].
+        var components = resolvedParent.standardizedFileURL.pathComponents
+        if components.count >= 2, components[1] == "private" { components.remove(at: 1) }
+        guard components.count >= 3, components[0] == "/", components[1] == "tmp" else { return nil }
+        let dir = components[2]
+        guard !dir.isEmpty, dir != ".", dir != ".." else { return nil }
+        let top = "/private/tmp/" + dir
+        return isPrivateOwnedDirectory(top) ? URL(fileURLWithPath: top) : nil
+    }
+
+    /// lstat-based (does not follow symlinks): a directory owned by the
+    /// current uid with no group/other permission bits, no setuid/setgid
+    /// bits and no extended ACL (an ACL such as `everyone allow add_file`
+    /// can open a directory that still shows as 0700).
+    static func isPrivateOwnedDirectory(_ path: String) -> Bool {
+        var st = stat()
+        guard lstat(path, &st) == 0 else { return false }
+        guard (st.st_mode & S_IFMT) == S_IFDIR else { return false }
+        guard st.st_uid == getuid() else { return false }
+        guard (st.st_mode & 0o077) == 0, (st.st_mode & (S_ISUID | S_ISGID)) == 0 else { return false }
+        if let acl = acl_get_link_np(path, ACL_TYPE_EXTENDED) {
+            acl_free(UnsafeMutableRawPointer(acl))
+            return false
+        }
+        return true
+    }
+
     /// Resolve a candidate path to an absolute canonical URL and verify it
     /// lands under at least one allowed root. The parent directory must
     /// exist; we do not create intermediate folders on the caller's behalf.
@@ -73,7 +115,7 @@ enum PathValidator {
             let rootPath = root.path
             return parentPath == rootPath || parentPath.hasPrefix(rootPath + "/")
         }
-        guard ok else {
+        guard ok || privateSharedTempRoot(containing: resolvedParent) != nil else {
             throw ValidationError.outsideAllowedRoots(path)
         }
 
@@ -88,14 +130,21 @@ enum PathValidator {
         // (e.g. a symlink at ~/Desktop/harmless.png → /etc/hosts). We do
         // not want the caller to be able to chain a directory-traversal
         // attack by planting a symlink and then invoking capture_screen.
-        var isSymlink = false
-        if let attrs = try? FileManager.default.attributesOfItem(atPath: finalPath),
-           let type = attrs[.type] as? FileAttributeType,
-           type == .typeSymbolicLink {
-            isSymlink = true
-        }
-        guard !isSymlink else {
-            throw ValidationError.targetIsSymlink(path)
+        //
+        // v0.10.1: same for an existing hard link (st_nlink > 1) or any
+        // non-regular file. A process running as the same user — e.g. a
+        // sandboxed agent shell that can only write its scratchpad — could
+        // otherwise plant a hard link to ~/.zshrc as the output name and
+        // have this unsandboxed server overwrite the linked file.
+        var st = stat()
+        if lstat(finalPath, &st) == 0 {
+            let kind = st.st_mode & S_IFMT
+            if kind == S_IFLNK {
+                throw ValidationError.targetIsSymlink(path)
+            }
+            guard kind == S_IFREG, st.st_nlink <= 1 else {
+                throw ValidationError.targetNotPlainFile(path)
+            }
         }
 
         return finalPath

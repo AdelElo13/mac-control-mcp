@@ -13,23 +13,35 @@ struct SemanticSearchTests {
 
     // v0.10 C5: Finder publishes one text field per file; semantic alias
     // checks must not compile regular expressions for every row.
-    @Test("search aliases reject 5000 ordinary file fields in under 50 ms")
+    //
+    // What this guards: compiling the alias patterns per row. Re-introducing
+    // that (measured 2026-10-14, debug build) takes ~48 000 ms for these 5000
+    // rows; the fixed code takes ~30-45 ms alone and up to ~190 ms when the
+    // full parallel suite loads the machine. A single wall-clock sample with
+    // a 50 ms bar therefore failed on load alone. Now: best of up to five
+    // samples against a 500 ms bar — still ~100x below the regression, and
+    // a regressed first sample fails at once instead of running five times.
+    @Test("search aliases reject 5000 ordinary file fields without per-row regex cost")
     func fileFieldAliasCost() {
         let fields = (0..<5000).map { index in
             node("AXTextField", "Document \(index).pdf", value: "Document \(index).pdf", identifier: "fileNameTextField")
         }
         _ = AXSearch.search([node("AXTextField", identifier: "toolbarSearchField")], semantic: "search_field")
-        let start = ProcessInfo.processInfo.systemUptime
-        let hits = AXSearch.search(fields, semantic: "search_field")
-        let milliseconds = (ProcessInfo.processInfo.systemUptime - start) * 1000
-        print("C5 search_field synthetic_fields=5000 elapsed_ms=\(milliseconds) hits=\(hits.count)")
-        #expect(hits.isEmpty)
-        // The 50 ms bar is a local perf guard (debug build, this machine).
-        // Shared CI runners measured 287 ms and 1561 ms for the same run, so
-        // the wall-clock assertion is meaningless there; CI keeps the
-        // functional half (no false hits) and prints the timing.
+        let barMilliseconds = 500.0
+        var best = Double.infinity
+        for _ in 0..<5 {
+            let start = ProcessInfo.processInfo.systemUptime
+            let hits = AXSearch.search(fields, semantic: "search_field")
+            let milliseconds = (ProcessInfo.processInfo.systemUptime - start) * 1000
+            #expect(hits.isEmpty)
+            best = min(best, milliseconds)
+            if best < barMilliseconds || milliseconds > barMilliseconds * 10 { break }
+        }
+        print("C5 search_field synthetic_fields=5000 best_elapsed_ms=\(best)")
+        // Shared CI runners measured 287 ms and 1561 ms for one sample, so CI
+        // keeps the functional half (no false hits) and prints the timing.
         if ProcessInfo.processInfo.environment["CI"] == nil {
-            #expect(milliseconds < 50)
+            #expect(best < barMilliseconds, "alias search over 5000 rows took \(best) ms (best sample) — per-row regex compilation is back?")
         }
     }
 
