@@ -16,8 +16,12 @@
 # Optional env:
 #   PUBLISH=1          create the GitHub release, publish to npm, publish to
 #                      the MCP registry (default 0 = build assets only)
-#   NPM_PUBLISH=0      with PUBLISH=1, skip the npm publish step
-#   NPM_DRY_RUN=1      with PUBLISH=1, run `npm publish --dry-run` instead
+#   NPM_PUBLISH=ci     (default) with PUBLISH=1, let the GitHub release trigger
+#                      .github/workflows/npm-publish.yml (Trusted Publishing,
+#                      no local npm login) and wait for the version on npm
+#   NPM_PUBLISH=local  publish from this machine instead (needs `npm login`)
+#   NPM_PUBLISH=0      with PUBLISH=1, skip npm entirely
+#   NPM_DRY_RUN=1      with NPM_PUBLISH=local, run `npm publish --dry-run`
 #
 # Usage:
 #   VERSION=0.2.6 ./scripts/release.sh
@@ -286,11 +290,18 @@ if [ "$PUBLISH" = "1" ]; then
     # from exactly this release. Publishing first would put a package on the
     # registry whose install can only fail until the assets appear.
     #
-    #   NPM_PUBLISH=0   skip the npm step entirely (GitHub + registry only)
-    #   NPM_DRY_RUN=1   run `npm publish --dry-run` (packs + validates, uploads
-    #                   nothing) — use it to rehearse a release
+    #   NPM_PUBLISH=ci     (default) GitHub Actions publishes via Trusted Publishing
+    #   NPM_PUBLISH=local  publish from this machine (needs `npm login`)
+    #   NPM_PUBLISH=0      skip the npm step entirely (GitHub + registry only)
+    #   NPM_DRY_RUN=1      with local: `npm publish --dry-run` (uploads nothing)
     # -------------------------------------------------------------------------
-    if [ "${NPM_PUBLISH:-1}" = "1" ]; then
+    # npm: by default the GitHub release just created triggers
+    # .github/workflows/npm-publish.yml, which publishes via npm Trusted
+    # Publishing (OIDC) — no local `npm login` needed. NPM_PUBLISH=local
+    # keeps the old local publish; NPM_PUBLISH=0 skips npm entirely.
+    NPM_MODE="${NPM_PUBLISH:-ci}"
+    if [ "$NPM_MODE" = "1" ]; then NPM_MODE=local; fi
+    if [ "$NPM_MODE" = "local" ]; then
         echo ""
         NPM_ARGS=(publish --access public)
         if [ "${NPM_DRY_RUN:-0}" = "1" ]; then
@@ -304,22 +315,32 @@ if [ "$PUBLISH" = "1" ]; then
         # runs inside npm publish and gates on server.json version sync plus
         # the docs/TOOLS.md tool count.
         ( cd "${PROJECT_ROOT}/npm" && npm "${NPM_ARGS[@]}" )
-
-        if [ "${NPM_DRY_RUN:-0}" = "1" ]; then
-            echo "[release] npm dry run OK (nothing uploaded)."
-        else
-            echo "[release] verifying npm registry has ${VERSION}..."
-            PUBLISHED_NPM_VERSION="$(npm view "mac-control-mcp@${VERSION}" version 2>/dev/null || true)"
-            if [ "$PUBLISHED_NPM_VERSION" != "$VERSION" ]; then
-                echo "[release] ERROR: npm view mac-control-mcp@${VERSION} returned '${PUBLISHED_NPM_VERSION:-<nothing>}'."
-                echo "[release]        The publish did not land. Fix it before announcing the release."
-                exit 1
-            fi
-            echo "[release] npm OK: mac-control-mcp@${PUBLISHED_NPM_VERSION}"
-        fi
+    elif [ "$NPM_MODE" = "ci" ]; then
+        echo ""
+        echo "[release] npm is published by GitHub Actions (npm-publish.yml, Trusted Publishing)."
+        echo "[release] waiting for mac-control-mcp@${VERSION} to appear on npm (max 20 min)..."
     else
         echo ""
         echo "[release] NPM_PUBLISH=0 — skipping npm publish."
+    fi
+
+    if [ "$NPM_MODE" != "0" ] && [ "${NPM_DRY_RUN:-0}" != "1" ]; then
+        echo "[release] verifying npm registry has ${VERSION}..."
+        PUBLISHED_NPM_VERSION=""
+        for _ in $(seq 1 80); do
+            PUBLISHED_NPM_VERSION="$(npm view "mac-control-mcp@${VERSION}" version 2>/dev/null || true)"
+            [ "$PUBLISHED_NPM_VERSION" = "$VERSION" ] && break
+            [ "$NPM_MODE" = "local" ] && break
+            sleep 15
+        done
+        if [ "$PUBLISHED_NPM_VERSION" != "$VERSION" ]; then
+            echo "[release] ERROR: npm view mac-control-mcp@${VERSION} returned '${PUBLISHED_NPM_VERSION:-<nothing>}'."
+            echo "[release]        Check the 'Publish to npm' workflow run:"
+            echo "[release]        gh run list --workflow npm-publish.yml --limit 3"
+            echo "[release]        The MCP registry step is skipped until npm has the version."
+            exit 1
+        fi
+        echo "[release] npm OK: mac-control-mcp@${PUBLISHED_NPM_VERSION}"
     fi
 
     # Publish to the MCP registry. If the token is expired the caller has to
@@ -345,7 +366,7 @@ else
     echo "    ${OUT_DIR}/${SHA_NAME}"
     echo ""
     echo ""
-    echo "  cd npm && npm publish --access public   # only AFTER the GitHub release exists"
+    echo "  # npm: the published GitHub release triggers npm-publish.yml (Trusted Publishing)"
     echo "  npm view mac-control-mcp@${VERSION} version"
     echo ""
     echo "  mcp-publisher publish   # assumes you already ran \`mcp-publisher login github\`"
