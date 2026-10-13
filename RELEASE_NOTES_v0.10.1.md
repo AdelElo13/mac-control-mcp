@@ -71,9 +71,9 @@ Twenty-four new tests in `V0_10_1FixesTests`:
 - app resolution by pid, bundle id and name;
 - `activate_app` against an app that is not running.
 
-The full suite (794 tests on this branch, 770 on `main`) was run three times on this branch and twice on `main`. On both branches the same two tests fail in a full run:
+Two flaky tests are fixed at the root. Both were already failing on `main` in full parallel runs:
 
-- the 50 ms wall-clock guard for search aliases (measured 67–77 ms under full-suite load);
-- the strict Finder menu baseline in `RealAppMatrixTests`.
+- **Alias-cost perf guard.** It took one wall-clock sample against a 50 ms bar. The code measures 30–45 ms on its own and up to ~190 ms when the whole suite loads the machine. The regression it guards against (compiling the alias regexes per row) measures about 48 000 ms. The test now takes the best of up to five samples against a 500 ms bar and stops at the first sample that exceeds the bar tenfold. Re-introducing the regression was verified to fail it (40 099 ms).
+- **Real-world Finder canary.** It read 0 menu items from a `find_elements` walk that had reported `truncated: true`: several suites were querying Finder at once and the 5 s deadline ran out before the walk reached the menu bar. The strict baseline now uses `list_menu_paths`, which reads only the menu bar (270 paths on the test machine). `find_elements` is retried while it reports truncation, and only a complete walk is held to the bar.
 
-Both pass when run alone, on both branches. The ControlZoo matrix failed once with `-25204` in one full-suite run on this branch, then passed in two isolated runs.
+The full suite of 794 tests then passed in three consecutive runs, each with exit 0.
