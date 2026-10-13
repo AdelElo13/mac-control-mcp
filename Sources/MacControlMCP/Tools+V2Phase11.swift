@@ -60,7 +60,7 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "mcp_server_info",
-            description: "Self-diagnostic: returns mac-control-mcp version, this process PID, binary path, uptime, and any OTHER mac-control-mcp processes running on this machine (Claude Desktop occasionally leaves zombie instances after extension reload — this surfaces them).",
+            description: "Self-diagnostic: returns mac-control-mcp version, this process PID, binary path, uptime, and any OTHER mac-control-mcp processes running on this machine each classified as connected (its client is alive), outdated (alive but running another or replaced build), orphaned (client gone — the only ones the hint offers to kill) or unknown.",
             inputSchema: schema(properties: [:])
         )
     ]
@@ -321,6 +321,9 @@ extension ToolRegistry {
         case outdated
         /// Parent gone (re-parented to launchd) — safe to stop.
         case orphaned
+        /// The parent could not be identified from the process table. Never
+        /// offered for kill: an unidentified parent is not a dead one.
+        case unknown
     }
 
     struct OtherMcpProcessInfo: Sendable {
@@ -392,6 +395,15 @@ extension ToolRegistry {
         return (argv0 as NSString).lastPathComponent
     }
 
+    /// Processes that only exist to start the server: Claude Desktop's
+    /// `disclaimer` helper and the npm launcher (`node …/mac-control-mcp.js`).
+    /// The real client is their parent.
+    static func isLauncherWrapper(_ command: String) -> Bool {
+        let program = programName(of: command)
+        if program == "disclaimer" { return true }
+        return program == "node" && command.contains("mac-control-mcp")
+    }
+
     /// Readable names for the MCP clients seen in practice; anything else
     /// keeps its program name.
     static func clientDisplayName(_ program: String) -> String {
@@ -414,29 +426,56 @@ extension ToolRegistry {
         return dict["CFBundleShortVersionString"] as? String
     }
 
+    /// `ps` lstart in the C locale, e.g. `Wed Oct 14 00:28:52 2026`.
+    static func parseLstart(_ text: String) -> Date? {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "EEE MMM d HH:mm:ss yyyy"
+        return f.date(from: text.split(separator: " ").joined(separator: " "))
+    }
+
+    /// True when the binary on disk was replaced after the process started:
+    /// an in-place upgrade keeps the path (and the new Info.plist version),
+    /// but the running process still executes the old build.
+    static func binaryChangedSinceStart(_ exe: String, _ start: String) -> Bool {
+        guard let started = parseLstart(start),
+              let attrs = try? FileManager.default.attributesOfItem(atPath: exe),
+              let modified = attrs[.modificationDate] as? Date else { return false }
+        // lstart has 1 s resolution.
+        return modified.timeIntervalSince(started) > 1
+    }
+
     static func classifyInstances(
         rows: [PsRow],
         excluding selfPid: Int,
         selfVersion: String,
-        versionLookup: (String) -> String?
+        versionLookup: (String) -> String?,
+        isStaleBinary: (String, String) -> Bool = { _, _ in false }
     ) -> [OtherMcpProcessInfo] {
         let byPid = Dictionary(rows.map { ($0.pid, $0) }, uniquingKeysWith: { first, _ in first })
         var out: [OtherMcpProcessInfo] = []
         for row in rows where row.pid != selfPid {
             guard let exe = serverExecutable(of: row.command) else { continue }
             var wrappers: [Int] = []
-            var client: PsRow? = row.ppid > 1 ? byPid[row.ppid] : nil
+            // Orphaned ONLY when the chain demonstrably ends at launchd
+            // (ppid <= 1). A parent row that is merely missing from the
+            // snapshot (exited between rows, unparseable line) is `unknown`.
+            var parentPid = row.ppid
+            var reachedLaunchd = parentPid <= 1
+            var client: PsRow? = reachedLaunchd ? nil : byPid[parentPid]
             // Claude Desktop launches extensions through a `disclaimer`
             // wrapper; the real client is the wrapper's parent.
-            if let wrapper = client, programName(of: wrapper.command) == "disclaimer" {
+            if let wrapper = client, isLauncherWrapper(wrapper.command) {
                 wrappers.append(wrapper.pid)
-                client = wrapper.ppid > 1 ? byPid[wrapper.ppid] : nil
+                parentPid = wrapper.ppid
+                reachedLaunchd = parentPid <= 1
+                client = reachedLaunchd ? nil : byPid[parentPid]
             }
             let version = versionLookup(exe)
             let status: OtherInstanceStatus
             if client == nil {
-                status = .orphaned
-            } else if let version, version != selfVersion {
+                status = reachedLaunchd ? .orphaned : .unknown
+            } else if (version.map { $0 != selfVersion } ?? false) || isStaleBinary(exe, row.start) {
                 status = .outdated
             } else {
                 status = .connected
@@ -461,13 +500,15 @@ extension ToolRegistry {
         let connected = others.filter { $0.status == .connected }
         let outdated = others.filter { $0.status == .outdated }
         let orphaned = others.filter { $0.status == .orphaned }
+        let unknown = others.filter { $0.status == .unknown }
         var parts: [String] = [
             "\(others.count) other mac-control-mcp process(es): \(connected.count) connected, "
-                + "\(outdated.count) outdated, \(orphaned.count) orphaned. Each MCP client runs its own "
-                + "instance and they don't affect this one (pid=\(selfPid))."
+                + "\(outdated.count) outdated, \(orphaned.count) orphaned"
+                + (unknown.isEmpty ? "" : ", \(unknown.count) with an unidentified parent")
+                + ". Each MCP client runs its own instance and they don't affect this one (pid=\(selfPid))."
         ]
-        if !connected.isEmpty || !outdated.isEmpty {
-            parts.append("Do NOT kill connected or outdated instances — that breaks mac-control in the client that owns them.")
+        if !connected.isEmpty || !outdated.isEmpty || !unknown.isEmpty {
+            parts.append("Do NOT kill connected, outdated or unidentified instances — that can break mac-control in the client that owns them.")
         }
         if !outdated.isEmpty {
             let clients = Set(outdated.compactMap(\.client)).sorted().joined(separator: ", ")
@@ -486,6 +527,11 @@ extension ToolRegistry {
         process.launchPath = "/bin/ps"
         // `=` suppresses headers; lstart is five tokens, command comes last.
         process.arguments = ["-axo", "pid=,ppid=,lstart=,command="]
+        // lstart is locale-formatted (ja_JP prints 4 tokens instead of 5),
+        // which would shift every column. Pin the C locale.
+        var env = ProcessInfo.processInfo.environment
+        env["LC_ALL"] = "C"
+        process.environment = env
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
         process.standardOutput = stdoutPipe
@@ -507,7 +553,8 @@ extension ToolRegistry {
             rows: parsePsRows(text),
             excluding: Int(self_pid),
             selfVersion: selfVersion,
-            versionLookup: bundleVersion(forExecutable:)
+            versionLookup: bundleVersion(forExecutable:),
+            isStaleBinary: binaryChangedSinceStart
         )
     }
 }

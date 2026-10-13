@@ -97,6 +97,73 @@ struct V0_10_1FixesTests {
         #expect(hint.contains("1 connected"))
     }
 
+    @Test("a parent missing from the snapshot is `unknown`, never offered for kill")
+    func missingParentIsUnknown() {
+        let rows = [
+            row(601, 4242, appsExe),   // parent 4242 not in the snapshot
+            row(602, 600, appsExe),
+        ]
+        let others = ToolRegistry.classifyInstances(rows: rows, excluding: 602, selfVersion: "0.10.1") { _ in "0.10.1" }
+        #expect(others.first?.status == .unknown)
+        let hint = ToolRegistry.otherInstancesHint(others, selfPid: 602, selfVersion: "0.10.1") ?? ""
+        #expect(!hint.contains("`kill"))
+        #expect(hint.contains("unidentified"))
+    }
+
+    @Test("an instance whose binary was replaced after it started is outdated even with the same plist version")
+    func inPlaceUpgradeIsOutdated() {
+        let rows = [
+            row(600, 1, "/x/claude.app/Contents/MacOS/claude"),
+            row(601, 600, appsExe),
+            row(602, 600, appsExe),
+        ]
+        let others = ToolRegistry.classifyInstances(
+            rows: rows, excluding: 602, selfVersion: "0.10.1",
+            versionLookup: { _ in "0.10.1" },
+            isStaleBinary: { _, _ in true }
+        )
+        #expect(others.first?.status == .outdated)
+    }
+
+    @Test("lstart parses in the C locale and the stale-binary check compares mtimes")
+    func lstartAndStaleBinary() throws {
+        let date = try #require(ToolRegistry.parseLstart("Wed Oct 14 00:28:52 2026"))
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = .current
+        #expect(cal.component(.hour, from: date) == 0)
+        #expect(cal.component(.day, from: date) == 14)
+        #expect(ToolRegistry.parseLstart("Wed Oct  4 00:28:52 2026") != nil)
+
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("mcp-bin-\(UUID().uuidString)")
+        try Data("x".utf8).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "EEE MMM d HH:mm:ss yyyy"
+        let longAgo = f.string(from: Date().addingTimeInterval(-3600))
+        let future = f.string(from: Date().addingTimeInterval(3600))
+        #expect(ToolRegistry.binaryChangedSinceStart(file.path, longAgo) == true)
+        #expect(ToolRegistry.binaryChangedSinceStart(file.path, future) == false)
+        #expect(ToolRegistry.binaryChangedSinceStart("/nonexistent/bin", longAgo) == false)
+    }
+
+    @Test("the npm node launcher is unwrapped like Claude Desktop's disclaimer")
+    func npmLauncherUnwrapped() {
+        let vendorExe = "/usr/local/lib/node_modules/mac-control-mcp/vendor/MacControlMCP.app/Contents/MacOS/MacControlMCP"
+        let rows = [
+            row(600, 1, "/x/claude.app/Contents/MacOS/claude"),
+            row(610, 600, "node /usr/local/lib/node_modules/mac-control-mcp/bin/mac-control-mcp.js"),
+            row(611, 610, vendorExe),
+            row(620, 1, "node /usr/local/lib/node_modules/mac-control-mcp/bin/mac-control-mcp.js"),
+            row(621, 620, vendorExe),
+            row(699, 600, appsExe),
+        ]
+        let others = ToolRegistry.classifyInstances(rows: rows, excluding: 699, selfVersion: "0.10.1") { _ in "0.10.1" }
+        let byPid = Dictionary(uniqueKeysWithValues: others.map { ($0.pid, $0) })
+        #expect(byPid[611]?.client == "Claude Code")
+        #expect(byPid[611]?.status == .connected)
+        #expect(byPid[621]?.status == .orphaned)
+        #expect(byPid[621]?.wrapperPids == [620])
+        #expect(ToolRegistry.isLauncherWrapper("node /some/other/server.js") == false)
+    }
+
     @Test("bundle version is read from the .app's Info.plist")
     func readsBundleVersion() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("mcp-ver-\(UUID().uuidString)")
@@ -155,6 +222,38 @@ struct V0_10_1FixesTests {
         #expect(PathValidator.isPrivateOwnedDirectory(target) == true)
     }
 
+    @Test("an existing hard link or non-regular target is refused (no write-through to the linked file)")
+    func rejectsHardLinkTarget() throws {
+        let dir = try makeTmpDir(mode: 0o700)
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let victim = dir + "/victim.txt"
+        try "keep".write(toFile: victim, atomically: false, encoding: .utf8)
+        let planted = dir + "/shot.png"
+        #expect(link(victim, planted) == 0)
+        #expect(throws: PathValidator.ValidationError.self) { try PathValidator.validate(planted) }
+        // a directory as the target name
+        try FileManager.default.createDirectory(atPath: dir + "/d.png", withIntermediateDirectories: false)
+        #expect(throws: PathValidator.ValidationError.self) { try PathValidator.validate(dir + "/d.png") }
+        // a plain single-link file may be overwritten as before
+        let plain = dir + "/plain.png"
+        try "x".write(toFile: plain, atomically: false, encoding: .utf8)
+        _ = try PathValidator.validate(plain)
+    }
+
+    @Test("a 0700 /tmp dir with an extended ACL is not treated as private")
+    func rejectsAclDir() throws {
+        let dir = try makeTmpDir(mode: 0o700)
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        #expect(PathValidator.isPrivateOwnedDirectory(dir) == true)
+        let chmod = Process()
+        chmod.launchPath = "/bin/chmod"
+        chmod.arguments = ["+a", "everyone allow add_file", dir]
+        try chmod.run(); chmod.waitUntilExit()
+        #expect(chmod.terminationStatus == 0)
+        #expect(PathValidator.isPrivateOwnedDirectory(dir) == false)
+        #expect(throws: PathValidator.ValidationError.self) { try PathValidator.validate(dir + "/x.png") }
+    }
+
     // MARK: - #3 wait_for_window accepts the arguments agents actually send
 
     private func parsed(_ args: [String: JSONValue]) -> ToolRegistry.WindowWaitRequest? {
@@ -209,6 +308,24 @@ struct V0_10_1FixesTests {
         #expect(payload["timeout_seconds"] == .number(0.3))
     }
 
+    @Test("wait_for_window with a dead pid reports app_running=false")
+    func windowWaitDeadPid() async {
+        let registry = ToolRegistry(accessibility: AccessibilityController())
+        let result = await registry.callTool(
+            name: "wait_for_window",
+            arguments: ["pid": .number(Double(Int32.max - 7)), "timeout_ms": .number(200)]
+        )
+        guard case .object(let payload) = result.structuredContent else { Issue.record("no payload"); return }
+        #expect(payload["app_running"] == .bool(false))
+    }
+
+    @Test("nested helper bundles are recognised (no LaunchServices reopen fallback for them)")
+    func nestedBundle() {
+        #expect(AppLifecycleController.isNestedBundle("/Applications/Foo.app/Contents/Frameworks/Foo Helper.app") == true)
+        #expect(AppLifecycleController.isNestedBundle("/Applications/Foo.app") == false)
+        #expect(AppLifecycleController.isNestedBundle("/Applications/Foo.app/") == false)
+    }
+
     // MARK: - #4 activate_app resolves names and reports not-running honestly
 
     private func app(_ pid: pid_t, _ name: String?, _ bundle: String?, path: String? = nil, regular: Bool = true) -> AppLifecycleController.AppSnapshot {
@@ -224,7 +341,10 @@ struct V0_10_1FixesTests {
         ]
         typealias C = AppLifecycleController
         #expect(C.pickRunningApp(apps, pid: 12, bundleIdentifier: nil, name: nil)?.pid == 12)
-        #expect(C.pickRunningApp(apps, pid: 99, bundleIdentifier: nil, name: "Finder") == nil)
+        #expect(C.pickRunningApp(apps, pid: 99, bundleIdentifier: nil, name: nil) == nil)
+        // a stale pid falls back to bundle id / name (v0.10.0 compatibility)
+        #expect(C.pickRunningApp(apps, pid: 99, bundleIdentifier: nil, name: "Finder")?.pid == 12)
+        #expect(C.pickRunningApp(apps, pid: 99, bundleIdentifier: "com.apple.finder", name: nil)?.pid == 12)
         #expect(C.pickRunningApp(apps, pid: nil, bundleIdentifier: "com.bambulab.bambu-studio", name: nil)?.pid == 11)
         #expect(C.pickRunningApp(apps, pid: nil, bundleIdentifier: nil, name: "bambu studio")?.pid == 11)
         #expect(C.pickRunningApp(apps, pid: nil, bundleIdentifier: nil, name: "BambuStudio.app")?.pid == 11)
@@ -248,6 +368,14 @@ struct V0_10_1FixesTests {
         #expect(empty.isError == true)
         let byName = await registry.callTool(name: "activate_app", arguments: ["app": .string("No Such App \(UUID().uuidString)")])
         guard case .object(let payload) = byName.structuredContent else { Issue.record("no payload"); return }
+        #expect(payload["error_code"] == .string("not_running"))
+    }
+
+    @Test("an invalid pid together with a bundle_id still resolves by bundle_id")
+    func activateInvalidPidWithBundle() async {
+        let registry = ToolRegistry(accessibility: AccessibilityController())
+        let r = await registry.callTool(name: "activate_app", arguments: ["pid": .string("abc"), "bundle_id": .string("com.example.nope-\(UUID().uuidString)")])
+        guard case .object(let payload) = r.structuredContent else { Issue.record("no payload"); return }
         #expect(payload["error_code"] == .string("not_running"))
     }
 }

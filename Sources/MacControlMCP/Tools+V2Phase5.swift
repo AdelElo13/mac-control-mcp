@@ -193,7 +193,7 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "wait_for_window",
-            description: "Poll until a window (matching optional title_contains) exists for an app, or timeout. Target the app by pid, or by bundle_id / app name — those are re-resolved on every poll, so this also waits for an app that is still launching. timeout_seconds (default 5, max 60); timeout_ms and title are accepted as aliases. On timeout, app_running tells whether the app was found at all.",
+            description: "Poll until a window (matching optional title_contains) exists for an app, or timeout. Target the app by pid, or by bundle_id / app name — those are re-resolved on every poll, so this also waits for an app that is still launching. timeout_seconds (default 5, max 60); timeout_ms (milliseconds), timeout (seconds) and title are accepted as aliases. On timeout, app_running tells whether the app was found at all.",
             inputSchema: schema(
                 properties: [
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
@@ -207,6 +207,7 @@ extension ToolRegistry {
                     "title": .object(["type": .string("string"), "description": .string("Alias of title_contains.")]),
                     "timeout_seconds": .object(["type": .string("number")]),
                     "timeout_ms": .object(["type": .string("number"), "description": .string("Alias: timeout in milliseconds.")]),
+                    "timeout": .object(["type": .string("number"), "description": .string("Alias: timeout in seconds.")]),
                     "poll_interval_ms": .object(["type": .array([.string("integer"), .string("string")])])
                 ]
             )

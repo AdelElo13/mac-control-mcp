@@ -137,8 +137,11 @@ extension ToolRegistry {
         }
         guard outcome.matched else {
             payload["timed_out"] = .bool(true)
-            payload["app_running"] = .bool(resolvedPid != nil)
-            let what = resolvedPid == nil ? "the app to start" : "a matching window"
+            // With an explicit pid, check the process really exists — a dead
+            // or mistyped pid must not read as "running, no window yet".
+            let running = resolvedPid.map { kill($0, 0) == 0 || errno != ESRCH } ?? false
+            payload["app_running"] = .bool(running)
+            let what = running ? "a matching window" : (request.pid == nil ? "the app to start" : "pid \(request.pid!) (no such process)")
             return errorResult("Timed out after \(request.timeout)s waiting for \(what).", payload)
         }
         payload["window"] = outcome.state?["window"]

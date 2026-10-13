@@ -17,6 +17,7 @@ enum PathValidator {
         case unresolvable(String)
         case missingParent(String)
         case targetIsSymlink(String)
+        case targetNotPlainFile(String)
 
         var description: String {
             switch self {
@@ -32,6 +33,8 @@ enum PathValidator {
                 return "parent directory for '\(p)' does not exist."
             case .targetIsSymlink(let p):
                 return "output_path '\(p)' already exists as a symlink; refusing to overwrite (could redirect the write outside allowed roots)."
+            case .targetNotPlainFile(let p):
+                return "output_path '\(p)' already exists as a hard-linked or non-regular file; refusing to overwrite (the write would reach the linked file). Choose a new file name."
             }
         }
     }
@@ -76,13 +79,20 @@ enum PathValidator {
     }
 
     /// lstat-based (does not follow symlinks): a directory owned by the
-    /// current uid with no group/other permission bits.
+    /// current uid with no group/other permission bits, no setuid/setgid
+    /// bits and no extended ACL (an ACL such as `everyone allow add_file`
+    /// can open a directory that still shows as 0700).
     static func isPrivateOwnedDirectory(_ path: String) -> Bool {
         var st = stat()
         guard lstat(path, &st) == 0 else { return false }
         guard (st.st_mode & S_IFMT) == S_IFDIR else { return false }
         guard st.st_uid == getuid() else { return false }
-        return (st.st_mode & 0o077) == 0
+        guard (st.st_mode & 0o077) == 0, (st.st_mode & (S_ISUID | S_ISGID)) == 0 else { return false }
+        if let acl = acl_get_link_np(path, ACL_TYPE_EXTENDED) {
+            acl_free(UnsafeMutableRawPointer(acl))
+            return false
+        }
+        return true
     }
 
     /// Resolve a candidate path to an absolute canonical URL and verify it
@@ -120,14 +130,21 @@ enum PathValidator {
         // (e.g. a symlink at ~/Desktop/harmless.png → /etc/hosts). We do
         // not want the caller to be able to chain a directory-traversal
         // attack by planting a symlink and then invoking capture_screen.
-        var isSymlink = false
-        if let attrs = try? FileManager.default.attributesOfItem(atPath: finalPath),
-           let type = attrs[.type] as? FileAttributeType,
-           type == .typeSymbolicLink {
-            isSymlink = true
-        }
-        guard !isSymlink else {
-            throw ValidationError.targetIsSymlink(path)
+        //
+        // v0.10.1: same for an existing hard link (st_nlink > 1) or any
+        // non-regular file. A process running as the same user — e.g. a
+        // sandboxed agent shell that can only write its scratchpad — could
+        // otherwise plant a hard link to ~/.zshrc as the output name and
+        // have this unsandboxed server overwrite the linked file.
+        var st = stat()
+        if lstat(finalPath, &st) == 0 {
+            let kind = st.st_mode & S_IFMT
+            if kind == S_IFLNK {
+                throw ValidationError.targetIsSymlink(path)
+            }
+            guard kind == S_IFREG, st.st_nlink <= 1 else {
+                throw ValidationError.targetNotPlainFile(path)
+            }
         }
 
         return finalPath

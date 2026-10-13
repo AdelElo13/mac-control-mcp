@@ -99,7 +99,7 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "activate_app",
-            description: "Bring a running app to the front by pid, bundle_id or name, and verify it actually became frontmost (macOS can ignore activation requests from background processes; the tool then retries via AXFrontmost and LaunchServices). ok=true only when verified; status is activated, not_running (start it with launch_app) or activation_refused. Returns method and the frontmost app.",
+            description: "Bring a running app to the front by pid, bundle_id or name, and verify it actually became frontmost (macOS can ignore activation requests from background processes; the tool then retries via AXFrontmost and, for regular top-level apps, a LaunchServices reopen — which in some apps such as Finder or Safari also opens a new window). ok=true only when verified; status is activated, not_running (start it with launch_app) or activation_refused. Returns method and the frontmost app.",
             inputSchema: schema(
                 properties: [
                     "pid": .object(["type": .array([.string("integer"), .string("string")])]),
@@ -302,9 +302,6 @@ extension ToolRegistry {
 
     func callActivateApp(_ arguments: [String: JSONValue]) async -> ToolCallResult {
         let pid = parsePID(arguments["pid"])
-        if arguments["pid"] != nil && pid == nil {
-            return invalidArgument("activate_app pid must be a positive integer.")
-        }
         let bundleID = arguments["bundle_id"]?.stringValue?.trimmingCharacters(in: .whitespaces)
         // `app` is accepted as an alias: agents reach for it by analogy with
         // the expected_app guard.
@@ -312,7 +309,9 @@ extension ToolRegistry {
             .compactMap { $0?.stringValue?.trimmingCharacters(in: .whitespaces) }
             .first { !$0.isEmpty }
         if pid == nil && (bundleID?.isEmpty ?? true) && name == nil {
-            return invalidArgument("activate_app requires pid, bundle_id or name (app name, e.g. \"Safari\").")
+            return invalidArgument(arguments["pid"] == nil
+                ? "activate_app requires pid, bundle_id or name (app name, e.g. \"Safari\")."
+                : "activate_app pid must be a positive integer (or pass bundle_id / name).")
         }
         let result = await appLifecycle.activate(
             pid: pid,

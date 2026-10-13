@@ -90,7 +90,9 @@ actor AppLifecycleController {
     /// .app file name). Among several matches a regular (Dock) app beats
     /// helpers/agents sharing the bundle id.
     static func pickRunningApp(_ apps: [AppSnapshot], pid: pid_t?, bundleIdentifier: String?, name: String?) -> AppSnapshot? {
-        if let pid { return apps.first { $0.pid == pid } }
+        // A pid that is no longer running falls back to bundle id / name
+        // when given (v0.10.0 did the same for bundle_id).
+        if let pid, let hit = apps.first(where: { $0.pid == pid }) { return hit }
         var matches: [AppSnapshot] = []
         if let bundleIdentifier, !bundleIdentifier.isEmpty {
             matches = apps.filter { $0.bundleIdentifier == bundleIdentifier }
@@ -137,11 +139,21 @@ actor AppLifecycleController {
             return ActivationResult(status: .activated, app: target, method: "ax_frontmost", frontmost: target)
         }
 
-        if let path = target.bundlePath, await openExisting(path: path), await waitUntilFrontmost(target.pid, timeout: 1.0) {
+        // Last resort, regular top-level apps only: a LaunchServices open of
+        // a nested helper bundle (Foo.app/Contents/…/Helper.app) could start
+        // something else. For some apps (Finder, Safari, Mail) this reopen
+        // event also opens a new window — documented in the tool description.
+        if target.isRegular, let path = target.bundlePath, !Self.isNestedBundle(path),
+           await openExisting(path: path), await waitUntilFrontmost(target.pid, timeout: 1.0) {
             return ActivationResult(status: .activated, app: target, method: "open_application", frontmost: target)
         }
 
         return ActivationResult(status: .refused, app: target, method: nil, frontmost: await frontmostApp())
+    }
+
+    /// `/A/Foo.app/Contents/Frameworks/Helper.app` → true.
+    static func isNestedBundle(_ path: String) -> Bool {
+        (path as NSString).pathComponents.filter { $0.hasSuffix(".app") }.count > 1
     }
 
     private func waitUntilFrontmost(_ pid: pid_t, timeout: TimeInterval) async -> Bool {
