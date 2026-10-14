@@ -294,6 +294,48 @@ extension ToolRegistry {
         }
         var payload = await actionPostCheck(target, before: before, acted: !result.isError)
         payload["result"] = result.structuredContent
-        return result.isError ? errorResult("Targeted typing failed.", payload) : successResult("Typed into the focused element.", payload)
+        if result.isError { return errorResult("Targeted typing failed.", payload) }
+        // v0.10.2: for typing, only the VALUE is evidence. actionPostCheck
+        // also accepts a focus change, but this tool focused the element
+        // itself a moment ago — that made a no-op type report verified:true.
+        // Key events are delivered asynchronously: give the value up to
+        // 500 ms to change before calling it a no-op.
+        var afterValue = (payload["after"]?.objectValue)?["value"]
+        if Self.typingVerdict(before: before["value"], after: afterValue) == .unchanged {
+            let deadline = Date().addingTimeInterval(0.5)
+            while Date() < deadline, Self.typingVerdict(before: before["value"], after: afterValue) == .unchanged {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                afterValue = actionSnapshot(target)["value"]
+            }
+            if var after = payload["after"]?.objectValue {
+                after["value"] = afterValue ?? .null
+                payload["after"] = .object(after)
+            }
+        }
+        switch Self.typingVerdict(before: before["value"], after: afterValue) {
+        case .changed:
+            payload["verified"] = .bool(true)
+            payload["verification"] = .string("value_changed")
+        case .unchanged:
+            payload["ok"] = .bool(false)
+            payload["verified"] = .bool(false)
+            payload["verification"] = .string("value_unchanged")
+            payload["error_code"] = .string("no_effect")
+            payload["hint"] = .string("The keystrokes/paste did not change the field. Check that the app is frontmost and the field accepts input; strategy:\"keys\" avoids paste, strategy:\"ax\" sets AXValue directly (without app text-change notifications).")
+            return errorResult("Typing had no effect on the element's value.", payload)
+        case .unknown:
+            payload["verified"] = .null
+            payload["verification"] = .string("value_unreadable")
+        }
+        return successResult("Typed into the focused element.", payload)
+    }
+
+    enum TypingVerdict: Equatable { case changed, unchanged, unknown }
+
+    /// Secure fields and elements without a string/number AXValue have no
+    /// readable value (`.null`) — then the effect is honestly unknown.
+    static func typingVerdict(before: JSONValue?, after: JSONValue?) -> TypingVerdict {
+        guard case .string(let b)? = before, case .string(let a)? = after else { return .unknown }
+        return a == b ? .unchanged : .changed
     }
 }

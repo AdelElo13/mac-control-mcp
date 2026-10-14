@@ -812,7 +812,8 @@ final class ToolRegistry: @unchecked Sendable {
                     "ok": .bool(true),
                     "strategy": .string(result.strategy),
                     "requested_strategy": .string(strategy.rawValue),
-                    "text_length": .number(Double(text.count))
+                    "text_length": .number(Double(text.count)),
+                    "fallback_reason": result.fallbackReason.map(JSONValue.string) ?? .null
                 ]
             )
         }
@@ -1233,7 +1234,7 @@ final class ToolRegistry: @unchecked Sendable {
         ),
         MCPToolDefinition(
             name: "type_text",
-            description: "Type text into the focused field or an element_id. With element_id, refuse secure fields, set AXFocused through set_element_attribute and verify focus before typing; guard the owning app/window automatically. Strategies: auto (clipboard → keys → ax), clipboard, keys, ax. Without an ID, existing focused-field behavior is retained. Targeted results include verified (true/false/null) and a verification reason; focus change alone does not prove the text was accepted.",
+            description: "Type text into the focused field or an element_id. With element_id, refuse secure fields, set AXFocused through set_element_attribute and verify focus before typing; guard the owning app/window automatically. Strategies: auto (clipboard → keys → ax; when the focused value is readable and a paste leaves it unchanged — e.g. an app without Edit ▸ Paste — auto retypes with key events and reports fallback_reason clipboard_paste_no_effect), clipboard, keys, ax. Without an ID, existing focused-field behavior is retained. Targeted results judge the element VALUE only: verified=true when it changed, ok=false with error_code no_effect when it did not, verified=null when the value is unreadable (secure fields). The focus this tool sets itself is never counted as evidence.",
             inputSchema: schema(
                 properties: [
                     "element_id": .object(["type": .string("string"), "description": .string("Live element ID; automatically guards its owning app/window. Returns tri-state verified with reason.")]),

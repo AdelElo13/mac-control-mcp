@@ -16,11 +16,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// test can assert the button did something, not just that AXPress
     /// returned ax_status == 0.
     var clickLabel: NSTextField?
+    /// Second column (radio, segmented, combo, search, date, color well,
+    /// disclosure, progress, tab view, table) — see ExtendedControls.swift.
+    let extended = ExtendedControls()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
 
-        let contentSize = NSSize(width: 720, height: 720)
+        let contentSize = NSSize(width: 1340, height: 760)
         window = NSWindow(
             contentRect: NSRect(origin: .zero, size: contentSize),
             styleMask: [.titled, .closable, .resizable],
@@ -39,11 +42,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let root = NSView(frame: NSRect(origin: .zero, size: size))
         root.autoresizingMask = [.width, .height]
 
-        let stack = NSStackView(frame: NSRect(x: 20, y: 20, width: size.width - 40, height: size.height - 40))
+        let columns = NSStackView(frame: NSRect(x: 20, y: 20, width: size.width - 40, height: size.height - 40))
+        columns.orientation = .horizontal
+        columns.alignment = .top
+        columns.spacing = 28
+        columns.autoresizingMask = [.width, .height]
+
+        let stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
-        stack.autoresizingMask = [.width, .height]
 
         stack.addArrangedSubview(header("ControlZoo — mac-control-mcp test harness"))
 
@@ -87,7 +95,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // OutlineView (with selection) — identifier: outline_items
         stack.addArrangedSubview(labeledRow("AXOutline:", control: makeOutline(id: "outline_items"), height: 160))
 
-        root.addSubview(stack)
+        columns.addArrangedSubview(stack)
+        columns.addArrangedSubview(extended.buildColumn())
+        root.addSubview(columns)
         return root
     }
 

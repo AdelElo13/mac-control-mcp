@@ -74,6 +74,9 @@ actor AccessibilityController {
     struct TypeTextResult: Codable, Sendable {
         let success: Bool
         let strategy: String
+        /// v0.10.2: set when `auto` abandoned a strategy that reported
+        /// success but demonstrably did nothing (e.g. "clipboard_paste_no_effect").
+        var fallbackReason: String? = nil
     }
 
     struct AppInfo: Codable, Sendable {
@@ -523,7 +526,21 @@ actor AccessibilityController {
         case .auto:
             // Events-first ordering — triggers real paste/input events
             // so React / Angular state stays consistent with the DOM.
+            //
+            // v0.10.2: Cmd+V "succeeds" even when nothing is pasted — an app
+            // without an Edit ▸ Paste menu item, or a field that ignores
+            // paste, swallows it silently (found driving ControlZoo's search
+            // field: auto reported clipboard_paste while the field stayed
+            // empty). When the focused element's value is readable, require
+            // it to change; otherwise fall back to Unicode key events.
+            let probe = focusedElement()
+            let valueBefore = probe.flatMap { readValue(element: $0) }
             if await pasteTextViaClipboard(text) {
+                if let probe, let valueBefore,
+                   await !valueChanges(of: probe, from: valueBefore, within: 0.4),
+                   typeWithUnicodeEvents(text) {
+                    return TypeTextResult(success: true, strategy: "cg_unicode", fallbackReason: "clipboard_paste_no_effect")
+                }
                 return TypeTextResult(success: true, strategy: "clipboard_paste")
             }
             if typeWithUnicodeEvents(text) {
@@ -534,6 +551,18 @@ actor AccessibilityController {
             }
             return TypeTextResult(success: false, strategy: "none")
         }
+    }
+
+    /// Poll an element's AXValue until it differs from `before` or the
+    /// window elapses. Apps apply a paste asynchronously, so one read right
+    /// after Cmd+V is not enough.
+    func valueChanges(of element: AXUIElement, from before: String, within seconds: TimeInterval) async -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        repeat {
+            if let now = readValue(element: element), now != before { return true }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        } while Date() < deadline
+        return readValue(element: element).map { $0 != before } ?? true
     }
 
     func readValue(element: AXUIElement) -> String? {
@@ -1485,6 +1514,13 @@ actor AccessibilityController {
             keyDown.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: buffer.baseAddress)
             keyUp.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: buffer.baseAddress)
         }
+        // v0.10.2: events from the .hidSystemState source inherit its
+        // modifier state. Right after a synthetic Cmd+V (auto's paste
+        // attempt, or a press_key with modifiers) that state still carries
+        // Command, so the text arrived as Cmd+<key> (virtual key 0 → Cmd+A,
+        // "select all") and nothing was typed. Text input has no modifiers.
+        keyDown.flags = []
+        keyUp.flags = []
 
         keyDown.post(tap: .cghidEventTap)
         keyUp.post(tap: .cghidEventTap)

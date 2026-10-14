@@ -8,11 +8,11 @@
     "url": "https://github.com/AdelElo13/mac-control-mcp",
     "source": "github"
   },
-  "version": "0.10.1",
+  "version": "0.10.2",
   "packages": [
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/AdelElo13/mac-control-mcp/releases/download/v0.10.1/mac-control-mcp-v0.10.1.mcpb",
+      "identifier": "https://github.com/AdelElo13/mac-control-mcp/releases/download/v0.10.2/mac-control-mcp-v0.10.2.mcpb",
       "fileSha256": "018783b2f23f381b309232c1a9589de25eb9c4959dbe90bd8c0cf88803cdbbd9",
       "transport": {
         "type": "stdio"
@@ -22,7 +22,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "mac-control-mcp",
-      "version": "0.10.1",
+      "version": "0.10.2",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
