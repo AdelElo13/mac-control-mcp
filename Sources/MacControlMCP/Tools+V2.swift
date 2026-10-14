@@ -158,7 +158,7 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "set_element_attribute",
-            description: "Write an AX attribute on a cached element ID. Accepts string, number, or boolean.",
+            description: "Write an AX attribute on a cached element ID. Accepts string, number, or boolean. The attribute is read back: verified=true when it now holds the requested value; ok=false with error_code no_effect when the element accepted the call but kept its old value (e.g. NSColorWell AXValue, NSPopUpButton AXValue — use perform_element_action instead); verified=false with applied_value when it was clamped/rounded (slider beyond max). Note: setting AXValue on a text field, combo box or search field changes its contents but AppKit sends the app NO text-change notification — when the app must react (search-as-you-type, validation, autocomplete), use type_text with element_id. Secure fields are never read back.",
             inputSchema: schema(
                 properties: [
                     "element_id": .object(["type": .string("string")]),
@@ -581,17 +581,92 @@ extension ToolRegistry {
         case .stale(let reason): return staleElementResult(id, reason: reason)
         }
 
+        // v0.10.2: AX can return success for a write the element ignores
+        // (NSColorWell AXValue: ax_status 0, colour unchanged). Read the
+        // attribute before and after and say what actually happened. Secure
+        // text fields are never read back (their value must not be echoed).
+        let secure = Self.actionIsSecure(element)
+        let before = secure ? nil : Self.comparableAttribute(element, name)
         let status = await accessibility.setAttribute(element: element, name: name, value: value)
         let success = (status == 0)
-        let payload: [String: JSONValue] = [
+        var payload: [String: JSONValue] = [
             "ok": .bool(success),
             "element_id": .string(id),
             "name": .string(name),
             "ax_status": .number(Double(status))
         ]
-        return success
-            ? successResult("Attribute set.", payload)
-            : errorResult("AXUIElementSetAttributeValue failed (AXError=\(status)).", payload)
+        guard success else {
+            return errorResult("AXUIElementSetAttributeValue failed (AXError=\(status)).", payload)
+        }
+        let after = secure ? nil : await Self.settledAttribute(element, name, differentFrom: before)
+        switch Self.writeVerdict(requested: value, before: before, after: after) {
+        case .applied:
+            payload["verified"] = .bool(true)
+        case .unreadable:
+            payload["verified"] = .null
+        case .noEffect:
+            payload["ok"] = .bool(false)
+            payload["verified"] = .bool(false)
+            payload["error_code"] = .string("no_effect")
+            payload["read_back"] = after.map(\.json) ?? .null
+            payload["hint"] = .string("The element accepted the call but kept its previous value — it does not support writing \(name) this way. Try perform_element_action (e.g. AXPress, AXIncrement, AXShowMenu) or type_text.")
+            return errorResult("\(name) write had no effect (read back unchanged).", payload)
+        case .adjusted:
+            payload["verified"] = .bool(false)
+            payload["applied_value"] = after.map(\.json) ?? .null
+            payload["hint"] = .string("The element changed but to a different value than requested (clamped, rounded or normalised).")
+        }
+        return successResult("Attribute set.", payload)
+    }
+
+    /// An attribute value reduced to something comparable with a JSON request.
+    enum ComparableAttribute: Equatable {
+        case text(String)
+        case number(Double)
+
+        var json: JSONValue {
+            switch self {
+            case .text(let s): return .string(s)
+            case .number(let d): return .number(d)
+            }
+        }
+    }
+
+    static func comparableAttribute(_ element: AXUIElement, _ name: String) -> ComparableAttribute? {
+        guard let raw = actionAttribute(element, name) else { return nil }
+        if let s = raw as? String { return .text(s) }
+        if let n = raw as? NSNumber { return .number(n.doubleValue) }
+        return nil
+    }
+
+    /// Apps apply some writes asynchronously; give a changed value up to
+    /// 300 ms to appear before concluding the write was ignored.
+    static func settledAttribute(_ element: AXUIElement, _ name: String, differentFrom before: ComparableAttribute?) async -> ComparableAttribute? {
+        let deadline = Date().addingTimeInterval(0.3)
+        var current = comparableAttribute(element, name)
+        while current == before, before != nil, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            current = comparableAttribute(element, name)
+        }
+        return current
+    }
+
+    enum WriteVerdict: Equatable { case applied, adjusted, noEffect, unreadable }
+
+    static func writeVerdict(requested: JSONValue, before: ComparableAttribute?, after: ComparableAttribute?) -> WriteVerdict {
+        guard let after else { return .unreadable }
+        let matches: Bool
+        switch (requested, after) {
+        case (.string(let want), .text(let got)): matches = want == got
+        case (.number(let want), .number(let got)): matches = abs(want - got) <= 1e-6 * max(1, abs(want))
+        case (.bool(let want), .number(let got)): matches = (want ? 1.0 : 0.0) == got
+        case (.string(let want), .number(let got)): matches = Double(want).map { abs($0 - got) <= 1e-6 * max(1, abs($0)) } ?? false
+        case (.number(let want), .text(let got)): matches = Double(got).map { abs(want - $0) <= 1e-6 * max(1, abs(want)) } ?? false
+        default: return .unreadable
+        }
+        if matches { return .applied }
+        if let before, before == after { return .noEffect }
+        return .adjusted
     }
 
     func callPerformElementAction(_ arguments: [String: JSONValue]) async -> ToolCallResult {

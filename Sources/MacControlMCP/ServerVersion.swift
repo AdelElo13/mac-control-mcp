@@ -2,5 +2,5 @@
 /// (serverInfo) and `mcp_server_info`. Bump together with
 /// npm/package.json, server.json and scripts/build-bundle.sh.
 enum ServerVersion {
-    static let current = "0.10.1"
+    static let current = "0.10.2"
 }

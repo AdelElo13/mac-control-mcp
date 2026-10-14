@@ -40,6 +40,13 @@ struct ControlZooMatrixTests {
     /// A banner-log line is written to stderr so a failing test makes it
     /// obvious which binary actually ran.
     static func serverBinary() -> String {
+        // Explicit override, e.g. to run the matrix against the debug build
+        // of the branch under test instead of the installed release.
+        if let override = ProcessInfo.processInfo.environment["MAC_CONTROL_MCP_TEST_BINARY"],
+           FileManager.default.isExecutableFile(atPath: override) {
+            FileHandle.standardError.write(Data("[ControlZoo] using MAC_CONTROL_MCP_TEST_BINARY=\(override)\n".utf8))
+            return override
+        }
         let home = FileManager.default.homeDirectoryForCurrentUser
         let signed = home.appendingPathComponent("Applications/MacControlMCP.app/Contents/MacOS/MacControlMCP").path
         if FileManager.default.isExecutableFile(atPath: signed) {
