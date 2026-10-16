@@ -605,6 +605,9 @@ extension ToolRegistry {
         if let mismatch = await checkFocusGuard(arguments) {
             return mismatch
         }
+        if let refusal = refuseMenuIfSecureFocus(isMenuItem: { SecureFieldGuard.menuItemAt(x: x, y: y) }) {
+            return refusal
+        }
         let ok = await mouse.click(at: CGPoint(x: x, y: y), button: .right)
         return ok
             ? successResult(String(format: "right click at (%.0f,%.0f)", x, y),
@@ -626,6 +629,9 @@ extension ToolRegistry {
         }
         if let mismatch = await checkFocusGuard(arguments) {
             return mismatch
+        }
+        if let refusal = refuseMenuIfSecureFocus(isMenuItem: { SecureFieldGuard.menuItemAt(x: x, y: y) }) {
+            return refusal
         }
         let ok = await mouse.doubleClick(at: CGPoint(x: x, y: y), button: button)
         return ok

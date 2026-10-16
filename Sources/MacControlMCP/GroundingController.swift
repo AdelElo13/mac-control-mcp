@@ -838,7 +838,9 @@ actor GroundingController {
         // array length. Title/inferredLabel cap to 200 chars (display
         // text); value caps to 1000 chars (free-form content).
         let title = truncateAXString(stringAttr(element, kAXTitleAttribute), max: 200)
-        let value = truncateAXString(stringAttr(element, kAXValueAttribute), max: 1000)
+        // v0.10.3: never return a password field's value.
+        let value = SecureFieldGuard.isSecure(element)
+            ? nil : truncateAXString(stringAttr(element, kAXValueAttribute), max: 1000)
         let pos = pointAttr(element, kAXPositionAttribute)
         let size = sizeAttr(element, kAXSizeAttribute)
 

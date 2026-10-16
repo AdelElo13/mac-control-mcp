@@ -77,6 +77,11 @@ actor AccessibilityController {
         /// v0.10.2: set when `auto` abandoned a strategy that reported
         /// success but demonstrably did nothing (e.g. "clipboard_paste_no_effect").
         var fallbackReason: String? = nil
+
+        /// v0.10.3: the strategy reported when `abortIf` found a password
+        /// field focused right before an event or AX write.
+        static let refusedSecureField = "refused_secure_field"
+        static let refused = TypeTextResult(success: false, strategy: refusedSecureField)
     }
 
     struct AppInfo: Codable, Sendable {
@@ -506,20 +511,27 @@ actor AccessibilityController {
         }
     }
 
-    func typeText(text: String, strategy: TypeStrategy = .default) async -> TypeTextResult {
+    /// `abortIf` is probed immediately before every CGEvent post and AX
+    /// write; when it returns true nothing more is sent (v0.10.3).
+    func typeText(
+        text: String, strategy: TypeStrategy = .default, abortIf: @escaping @Sendable () -> Bool = { false }
+    ) async -> TypeTextResult {
         switch strategy {
         case .ax:
+            if abortIf() { return .refused }
             return setFocusedElementValue(text)
                 ? TypeTextResult(success: true, strategy: "ax_set_value")
                 : TypeTextResult(success: false, strategy: "none")
 
         case .keys:
+            if abortIf() { return .refused }
             return typeWithUnicodeEvents(text)
                 ? TypeTextResult(success: true, strategy: "cg_unicode")
                 : TypeTextResult(success: false, strategy: "none")
 
         case .clipboard:
-            return await pasteTextViaClipboard(text)
+            guard let pasted = await pasteTextViaClipboard(text, abortIf: abortIf) else { return .refused }
+            return pasted
                 ? TypeTextResult(success: true, strategy: "clipboard_paste")
                 : TypeTextResult(success: false, strategy: "none")
 
@@ -535,17 +547,22 @@ actor AccessibilityController {
             // it to change; otherwise fall back to Unicode key events.
             let probe = focusedElement()
             let valueBefore = probe.flatMap { readValue(element: $0) }
-            if await pasteTextViaClipboard(text) {
+            guard let pasted = await pasteTextViaClipboard(text, abortIf: abortIf) else { return .refused }
+            if pasted {
                 if let probe, let valueBefore,
-                   await !valueChanges(of: probe, from: valueBefore, within: 0.4),
-                   typeWithUnicodeEvents(text) {
-                    return TypeTextResult(success: true, strategy: "cg_unicode", fallbackReason: "clipboard_paste_no_effect")
+                   await !valueChanges(of: probe, from: valueBefore, within: 0.4) {
+                    if abortIf() { return .refused }
+                    if typeWithUnicodeEvents(text) {
+                        return TypeTextResult(success: true, strategy: "cg_unicode", fallbackReason: "clipboard_paste_no_effect")
+                    }
                 }
                 return TypeTextResult(success: true, strategy: "clipboard_paste")
             }
+            if abortIf() { return .refused }
             if typeWithUnicodeEvents(text) {
                 return TypeTextResult(success: true, strategy: "cg_unicode")
             }
+            if abortIf() { return .refused }
             if setFocusedElementValue(text) {
                 return TypeTextResult(success: true, strategy: "ax_set_value")
             }
@@ -566,6 +583,7 @@ actor AccessibilityController {
     }
 
     func readValue(element: AXUIElement) -> String? {
+        if SecureFieldGuard.isSecure(element) { return nil }
         if let value = stringAttribute(of: element, attribute: kAXValueAttribute as CFString) {
             return value
         }
@@ -595,16 +613,6 @@ actor AccessibilityController {
         else { return false }
         event.flags = modifiers.reduce(into: CGEventFlags()) { $0.formUnion($1) }
         event.post(tap: .cghidEventTap)
-        return true
-    }
-
-    /// Post a sequence of keys in order. Each step is an independent
-    /// down+up pair with its own modifier set, separated by `delay` seconds.
-    func pressKeySequence(_ steps: [(CGKeyCode, [CGEventFlags])], delay: TimeInterval = 0.03) -> Bool {
-        for (code, modifiers) in steps {
-            guard pressKey(keyCode: code, modifiers: modifiers) else { return false }
-            Thread.sleep(forTimeInterval: delay)
-        }
         return true
     }
 
@@ -1162,8 +1170,13 @@ actor AccessibilityController {
     func getAttributes(element: AXUIElement, names: [String]) -> AttributeValues {
         var values: [String: String] = [:]
         var unavailable: [String] = []
+        let secure = SecureFieldGuard.isSecure(element)
 
         for name in names {
+            if secure, SecureFieldGuard.isContentAttribute(name) {
+                unavailable.append(name)
+                continue
+            }
             guard let raw = attributeValue(of: element, attribute: name as CFString) else {
                 unavailable.append(name)
                 continue
@@ -1527,16 +1540,22 @@ actor AccessibilityController {
         return true
     }
 
-    private func pasteTextViaClipboard(_ text: String) async -> Bool {
+    /// nil = refused by `abortIf` (probed right before Cmd+V, after the
+    /// pasteboard write, so the window between check and paste is minimal).
+    private func pasteTextViaClipboard(_ text: String, abortIf: @escaping @Sendable () -> Bool) async -> Bool? {
+        // Refuse before touching the pasteboard, so a refusal leaves the
+        // user's clipboard alone; probed again right before Cmd+V below.
+        if abortIf() { return nil }
         // withSnapshot guarantees restore runs before we return (was a
         // detached Task in the previous version, which Codex flagged as a
         // race against the next pasteboard op).
-        await PasteboardSnapshot.withSnapshot {
+        return await PasteboardSnapshot.withSnapshot { () async -> Bool? in
             let setOK = await MainActor.run { () -> Bool in
                 NSPasteboard.general.clearContents()
                 return NSPasteboard.general.setString(text, forType: .string)
             }
             guard setOK else { return false }
+            if abortIf() { return nil }
             let pasted = pressKey(keyCode: 9, modifiers: [.maskCommand])
             try? await Task.sleep(nanoseconds: 50_000_000)
             return pasted

@@ -121,12 +121,15 @@ enum AXAttributeBatch {
             let joined = classes.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.joined(separator: " ")
             if !joined.isEmpty { web["dom_class"] = joined }
         } else if let classes = nonEmpty(webOffset + 2) { web["dom_class"] = classes }
+        // v0.10.3: a password field never yields its value, whatever the
+        // app's AX implementation returns (AppKit gives "", others may not).
+        let secure = SecureFieldGuard.isSecure(role: string(slot(0)), subrole: nonEmpty(7))
         return Values(
             role: string(slot(0)),
             title: nonEmpty(1) ?? nonEmpty(2) ?? nonEmpty(3),
             identifier: nonEmpty(3),
             subrole: nonEmpty(7),
-            value: string(slot(4)),
+            value: secure ? nil : string(slot(4)),
             position: point(slot(5)),
             size: size(slot(6)),
             children: children,

@@ -180,6 +180,9 @@ extension ToolRegistry {
         if let mismatch = await checkFocusGuard(arguments) {
             return mismatch
         }
+        if let refusal = refuseMenuIfSecureFocus(isMenuItem: { SecureFieldGuard.menuItemAt(x: x, y: y) }) {
+            return refusal
+        }
 
         let ok: Bool
         switch action.lowercased() {

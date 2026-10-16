@@ -330,7 +330,7 @@ extension ToolRegistry {
         }
         input["element_id"] = .string(target.id)
         if ["set_value", "type", "key", "focus"].contains(action), Self.actionIsSecure(target.element) {
-            return actionFailure("not_supported", "secure_field: refusing to edit a password field.")
+            return secureFieldRefusal("\(action) a password field")
         }
         if let mismatch = await checkActionOwner(target, arguments: input) { return mismatch }
         let before = actionSnapshot(target)
