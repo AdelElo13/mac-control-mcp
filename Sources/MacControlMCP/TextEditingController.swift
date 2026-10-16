@@ -650,11 +650,11 @@ actor TextEditingController {
     /// hand a secret to the model, writing one would type into a credential
     /// prompt. Both are refused before any AX traffic happens.
     private func requireNotSecure(_ element: AXUIElement) throws(Failure) {
-        guard let role = ax.stringAttribute(element, kAXRoleAttribute as String) else { return }
-        // "AXSecureTextField" has no exported kAX… constant in
-        // ApplicationServices (unlike kAXTextFieldRole), so the literal is
-        // the only way to name it.
-        if role == Self.secureTextFieldRole {
+        // v0.10.3: AppKit's NSSecureTextField is role AXTextField with
+        // subrole AXSecureTextField — the role-only check missed it.
+        let role = ax.stringAttribute(element, kAXRoleAttribute as String)
+        let subrole = ax.stringAttribute(element, kAXSubroleAttribute as String)
+        if SecureFieldGuard.isSecure(role: role, subrole: subrole) {
             throw .notSupported(
                 "Refusing to read or edit an AXSecureTextField (password field).",
                 reason: "secure_field"

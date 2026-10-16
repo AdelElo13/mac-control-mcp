@@ -464,7 +464,8 @@ actor AXSnapshotController {
         // Use a value-aware getter: checkboxes/sliders/steppers/radios expose
         // kAXValue as a number/bool, which `stringAttr` dropped as nil — so
         // toggling a checkbox produced no diff. Stringify numbers too.
-        let value = valueString(element, kAXValueAttribute)
+        // v0.10.3: never snapshot (or diff) a password field's value.
+        let value = SecureFieldGuard.isSecure(element) ? nil : valueString(element, kAXValueAttribute)
         let pos = pointAttr(element, kAXPositionAttribute)
         let size = sizeAttr(element, kAXSizeAttribute)
 

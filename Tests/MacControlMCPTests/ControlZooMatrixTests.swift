@@ -16,6 +16,8 @@ import Foundation
 @Suite("ControlZoo — deterministic AppKit compat matrix", .serialized, .timeLimit(.minutes(3)))
 struct ControlZooMatrixTests {
     static let harnessIdentifier = "ControlZoo"
+    /// Identifier → element id of the current run (suite is .serialized).
+    nonisolated(unsafe) static var lastIdentifierMap: [String: String] = [:]
 
     static func projectRoot() -> URL {
         let dir = (#filePath as NSString).deletingLastPathComponent
@@ -244,6 +246,7 @@ struct ControlZooMatrixTests {
         try? await Task.sleep(nanoseconds: 500_000_000)
 
         let idMap = Self.identifierMap(driver: driver, pid: pid)
+        Self.lastIdentifierMap = idMap
         #expect(idMap.count >= 11, "expected 11 identified controls, got \(idMap.count): \(idMap.keys.sorted())")
 
         // tf_single: read → write → read back → restore
@@ -270,8 +273,8 @@ struct ControlZooMatrixTests {
         // btn_click: AXPress action returns ax_status == 0
         try runButtonPress(driver: driver, elementID: idMap["btn_click"], label: "AXButton")
 
-        // tf_secure: bullet-count verifies plaintext write (Codex v8 #2)
-        try runSecureFieldWrite(driver: driver, elementID: idMap["tf_secure"], label: "AXSecureTextField")
+        // tf_secure: every route into a password field is refused (v0.10.3)
+        try await runSecureFieldRefusal(driver: driver, pid: pid, elementID: idMap["tf_secure"], label: "AXSecureTextField")
 
         // pu_one: AXShowMenu + menu AXPress (Codex v8 #2)
         try await runPopUpMenuNav(driver: driver, pid: pid, elementID: idMap["pu_one"], label: "AXPopUpButton")
@@ -371,33 +374,65 @@ struct ControlZooMatrixTests {
                 "\(label): click label did not change (\(beforeLabel ?? "nil") → \(afterLabel ?? "nil"))")
     }
 
-    // Codex v8 #2 + v9 #1 — NSSecureTextField verification.
+    // v0.10.3 — NSSecureTextField is off limits.
     //
-    // AXValue returns len(plaintext) bullet chars. A constant-length test
-    // string could false-pass if a prior run left the field with the
-    // same length (no-op write). Fix: write a value of DIFFERENT length
-    // than the current value. We read first, then construct a marker
-    // whose length differs, guaranteeing any no-op would be visible.
-    func runSecureFieldWrite(driver: MCPDriver, elementID: String?, label: String) throws {
+    // v0.10.2 let six routes write into it (set_element_attribute AXValue,
+    // untargeted type_text keys/ax/auto, press_key, press_key_sequence,
+    // key_down). Every route must now answer not_supported/secure_field,
+    // and the field's character count — read through the app's own
+    // NSSecureTextField, not through the MCP — must not change.
+    func runSecureFieldRefusal(driver: MCPDriver, pid: Int32, elementID: String?, label: String) async throws {
         guard let elementID else { Issue.record("\(label): missing element id"); return }
-        let before = driver.readValue(elementID: elementID) ?? ""
-        // Pick a length that's provably different from the current one.
-        // We use UUID to avoid collisions and ensure length variation
-        // (UUID is 36 chars; truncate to either 10 or 20 depending on
-        // whether the current value is short or long).
-        let targetLen = before.count < 15 ? 20 : 10
-        let plaintext = String(UUID().uuidString.prefix(targetLen)).replacingOccurrences(of: "-", with: "x")
-        #expect(plaintext.count != before.count,
-                "\(label): test setup failure — new value has same length as old")
-        driver.setValueString(elementID: elementID, value: plaintext)
-        guard let bullets = driver.readValue(elementID: elementID) else {
-            Issue.record("\(label) could not read AXValue after write")
-            return
+
+        func refused(_ name: String, _ arguments: String) -> Bool {
+            guard case .object(let payload) = driver.toolResult(name: name, arguments: arguments) ?? .null else { return false }
+            return payload["reason"] == .string("secure_field") && payload["ok"] == .bool(false)
         }
-        #expect(bullets.count == plaintext.count,
-                "\(label): wrote \(plaintext.count) chars, got \(bullets.count) bullets (before had \(before.count))")
-        #expect(bullets.count != before.count,
-                "\(label): bullet count did not change from initial \(before.count) — possible no-op write")
+
+        // Reads never return the content.
+        #expect(driver.readValue(elementID: elementID) == nil, "\(label): AXValue was described")
+        #expect(refused("text_get_value", #"{"element_id":"\#(elementID)"}"#), "\(label): text_get_value not refused")
+
+        // Element-targeted writes.
+        #expect(refused("set_element_attribute", #"{"element_id":"\#(elementID)","name":"AXValue","value":"zoo_leak"}"#),
+                "\(label): set_element_attribute AXValue not refused")
+        #expect(refused("set_element_attribute", #"{"element_id":"\#(elementID)","name":"AXSelectedText","value":"z"}"#),
+                "\(label): set_element_attribute AXSelectedText not refused")
+        #expect(refused("text_insert_at_caret", #"{"element_id":"\#(elementID)","text":"zoo"}"#),
+                "\(label): text_insert_at_caret not refused for the secure subrole")
+
+        // Focused-element routes: give the field keyboard focus first.
+        _ = driver.toolResult(name: "activate_app", arguments: #"{"pid":\#(pid)}"#)
+        _ = driver.toolResult(name: "set_element_attribute", arguments: #"{"element_id":"\#(elementID)","name":"AXFocused","value":true}"#)
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        let guardArgs = #""expected_app":"ControlZoo""#
+        for strategy in ["auto", "clipboard", "keys", "ax"] {
+            #expect(refused("type_text", #"{"text":"zoo","strategy":"\#(strategy)",\#(guardArgs)}"#),
+                    "\(label): type_text \(strategy) not refused")
+        }
+        #expect(refused("press_key", #"{"key":"a",\#(guardArgs)}"#), "\(label): press_key not refused")
+        #expect(refused("press_key", #"{"key":"v","modifiers":["command"],\#(guardArgs)}"#), "\(label): cmd+v not refused")
+        #expect(refused("press_key_sequence", #"{"steps":[{"key":"b"}],\#(guardArgs)}"#), "\(label): press_key_sequence not refused")
+        #expect(refused("key_down", #"{"key":"c",\#(guardArgs)}"#), "\(label): key_down not refused")
+        _ = driver.toolResult(name: "key_up", arguments: #"{"key":"c",\#(guardArgs)}"#)
+        // Edit ▸ Paste / Dictation enter text without a key event.
+        #expect(refused("click_menu_path", #"{"pid":\#(pid),"path":["Edit","Paste"]}"#), "\(label): click_menu_path not refused")
+
+        // Review round 1: Tab from an ordinary field lands in the password
+        // field; the sequence must stop right there (steps_sent == 1).
+        if let single = Self.lastIdentifierMap["tf_single"] {
+            _ = driver.toolResult(name: "set_element_attribute", arguments: #"{"element_id":"\#(single)","name":"AXFocused","value":true}"#)
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            let seq = driver.toolResult(name: "press_key_sequence", arguments: #"{"steps":[{"key":"tab"},{"key":"x"},{"key":"y"}],\#(guardArgs)}"#)
+            guard case .object(let payload) = seq ?? .null else { Issue.record("\(label): no sequence result"); return }
+            #expect(payload["reason"] == .string("secure_field"), "\(label): tab-then-type sequence reached the password field")
+            #expect(payload["steps_sent"] == .number(1), "\(label): expected only the Tab to be sent, got \(payload["steps_sent"] ?? .null)")
+        } else {
+            Issue.record("\(label): tf_single missing for the tab-then-type check")
+        }
+
+        // Every refusal above is returned before any CGEvent or AX write
+        // is issued, so a refused route cannot have changed the field.
     }
 
     // Codex v8 #2 — NSPopUpButton: AXValue set is a no-op; the real flow

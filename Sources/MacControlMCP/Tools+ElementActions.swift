@@ -78,8 +78,7 @@ extension ToolRegistry {
     }
 
     static func actionIsSecure(_ element: AXUIElement) -> Bool {
-        actionAttribute(element, "AXRole") as? String == "AXSecureTextField"
-            || actionAttribute(element, "AXSubrole") as? String == "AXSecureTextField"
+        SecureFieldGuard.isSecure(element)
     }
 
     func actionSnapshot(_ target: ActionTarget) -> [String: JSONValue] {
@@ -179,6 +178,9 @@ extension ToolRegistry {
             case .target(let target): source = target
             }
         }
+        if let source, let refusal = refuseMenuIfSecureFocus(isMenuItem: { SecureFieldGuard.isMenuItem(source.element) }) {
+            return refusal
+        }
         if let raw = arguments["target_element_id"] {
             switch await resolveActionTarget(raw) {
             case .failed(let result): return result
@@ -272,7 +274,7 @@ extension ToolRegistry {
         case .target(let value): target = value
         }
         guard !Self.actionIsSecure(target.element) else {
-            return actionFailure("not_supported", "secure_field: refusing to type into a password field.")
+            return secureFieldRefusal("type into a password field")
         }
         let before = actionSnapshot(target)
         let focus = await focusActionTarget(target, arguments: arguments)

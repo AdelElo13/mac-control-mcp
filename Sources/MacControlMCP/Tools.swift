@@ -70,6 +70,9 @@ final class ToolRegistry: @unchecked Sendable {
     let artifactStore: ArtifactStore
     // v0.9 workstream E — text editing primitives (gap-audit C-7 / B-15)
     let textEditing: TextEditingController
+    /// v0.10.3: is the keyboard focus in a password field? Injected so
+    /// tests can exercise the refusal without posting real key events.
+    let secureFocusProbe: @Sendable () -> Bool
 
     init(
         accessibility: AccessibilityController,
@@ -105,7 +108,8 @@ final class ToolRegistry: @unchecked Sendable {
         appleNative: AppleNativeController = AppleNativeController(),
         undoCtrl: UndoController = UndoController(),
         artifactStore: ArtifactStore = ArtifactStore(),
-        textEditing: TextEditingController = TextEditingController()
+        textEditing: TextEditingController = TextEditingController(),
+        secureFocusProbe: @escaping @Sendable () -> Bool = SecureFieldGuard.focusedElementIsSecure
     ) {
         self.accessibility = accessibility
         self.elementCache = elementCache
@@ -146,6 +150,7 @@ final class ToolRegistry: @unchecked Sendable {
         self.undo = undoCtrl
         self.artifactStore = artifactStore
         self.textEditing = textEditing
+        self.secureFocusProbe = secureFocusProbe
     }
 
     var toolDefinitions: [MCPToolDefinition] {
@@ -685,6 +690,9 @@ final class ToolRegistry: @unchecked Sendable {
             if let mismatch = await checkFocusGuard(arguments) {
                 return mismatch
             }
+            if let refusal = refuseMenuIfSecureFocus(isMenuItem: { SecureFieldGuard.menuItemAt(x: x, y: y) }) {
+                return refusal
+            }
 
             let success = await accessibility.click(at: CGPoint(x: CGFloat(x), y: CGFloat(y)))
             var payload: [String: JSONValue] = [
@@ -739,6 +747,10 @@ final class ToolRegistry: @unchecked Sendable {
         // coordinate-click fallback (bug #5, when AXPress is unsupported)
         // is a synthetic CGEvent that depends on focus; the guard is
         // applied right before that fallback fires, not before AXPress.
+        // v0.10.3: click {title:"Paste"} presses Edit ▸ Paste.
+        if let refusal = refuseMenuIfSecureFocus(isMenuItem: { SecureFieldGuard.isMenuItem(element) }) {
+            return refusal
+        }
         let axOutcome = await accessibility.pressElementViaAX(element: element)
         let success: Bool
         switch axOutcome {
@@ -804,7 +816,13 @@ final class ToolRegistry: @unchecked Sendable {
             return mismatch
         }
 
-        let result = await accessibility.typeText(text: text, strategy: strategy)
+        // v0.10.3: never type, paste or AX-set into a focused password
+        // field. Probed inside typeText right before each event/AX write,
+        // not up front, so a focus change during the wait is still caught.
+        let result = await accessibility.typeText(text: text, strategy: strategy, abortIf: secureFocusProbe)
+        if result.strategy == AccessibilityController.TypeTextResult.refusedSecureField {
+            return secureFieldRefusal("type into the focused element")
+        }
         if result.success {
             return successResult(
                 "Text typed using \(result.strategy).",
@@ -854,6 +872,10 @@ final class ToolRegistry: @unchecked Sendable {
             )
         }
 
+        if SecureFieldGuard.isSecure(element) {
+            return secureFieldRefusal("read the value")
+        }
+
         guard let value = await accessibility.readValue(element: element) else {
             return errorResult(
                 "Element has no readable value.",
@@ -894,6 +916,11 @@ final class ToolRegistry: @unchecked Sendable {
         case .success(let modifiers):
             if let mismatch = await checkFocusGuard(arguments) {
                 return mismatch
+            }
+            // Probed last, right before the post (v0.10.3).
+            let modifierNames = (arguments["modifiers"]?.arrayValue ?? []).compactMap(\.stringValue)
+            if let refusal = refuseIfSecureFocus("press '\(key)'", keys: [(key, modifierNames)]) {
+                return refusal
             }
 
             let pressed = await accessibility.pressKey(keyCode: keyCode, modifiers: modifiers)

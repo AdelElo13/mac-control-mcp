@@ -158,7 +158,7 @@ extension ToolRegistry {
         ),
         MCPToolDefinition(
             name: "set_element_attribute",
-            description: "Write an AX attribute on a cached element ID. Accepts string, number, or boolean. The attribute is read back: verified=true when it now holds the requested value; ok=false with error_code no_effect when the element accepted the call but kept its old value (e.g. NSColorWell AXValue, NSPopUpButton AXValue — use perform_element_action instead); verified=false with applied_value when it was clamped/rounded (slider beyond max). Note: setting AXValue on a text field, combo box or search field changes its contents but AppKit sends the app NO text-change notification — when the app must react (search-as-you-type, validation, autocomplete), use type_text with element_id. Secure fields are never read back.",
+            description: "Write an AX attribute on a cached element ID. Accepts string, number, or boolean. The attribute is read back: verified=true when it now holds the requested value; ok=false with error_code no_effect when the element accepted the call but kept its old value (e.g. NSColorWell AXValue, NSPopUpButton AXValue — use perform_element_action instead); verified=false with applied_value when it was clamped/rounded (slider beyond max). Note: setting AXValue on a text field, combo box or search field changes its contents but AppKit sends the app NO text-change notification — when the app must react (search-as-you-type, validation, autocomplete), use type_text with element_id. Password fields refuse content attributes (AXValue, AXSelectedText, …) with reason secure_field; AXFocused stays allowed.",
             inputSchema: schema(
                 properties: [
                     "element_id": .object(["type": .string("string")]),
@@ -586,6 +586,11 @@ extension ToolRegistry {
         // attribute before and after and say what actually happened. Secure
         // text fields are never read back (their value must not be echoed).
         let secure = Self.actionIsSecure(element)
+        // v0.10.3: content writes into a password field are refused;
+        // AXFocused stays allowed so the user can be handed the field.
+        if secure, SecureFieldGuard.isContentAttribute(name) {
+            return secureFieldRefusal("set \(name)")
+        }
         let before = secure ? nil : Self.comparableAttribute(element, name)
         let status = await accessibility.setAttribute(element: element, name: name, value: value)
         let success = (status == 0)
@@ -679,6 +684,11 @@ extension ToolRegistry {
         case .unknown: return unknownElementResult(id)
         case .evicted(let hint): return evictedElementResult(id, hint: hint)
         case .stale(let reason): return staleElementResult(id, reason: reason)
+        }
+
+        if arguments["action"]?.stringValue?.isEmpty == false,
+           let refusal = refuseMenuIfSecureFocus(isMenuItem: { SecureFieldGuard.isMenuItem(element) }) {
+            return refusal
         }
 
         // Codex v8 #10 — strict type check on `action`. If the key is
@@ -804,6 +814,10 @@ extension ToolRegistry {
         let path = pathArr.compactMap { $0.stringValue }
         if path.count != pathArr.count {
             return invalidArgument("click_menu_path path entries must all be strings.")
+        }
+        // v0.10.3: Edit ▸ Paste / Start Dictation enter text without a key.
+        if let refusal = refuseMenuIfSecureFocus(isMenuItem: { true }) {
+            return refusal
         }
 
         let result = await menus.clickPath(pid: pid, path: path)

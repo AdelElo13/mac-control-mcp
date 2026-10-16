@@ -75,7 +75,7 @@ harness and types into it.
 
 ```
 PASS   AXTextField read/write         roundtrip verified
-PASS   AXSecureTextField write        bullet-char count matches
+PASS   AXSecureTextField refusal      every read/write/key route refused (v0.10.3)
 PASS   AXTextArea read/write          roundtrip verified
 PASS   AXCheckBox toggle              AXPress flips AXValue
 PASS   AXSwitch toggle                AXPress flips AXValue

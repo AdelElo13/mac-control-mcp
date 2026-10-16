@@ -653,6 +653,10 @@ extension ToolRegistry {
         if let mismatch = await checkFocusGuard(arguments) {
             return mismatch
         }
+        // key_up always passes: releasing a held key must never be blocked.
+        if down, let refusal = refuseIfSecureFocus("press '\(key)'", keys: [(key, modStrings)]) {
+            return refusal
+        }
 
         let ok = down
             ? await accessibility.keyDown(keyCode: code, modifiers: modifiers)
@@ -672,6 +676,7 @@ extension ToolRegistry {
             return invalidArgument("press_key_sequence requires non-empty steps array.")
         }
         var parsed: [(CGKeyCode, [CGEventFlags])] = []
+        var named: [(key: String, modifiers: [String])] = []
         for entry in stepsRaw {
             guard case .object(let obj) = entry,
                   let key = obj["key"]?.stringValue,
@@ -687,7 +692,9 @@ extension ToolRegistry {
                 flags.append(f)
             }
             parsed.append((code, flags))
+            named.append((key, obj["modifiers"]?.arrayValue?.compactMap({ $0.stringValue }) ?? []))
         }
+
 
         // Checked once immediately before injecting the whole sequence —
         // re-checking between every step would be the more thorough guard
@@ -703,13 +710,32 @@ extension ToolRegistry {
         // AccessibilityController actor, so a huge value would pin a
         // cooperative-pool thread for the whole duration.
         let delayMs = min(max(0, arguments["delay_ms"]?.intValue ?? 30), 5_000)
-        let ok = await accessibility.pressKeySequence(parsed, delay: TimeInterval(delayMs) / 1000.0)
-        return ok
-            ? successResult("Pressed \(parsed.count) step(s).", [
-                "ok": .bool(true),
-                "steps": .number(Double(parsed.count))
-              ])
-            : errorResult("Sequence failed partway.", ["ok": .bool(false)])
+        // v0.10.3: a Tab step can move focus into a password field, so the
+        // focus is probed before every text-producing step, not once.
+        for (index, step) in parsed.enumerated() {
+            if let refusal = refuseIfSecureFocus("press a key sequence", keys: [named[index]]) {
+                return Self.addingStepsSent(index, to: refusal)
+            }
+            guard accessibility.pressKey(keyCode: step.0, modifiers: step.1) else {
+                return errorResult("Sequence failed partway.", ["ok": .bool(false), "steps_sent": .number(Double(index))])
+            }
+            // A navigation key (Tab) moves focus asynchronously; give it
+            // time to land before the next step's probe reads the focus,
+            // so tab-then-type cannot outrun the guard (review round 2).
+            let movesFocus = SecureFieldGuard.keyAllowed(named[index].key, modifiers: named[index].modifiers)
+            let settleMs = movesFocus && index + 1 < parsed.count ? max(delayMs, SecureFieldGuard.focusSettleMs) : delayMs
+            try? await Task.sleep(nanoseconds: UInt64(settleMs) * 1_000_000)
+        }
+        return successResult("Pressed \(parsed.count) step(s).", [
+            "ok": .bool(true),
+            "steps": .number(Double(parsed.count))
+        ])
+    }
+
+    static func addingStepsSent(_ count: Int, to result: ToolCallResult) -> ToolCallResult {
+        var payload = result.structuredContent.objectValue ?? [:]
+        payload["steps_sent"] = .number(Double(count))
+        return ToolCallResult(text: result.text, structuredContent: .object(payload), isError: result.isError)
     }
 
     func callWaitForWindow(_ arguments: [String: JSONValue]) async -> ToolCallResult {

@@ -204,6 +204,7 @@ Several tools overlap in purpose. Based on their actual implementations:
 - Tools that write files (`capture_*`, `ocr_screen`) validate `output_path` via a strict allow-list — only the user-scoped temp dir (`NSTemporaryDirectory()`) and `~/Desktop`, `~/Documents`, `~/Downloads`, `~/Pictures` are accepted. Symlinks at the target path are rejected to prevent redirection. `/tmp` is deliberately excluded because it's shared across users and opens a TOCTOU window.
 - AppleScript string interpolation for `browser_eval_js` wraps user code in `(0, eval)(…)` via `JSON.stringify`, so quotes/newlines/unicode can't break out of the wrapper.
 - No network calls. Everything is local system integration.
+- Password fields are off limits in code, not by instruction. A field with role or subrole `AXSecureTextField` never returns its value or length, and every write route is refused with `reason: secure_field`: element writes, `text_*` edits, `act`, untargeted `type_text`, and text keys or Cmd+V via `press_key`, `press_key_sequence` and `key_down` while such a field has focus. While such a field has focus, menu-bar and context-menu items (Paste, Start Dictation, Emoji & Symbols) cannot be pressed either; pop-up and combo-box option menus stay usable. Navigation keys (Tab, Return, Escape, arrows) still work, so the agent can hand the field to the user. `browser_eval_js` runs arbitrary page JavaScript and is not covered by this guard.
 
 ## Status (verified in the current release)
 
